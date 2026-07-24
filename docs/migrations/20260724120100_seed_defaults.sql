@@ -7,6 +7,7 @@
 -- 散步/讀書/跑步/健身沿用同一組決議模式落地，非 null 臆測值
 insert into activity_type (name, status, default_duration_minutes, default_min_participants, default_max_participants, group_size_step) values
   ('籃球', 'APPROVED', 120, 6, 12, 2),
+  ('羽球', 'APPROVED', 120, 2, 4, 2),
   ('咖啡', 'APPROVED', 60, 2, 4, null),
   ('散步', 'APPROVED', 60, 2, 4, null),
   ('讀書', 'APPROVED', 90, 2, 6, null),
