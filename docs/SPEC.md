@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.5 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.6 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -34,6 +34,13 @@
 > 3. Matching Engine 明確採用「達到 `min_participants` 立即成局」的貪婪策略，不等待湊到 `max_participants`（見第 7 節）；Downgrade 觸發條件相應改為「連 `min_participants` 都湊不到」（見第 8 節）
 > 4. 新增 `known_member_count`：**不新增儲存欄位**，由查詢即時算出（同一 Activity 內與自己 `source_request_id` 相同的 `ActivityMember` 人數），見第 9 節
 > 5. 第 12.1 節准入/確認判準明確區分兩個時間點：發起/加入當下用 `min_participants ≤ 2` 把關新人資格，配對當下用**實際撮合人數** ≤ 2 觸發 `PENDING_CONFIRMATION`（機制本身不變，只是判準基準從固定數字換成動態欄位後需要重新說清楚）
+
+> **v1.6 變更紀錄**（UI 人數標籤語意修正 + `ActivityType` 新增 `group_size_step`）：
+> 1. v1.5 的 UI 選項設計讓使用者選「不含自己的同伴人數」，系統再 +1 換算成 `min_participants`/`max_participants`，實測發現這個換算本身造成語意落差；v1.6 改為 UI 標籤直接顯示總人數（含自己），不再做「不含自己」的換算敘述（見第 6.2 節）
+> 2. `ActivityType` 新增 `group_size_step`（nullable int）：非 null 時前端依 `default_min_participants`~`default_max_participants`、以 `group_size_step` 為間隔生成離散人數選項；null 時代表連續區間，不做離散化。把「該找幾人」的決定權交給活動類型本身，維持第 5 節「使用者新增類型 → admin 審核通過 → 立即可用」的既有路徑完整，新增類型不需要改前端程式碼（見第 5 節）
+> 3. 明確不新增 `group_size_mode` 欄位：`group_size_step` 是否為 null 已完整表達離散/連續兩種模式，另開欄位會造成兩欄位需彼此保持一致的重複真相問題，與 `invite_token` 不另存 `expire_at`、`known_member_count` 不額外儲存同一精神（見第 5 節）
+> 4. `min_participants`/`max_participants` 欄位本身、Matching Engine 貪婪成局策略、Downgrade 觸發條件皆不變
+> 5. 第 6.1 節拆分為「6.1 Invite Link（邀請連結）」與「6.2 人數選項呈現」，原本混在同一標題下的邀請連結行為與 UI 對照表分開陳述；下游引用舊「第 6.1 節 UI 對照表」處（含第 12.1.1 節）同步改指向第 6.2 節
 
 ---
 
@@ -128,11 +135,12 @@ start_time 到 → ONGOING
 - 已上線（APPROVED）的類型仍保留事後檢舉機制：Report → Review → Remove/限制帳號
 - 新增類型前做**既有類型的模糊比對/autocomplete 提示**（如「羽球」vs「羽毛球」），減少重複類型稀釋配對池，MVP 不用做重，能擋掉大部分重複即可
 - `default_duration` 由 admin 審核通過時設定；**null 時 fallback = 60 分鐘**（SYSTEM_DEFAULT_DURATION），之後依資料調整
-- 🟢 `default_min_participants`/`default_max_participants` 同樣由 admin 審核通過時設定，供第 6 節 UI 選項卡「不限，人多熱鬧」選項的上限沒有指定時取用；**null 時 fallback = 2 / 6**，比照 `default_duration` 的 fallback 模式
+- 🟢 `default_min_participants`/`default_max_participants` 同樣由 admin 審核通過時設定，供第 6.2 節人數選項卡動態生成選項時取用；**null 時 fallback = 2 / 6**，比照 `default_duration` 的 fallback 模式
+- 🟢 `group_size_step`（nullable int）由 admin 審核通過新增類型時一併設定，決定第 6.2 節人數選項卡是否離散化：非 null 時依 `default_min_participants`~`default_max_participants`、以此為間隔生成固定人數選項（例：籃球 `default_min_participants=6`／`default_max_participants=12`／`group_size_step=2` → 選項為 6/8/10/12 人）；null 時代表連續區間，不離散化（例：咖啡 2~4 人區間）。**`group_size_step` 只要被設定為非 null 值（包含 1），前端一律按離散選項渲染；null 才代表連續區間。不存在「連續區間但同時設了 step」的中間狀態，避免 `step=1` 這類邊界值造成解讀歧義。** 這個欄位存在的意義是讓「使用者新增活動類型 → admin 審核通過 → 立即可用」（本節既有流程）保持完整——人數選項的離散/連續邏輯完全由資料決定，新增一個類型不需要另外改前端程式碼；🔴 明確不新增 `group_size_mode` 欄位，理由見 ERD.md 設計備註
 
 ```
 ActivityType
-- id, name, default_duration (nullable), default_min_participants (nullable), default_max_participants (nullable), status(PENDING/APPROVED/REJECTED), created_by, created_at
+- id, name, default_duration (nullable), default_min_participants (nullable), default_max_participants (nullable), group_size_step (nullable), status(PENDING/APPROVED/REJECTED), created_by, created_at
 ```
 
 ---
@@ -169,13 +177,13 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 
 拆成 join table 後，owner consent（第 8 節 `DowngradeConsent`）、member consent、Reliability 事件、CompletionReport 的參與者都能溯源到這裡，不用另外猜資料從哪來。
 
-🟢 **`min_participants`/`max_participants` 皆代表活動總人數，包含 owner 本人**——這是後端欄位的計數基準；第 6.1 節 UI 選項卡的文字描述的是「不含自己的同伴人數」，兩者刻意不同，換算關係見第 6.1 節對照表，避免前後端對「人數」的定義不一致造成實作誤解。
+🟢 **`min_participants`/`max_participants` 皆代表活動總人數，包含 owner 本人**——這是後端欄位的計數基準，UI 選項卡標籤直接顯示這兩個欄位的實際數值，不做任何「不含自己」的換算（見第 6.2 節）。
 
 **限制**：
 - 同一使用者同時只能有一個 `REQUESTING` 狀態的 Request（以 `owner_id` 判定）；`MATCHED` 之後不受此限制（已非等待中的資源）
 - `campus_location_id` 必須屬於 owner 的 `school`——這是配對池同校隔離（第 7 節）的落地點
 
-### 6.1 邀請連結（Invite Link）
+### 6.1 Invite Link（邀請連結）
 
 已完成身份驗證的使用者透過邀請連結加入 Request，不經 owner 二次審核——點擊連結並通過 `.edu` 驗證本身就是確認，v1 沒有 Friend entity、不重新檢查雙方是否有任何既有關係。
 
@@ -185,14 +193,13 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 - 🔴 **不新增 `used_at`**：連結設計上是多人可重複使用（owner 分享到群組，多個不同使用者各自點擊加入），單一時間戳無法表達「多人各自使用」；若未來需要追蹤使用記錄，應另開 per-use 日誌表，MVP 不做
 - 撤銷連結的操作入口由 API.md 後續補齊，本節先定義行為，不現在設計 API
 
-**UI 選項卡 → `min_participants`/`max_participants` 對照表**（UI 顯示「不含自己」的同伴人數，換算成後端「含自己」的欄位值）：
+### 6.2 人數選項呈現
 
-| UI 選項（不含自己） | min_participants（含自己） | max_participants（含自己） |
-|---|---|---|
-| 一個人 | 2 | 2 |
-| 2-3 人 | 3 | 4 |
-| 4-6 人 | 5 | 7 |
-| 不限，人多熱鬧 | 3 | 不設上限（🔴 或吃 `activity_type.default_max_participants`，見第 16 節開放問題） |
+🟢 **UI 選項卡的標籤直接等於 `min_participants`/`max_participants` 的實際數值（含自己）**，不再做「不含自己」的文字換算。選項組合依 `activity_type` 動態生成，依據該類型的 `default_min_participants`/`default_max_participants`/`group_size_step`（第 5 節）：
+
+- **`group_size_step` 非 null（離散模式）**：前端在 `[default_min_participants, default_max_participants]` 區間內以 `group_size_step` 為間隔生成一組固定人數選項；使用者選擇其中一個數字，`min_participants` 與 `max_participants` 皆設為該數字（精確成團人數，無彈性區間）。例：籃球 `default_min_participants=6`、`default_max_participants=12`、`group_size_step=2` → 選項為「6 人」「8 人」「10 人」「12 人」
+- **`group_size_step` 為 null（連續模式）**：前端提供落在 `[default_min_participants, default_max_participants]` 的區間選擇，使用者選定的上下界直接寫入 `min_participants`/`max_participants`，允許彈性區間。例：咖啡 `default_min_participants=2`、`default_max_participants=4` → 使用者可選「2~4 人」這類區間，對應 `min_participants=2`、`max_participants=4`
+- 🟢 `group_size_step` 語意定義見第 5 節；null = 連續區間，非 null（含 1）= 離散選項，不存在中間狀態
 
 ---
 
@@ -211,7 +218,7 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 
 🟢 **為什麼採貪婪「達 min 即關」而不是「盡量湊到 max」**：(1) 與整份 spec「降低等待時間、任何環節都不能被無限期卡住」的哲學一致；(2) 讓 Downgrade 語意維持乾淨——Downgrade 存在的意義正是「連 `min_participants` 都湊不到才需要」，若改採「盡量等到 max」策略，會多出一段「已達 min、未達 max、也還沒到 `latest_start`」的曖昧期，需要額外設計使用者能否主動喊停的機制，MVP 不做這個複雜度。
 
-🔴 **已知簡化**：貪婪策略下，「不限，人多熱鬧」選項（`min_participants=3`）與「2-3 人」選項（`max_participants=4`）在達到 3 人時會出現完全相同的成局行為，兩者目前無法區分（見第 16 節開放問題），先接受，之後若使用者對「不限」選項有「沒等到更多人」的落差反饋，再考慮加權重或差異化處理。
+🔴 **已知簡化**：貪婪策略下，連續模式（`group_size_step` 為 null，見第 6.2 節）的選項只要 `min_participants < max_participants`，達到 `min_participants` 就會立即成局，不會實際等到湊滿 `max_participants`——相同 `min_participants` 但不同 `max_participants` 的選項，在成局當下行為完全相同、無法區分（見第 16 節開放問題），先接受，待有實際使用數據反饋「沒等到更多人」的落差後，再考慮加權重或差異化處理。
 
 架構上用 **Queue**（依 activity_type 分流）解耦候選池與配對演算法，未來換演算法不需動 Request/Activity 結構。
 
@@ -373,7 +380,7 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 - 設計理由：安全把關不能靠「有沒有留 IG 這種填了就算數、無法驗證真假的東西」（見第 2 節個人資料門檻，那只是基礎過濾），而要靠「這個人有沒有真的出席過、被別人驗證過是真人」這種更扎實的信號——這正是 Reliability 系統本來就在算的東西，不用重造
 - 🔴 `min_participants ≤ 2` 的門檻定義為「低人數」的具體切點，可能需依實際新人事故率調整，見第 16 節開放問題
 - **與 Downgrade 流程的邊界**：此限制只在 Request **建立/加入當下**檢查 `min_participants`；若一個多人 Request 事後透過 Downgrade（見第 8 節）縮編到 ≤2 人，池中原本合規加入的 New 等級成員不會被追溯剔除，避免懲罰已經照規矩排隊的使用者
-- 🟢 **與 12.1.2 的判準差異**：本節在 Request 建立/加入當下用 `min_participants ≤ 2` 把關新人資格（min 代表 owner 明確接受的人數下限）；12.1.2 的 `PENDING_CONFIRMATION` 觸發用的是配對當下的**實際撮合人數**，兩者判準基準不同但不衝突——依第 6.1 節 UI 對照表，只有「一個人」選項（`min_participants=2`）可能同時命中兩個判準，其餘三個選項 `min_participants≥3`，結構上不可能觸發任一判準
+- 🟢 **與 12.1.2 的判準差異**：本節在 Request 建立/加入當下用 `min_participants ≤ 2` 把關新人資格（min 代表 owner 明確接受的人數下限）；12.1.2 的 `PENDING_CONFIRMATION` 觸發用的是配對當下的**實際撮合人數**，兩者判準基準不同但不衝突——依第 6.2 節動態生成的人數選項，只有當使用者選擇的選項使 `min_participants=2` 時（例如離散模式最小選項恰為 2 人，或連續模式選了下限 2 人），才可能同時命中兩個判準；`min_participants≥3` 的選項，結構上不可能觸發任一判準
 
 #### 12.1.2 PENDING_CONFIRMATION：對稱雙向確認
 
@@ -439,7 +446,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION，細節待補）
 6. 隱私權政策文件（收集資料種類、聯絡方式用途、刪除帳號流程、第三方服務 Supabase 揭露）—— 上架前必須補齊
 7. 新人配對資格限制的 `min_participants ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
-8. 「不限，人多熱鬧」選項（`min_participants=3`）在貪婪成局策略下與「2-3 人」選項行為一致（皆在湊到 3 人時立即收尾），是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 7 節）
+8. 貪婪成局策略下，連續模式（`group_size_step` 為 null）的選項只要 `min_participants < max_participants`，達到 `min_participants` 就會立即成局、不等待湊到 `max_participants`——v1.5 版本「不限，人多熱鬧」的固定選項在 v1.6 UI 重構後已不存在，但此行為特性對任何連續模式選項依然成立，是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 6.2、7 節）
 9. `max_participants` 為 NULL 時是否要在寫入當下就填入 `activity_type.default_max_participants`、還是維持 NULL 由讀取端 fallback，兩種做法對「人數超額」判斷（第 7 節）行為一致但實作路徑不同，待 API 設計階段定案
 10. 邀請連結撤銷（`revoked_at`）的操作入口與 API 尚未設計，見第 6.1 節
 

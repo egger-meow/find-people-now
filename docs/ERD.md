@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.5）
+# ERD — 校園活動配對 App（派生自 SPEC v1.6）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -65,6 +65,7 @@ erDiagram
         int default_duration_minutes "nullable，null 時 fallback 60"
         int default_min_participants "nullable，null 時 fallback 2（v1.5）"
         int default_max_participants "nullable，null 時 fallback 6（v1.5）"
+        int group_size_step "nullable，非 null 時離散化人數選項間隔；null = 連續區間（v1.6）"
         enum status "PENDING | APPROVED | REJECTED"
         uuid created_by FK
         timestamptz created_at
@@ -244,3 +245,4 @@ erDiagram
 19. **`PENDING_CONFIRMATION` 觸發判準無法用 CHECK 常數表達（v1.5）**：觸發依據是 Matching Engine 撮合當下的**實際人數**，不是 `min_participants`/`max_participants` 這兩個靜態欄位，因此這條規則只能落在應用層（Matching Engine 邏輯），DB 層沒有對應的 CHECK 或 trigger 可以完整表達「本次撮合人數 ≤ 2」這件事——這是設計上刻意的取捨，不是遺漏。
 20. **`known_member_count` 不是欄位（v1.5）**：這是查詢時算出的值，SQL 概念上等同 `SELECT count(*) FROM activity_member WHERE activity_id = :aid AND source_request_id = (SELECT source_request_id FROM activity_member WHERE activity_id = :aid AND user_id = :uid) AND user_id != :uid`，不落地成 `activity_member` 或 `activity` 上的任何欄位。
 21. **`downgrade_request.target_size` 沒有 DB 層 CHECK 約束（v1.5 補充）**：業務規則是「必須低於原 `min_participants`」，但 `min_participants` 存在 `match_request` 另一張表，PostgreSQL 的 CHECK 不能跨表引用，這條驗證留在應用層（或未來視需要補 trigger），schema 只存數值本身。
+22. **`activity_type` 新增 `group_size_step`（nullable int，v1.6）**：不做成 `allowed_group_sizes[]` 陣列——若用陣列，admin 審核連續模式類型時要手動列舉每個可選人數，徒增管理負擔；用 `group_size_step` + `default_min_participants`/`default_max_participants` 三者，由前端動態算出離散選項即可，admin 只需設定三個數字。🟢 **`group_size_step` 只要被設定為非 null 值（包含 1），前端一律按離散選項渲染；null 才代表連續區間。不存在「連續區間但同時設了 step」的中間狀態，避免 `step=1` 這類邊界值造成解讀歧義。** 明確不新增 `group_size_mode` 欄位——`group_size_step` 的 nullability 已完整表達離散/連續兩種模式，另開欄位會造成兩欄位需彼此保持一致的重複真相問題，與第 18 點 `invite_token` 不另存 `expire_at`、第 20 點 `known_member_count` 不額外儲存同一精神。
