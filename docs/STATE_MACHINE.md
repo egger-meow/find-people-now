@@ -1,6 +1,6 @@
 # State Machine — 校園活動配對 App（派生自 SPEC v1.6）
 
-> 本文件由 [SPEC.md](SPEC.md) §6.1、§7、§8、§9、§12.1 推導。**狀態值域已在 [ERD.md](ERD.md) 定案**（`request_status`、`activity_status`），本文件不新增狀態，價值在於補齊每條轉移的**觸發條件**：誰觸發（使用者／Matching Engine／排程）、什麼條件下觸發、伴隨哪些副作用。
+> 本文件由 [SPEC.md](SPEC.md) §6.2、§7、§8、§9、§12.1 推導。**狀態值域已在 [ERD.md](ERD.md) 定案**（`request_status`、`activity_status`），本文件不新增狀態，價值在於補齊每條轉移的**觸發條件**：誰觸發（使用者／Matching Engine／排程）、什麼條件下觸發、伴隨哪些副作用。
 
 兩張圖的分界（SPEC v1.1 變更 3）：`MatchRequest` 只代表「找人的流程」，`Activity` 才代表「實際發生的活動」。配對成功時 `MatchRequest` 定格在 `MATCHED`，同時建立 `Activity` 跑自己的生命週期，之後不再回頭改 `MatchRequest`。
 
