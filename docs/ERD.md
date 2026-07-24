@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.3）
+# ERD — 校園活動配對 App（派生自 SPEC v1.4）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 實體關聯圖（13 張表）
+## 1. 實體關聯圖（15 張表）
 
 ```mermaid
 erDiagram
@@ -27,6 +27,10 @@ erDiagram
     downgrade_request ||--o{ downgrade_consent : ""
     app_user ||--o{ downgrade_consent : ""
 
+    match_request ||--o{ pending_confirmation : "request_a_id / request_b_id 候選配對雙方"
+    app_user ||--o{ match_history_avoidance : "user_a_id / user_b_id"
+    pending_confirmation ||--o{ match_history_avoidance : "source_pending_confirmation_id"
+
     activity ||--o{ completion_report : ""
     app_user ||--o{ completion_report : "reporter_id"
 
@@ -46,6 +50,8 @@ erDiagram
         text avatar_url "註冊硬性門檻，NOT NULL"
         text gender "nullable，僅展示，不進配對邏輯"
         text bio "nullable，選填自我介紹，僅展示、不進配對邏輯（v1.3）"
+        text department "nullable，選填科系，僅展示、不進配對邏輯（v1.4）"
+        enum degree_level "UNDERGRAD | MASTER | PHD，NOT NULL，註冊時強制下拉，僅展示、不進配對邏輯（v1.4）"
         text contact_ig "nullable"
         text contact_line "nullable"
         text contact_discord "nullable，CHECK：三者至少一項 NOT NULL"
@@ -81,7 +87,7 @@ erDiagram
         int flexible_minutes "v1 固定 0，欄位預留"
         int required_total "CHECK：>= 2"
         bool allow_downgrade
-        enum status "DRAFT | REQUESTING | MATCHED | EXPIRED | CANCELLED"
+        enum status "DRAFT | REQUESTING | PENDING_CONFIRMATION | MATCHED | EXPIRED | CANCELLED（v1.4 新增 PENDING_CONFIRMATION）"
         timestamptz created_at
     }
 
@@ -145,6 +151,26 @@ erDiagram
         timestamptz created_at
     }
 
+    pending_confirmation {
+        uuid id PK
+        uuid request_a_id FK "候選配對其中一方的 match_request"
+        uuid request_b_id FK "候選配對另一方的 match_request，CHECK：request_a_id != request_b_id"
+        timestamptz confirm_window_expire_at "= created_at + 10 分鐘 CONFIRM_WINDOW"
+        enum user_a_response "CONFIRMED | DECLINED | NO_RESPONSE"
+        enum user_b_response "CONFIRMED | DECLINED | NO_RESPONSE"
+        enum status "PENDING | CONFIRMED | DECLINED | TIMEOUT"
+        timestamptz created_at
+    }
+
+    match_history_avoidance {
+        uuid id PK
+        uuid user_a_id FK "正規化：pair 中較小的 UUID"
+        uuid user_b_id FK "正規化：pair 中較大的 UUID，CHECK：user_a_id < user_b_id"
+        uuid source_pending_confirmation_id FK "來源：哪次未成立的 PENDING_CONFIRMATION"
+        timestamptz failed_at
+        timestamptz expire_at "= failed_at + 7 天，過期後降權失效"
+    }
+
     rematch_vote {
         uuid activity_id PK, FK "複合 PK (activity_id, from_user_id, to_user_id)"
         uuid from_user_id PK, FK
@@ -170,13 +196,16 @@ erDiagram
 |---|---|---|
 | `school` | `NYCU` `NTHU` | §2（v1.2；由 email 網域 mapping 判定） |
 | `activity_type_status` | `PENDING` `APPROVED` `REJECTED` | §5 |
-| `request_status` | `DRAFT` `REQUESTING` `MATCHED` `EXPIRED` `CANCELLED` | §6、§9 |
+| `request_status` | `DRAFT` `REQUESTING` `PENDING_CONFIRMATION` `MATCHED` `EXPIRED` `CANCELLED` | §6、§9、§12.1（v1.4 新增 `PENDING_CONFIRMATION`） |
 | `request_member_role` | `OWNER` `MEMBER` | §6 |
 | `request_member_status` | `JOINED` `LEFT` | §6（値域為本文件補定，見下方註記） |
+| `degree_level` | `UNDERGRAD` `MASTER` `PHD` | §2（v1.4） |
 | `activity_status` | `MATCHED` `ONGOING` `COMPLETED` `CANCELLED` | §9 |
 | `activity_member_status` | `JOINED` `CANCELLED` | §9（値域為本文件補定，見下方註記） |
 | `downgrade_status` | `PENDING` `APPROVED` `REJECTED` `TIMEOUT` | §8 |
 | `downgrade_response` | `AGREE` `DISAGREE` `NO_RESPONSE` | §8 |
+| `pending_confirmation_status` | `PENDING` `CONFIRMED` `DECLINED` `TIMEOUT` | §12.1（v1.4） |
+| `pending_confirmation_response` | `CONFIRMED` `DECLINED` `NO_RESPONSE` | §12.1（v1.4） |
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
 | `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` | §16 開放問題 5（清單可能擴充） |
@@ -199,3 +228,9 @@ erDiagram
 8. **`school` 用 enum、不開第 14 張 School 表**（v1.2）：學校清單由 email domain mapping 硬編碼決定（`nycu.edu.tw → NYCU`、`nthu.edu.tw → NTHU`），新增一間學校本來就得改 migration（新增網域規則），開表得不到任何彈性，enum 就夠。`app_user.school` 與 `location.school` 用同一個 enum；DB 層另加 CHECK 保證 `school` 與 email 網域一致（「不讓 user 自選」直接由 DB 保證，不只靠應用層）。
 9. **同校隔離不在 Matching Engine 加條件**（SPEC §7）：Request 建立時檢查 `campus_location_id` 屬於 owner 的 `school`，加上「地點必須完全相同才可 merge」，同校隔離天然成立；跨校 fallback matching 留 future，屆時才需要動引擎。
 10. **`bio` 選填、不做 CHECK**（v1.3）：跟 `gender` 同等級，純展示欄位。不像 `avatar_url`/`contact_*` 有 NOT NULL / at-least-one 約束——沒有值就是 `NULL`，不卡任何流程。
+11. **`degree_level` 用 enum、`department` 用純文字**（v1.4）：`degree_level` 是註冊時強制下拉的固定選項，enum 天然合適；`department` 各校系所清單龐雜且會變動，不值得為此開一張表或做 enum，純文字欄位即可，僅展示、不進查詢邏輯。
+12. **明確不新增 `grade_year`**（v1.4）：SPEC §2 已說明理由（階級感/圈層比較心態，與產品平等出發點衝突）；schema 層的落地就是 `app_user` 上不存在、也不會存在這個欄位。
+13. **`PENDING_CONFIRMATION` 選擇進 `request_status` enum，不做成 Downgrade 式的子流程表**（v1.4）：核心工程理由是查詢成本——Matching Engine 抓候選池時只需要 `WHERE status = 'REQUESTING'` 就能自然排除掉正卡在候選配對中的 Request；若做成子流程表（`match_request.status` 仍停在 `REQUESTING`，另外查 `pending_confirmation` 是否有進行中記錄），Matching Engine 每次掃描都要多 join 一層排除邏輯，容易漏寫，未來新增查詢路徑時也容易再次漏寫。這點與 Downgrade（SPEC §8）不同：Downgrade 是「原地詢問，不論成功與否都留在同一個 `required_total` 繼續撮合」的暫時性旁支決策；`PENDING_CONFIRMATION` 則是「配對本體是否成立」的核心狀態，值得佔一個 status 值。
+14. **`pending_confirmation` 表結構固定雙方（`request_a_id`/`request_b_id`），不做成泛化的 `CandidateMatch`**（v1.4）：MVP 階段 `required_total ≤ 2` 場景下候選配對就是恰好兩個 Request 對上，沒有「多個候選同時競爭」的需求，不預先為「未來可能擴展成多方候選」做抽象；等真的出現該場景再重構表結構與命名。
+15. **`match_history_avoidance` 的 pair 正規化**（v1.4）：`user_a_id < user_b_id` 的 CHECK 約束確保同一對使用者不論誰是 request owner，都寫入同一筆 pair 記錄，Matching Engine 查詢降權只需查一次、不用 OR 兩種順序。
+16. **對稱不歸因設計的落地**（v1.4）：`pending_confirmation.user_a_response`/`user_b_response` 各自獨立存，但 API 層讀取規則是雙方都只查得到 `status`（`PENDING`/`CONFIRMED`/`DECLINED`/`TIMEOUT`），查不到對方的 response 明細——避免任一方知道「是不是我造成配對失敗」，落實 SPEC §12.1.2 的不歸因原則。

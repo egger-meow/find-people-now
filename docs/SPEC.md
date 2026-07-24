@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.3 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.4 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -20,6 +20,14 @@
 > **v1.3 變更紀錄**（個人資料補充欄位）：
 > 1. `User` 新增 `bio`（自我介紹）欄位，**選填**，純展示用、不進配對邏輯、不卡註冊門檻（見第 2 節）
 
+> **v1.4 變更紀錄**（小人數活動安全機制 + 學制欄位）：
+> 1. `User` 新增 `department`（科系，選填，僅展示）、`degree_level`（學制：大學部／碩士班／博士班，**註冊時強制下拉**，僅展示）；明確**不**新增 `grade_year`（年級/屆數）——理由見第 2 節
+> 2. `required_total ≤ 2` 的配對新增 **`PENDING_CONFIRMATION`** 中間態：Matching Engine 盲配成功後，雙方需在 `CONFIRM_WINDOW = 10 分鐘` 內對稱雙向確認，才正式生成 Activity；任一方不確認或超時 → 靜默解散、不歸因，處理原則比照第 8 節 Downgrade（見第 12.1、第 9 節）
+> 3. 新增配對冷卻（Match History Avoidance）：曾進入 `PENDING_CONFIRMATION` 但未成立的使用者配對，7 天內軟性降權，非永久拉黑（見第 12.1 節）
+> 4. 新增小人數活動「安全資訊卡」：`required_total ≤ 2` 進入 `PENDING_CONFIRMATION` 時展示有限資訊（含 `department`/`degree_level`/Reliability），明確不含聯絡方式（見第 12.1 節）
+> 5. 既有「New 等級不可直接參加 ≤2 人活動」規則併入第 12.1 節，與上述機制整合成同一節，不再分散重複
+> 6. 第 13 節補充背景排程機制（Supabase pg_cron），統一說明所有「時間到自動轉移」的實作方式
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
@@ -40,8 +48,8 @@
 | 學校 | NYCU（陽明交大）+ NTHU（清大）；配對池同校隔離，跨校配對為 future feature（見第 7 節） |
 | 活動類型 | 預設 4 種起（籃球🏀／咖啡☕／散步🚶／讀書📚），使用者可新增，見第 5 節 |
 | 身份驗證 | 學校專屬網域信箱（`@nycu.edu.tw` / `@nthu.edu.tw`，非泛用 `.edu.tw` 後綴；`school` 依網域自動判定）+ OTP（不做正式 CAS 串接） |
-| 個人資料門檻 | 頭像照片 + 至少 1 項外部聯絡方式（IG/LINE/Discord 擇一）**註冊時強制必填**，未填無法發起/加入 Request（見第 2 節） |
-| 新人配對資格 | 🔴 New 等級使用者不能直接發起/加入低人數（`required_total ≤ 2`）的 Request，須先完成 ≥1 次多人活動解鎖（見第 12 節） |
+| 個人資料門檻 | 頭像照片 + `degree_level`（學制下拉）+ 至少 1 項外部聯絡方式（IG/LINE/Discord 擇一）**註冊時強制必填**，未填無法發起/加入 Request（見第 2 節） |
+| 小人數活動准入與確認 | `required_total ≤ 2`：🔴 New 等級不可發起/加入；盲配成功後需雙方於 10 分鐘內對稱確認（`PENDING_CONFIRMATION`）才生成 Activity，見第 12.1 節 |
 | 地點 | 固定下拉清單，依 `school` 分列（NYCU/NTHU 各自清單），不開放自由輸入（清單內容平行填充，不卡 schema） |
 | 聯絡方式 | Activity 生成即顯示，24 小時後失效（起算點是 Activity 的建立時間，不是 Request 的），雙方按「再約」才永久保留 |
 | 好友系統 | 無。用「再約」機制取代 |
@@ -58,6 +66,9 @@
 - 此門檻僅作**基礎過濾**（擋掉完全不想留任何聯絡方式的人），不是主要安全防線；真正的安全防線是第 12 節的 Reliability 分級配對資格限制，因為「有沒有留 IG」是填了就算數、無法驗證真假的資訊，「有沒有真的出席過活動」才是扎實信號
 - 性別欄位：保留、僅作個人資料展示與安全感資訊，**不進入配對核心邏輯**（不可用於篩選）
 - 🟢 **`bio`（自我介紹）欄位，選填**：短文字，讓對方在配對成立後多一點資訊判斷「這是不是我想約的人」（例如「研究所碩一，平常喜歡打球、看電影」）。跟性別欄位同等級——僅展示，**不進入配對核心邏輯**，也不列入註冊硬性門檻（不像頭像/聯絡方式會卡住 Request 發起/加入）
+- 🟢 **`department`（科系）欄位，選填**：僅展示，不進配對核心邏輯，作為配對成立後的破冰資訊之一
+- 🟢 **`degree_level`（學制）欄位，註冊時強制下拉（大學部／碩士班／博士班），不開放自由輸入**：與 `bio`/性別欄位同等級，僅展示、**不進入配對核心邏輯**，不可用於 Matching Engine 的任何篩選或加權邏輯
+- 🟢 **明確不新增 `grade_year`（年級/屆數）欄位**：年級會引入階級感／心理距離（例如「大四」對「大一」、「碩一」對「博士生」容易觸發學歷圈層比較心態），與產品核心「我現在想找一個人一起幹嘛」的平等出發點衝突，故不採用；`degree_level` 已滿足「哪個學制」的展示需求，精確到年級沒有必要也有風險
 
 ---
 
@@ -70,7 +81,11 @@
         ↓
 Matching Engine 定期掃描，依時間窗重疊 + 地點相同 + 類型相同 做 Merge
         ↓
-達成條件 → 生成 Activity（聯絡方式立即顯示，24h 後失效）
+達成條件
+        ├─ required_total > 2 → 直接生成 Activity（聯絡方式立即顯示，24h 後失效）
+        └─ required_total ≤ 2 → 進入 PENDING_CONFIRMATION（雙方對稱確認，10 分鐘窗口，見第 12.1 節）
+                ├─ 雙方皆確認 → 生成 Activity（聯絡方式立即顯示，24h 後失效）
+                └─ 任一方不確認或超時 → 靜默解散，回到 Queue 重新配對
         ↓
 start_time 到 → ONGOING
         ↓
@@ -301,15 +316,40 @@ UserReliabilityEvent
 
 Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` 即時 query 算出，不另外存一個分數快取欄位（避免資料跟事件來源不同步）。第 12.1 節「尚未完成過任何一次活動」= 該使用者沒有任何 `ATTENDED` 事件。
 
-### 12.1 新人配對資格限制（低人數場合的安全防線）
+### 12.1 小人數活動准入與確認機制（`required_total ≤ 2`）
 
-人少的場合（如一對一散步）對安全性的要求比多人局更高。這個防線**不另外發明新機制**，直接把既有的 Reliability 分級多用一層：
+人少的場合（如一對一散步）社交壓力與安全風險都比多人局更高。以下四道機制共同構成低人數場合的安全防線，整合放在同一節，不分散在文件不同段落。
+
+#### 12.1.1 新人配對資格限制
+
+這個防線**不另外發明新機制**，直接把既有的 Reliability 分級多用一層：
 
 - 🟢 **🔴 New 等級（尚未完成過任何一次活動）的使用者，不能直接發起或加入 `required_total ≤ 2` 的 Request**；第一次活動必須是多人局（如籃球 6 人局）
 - 完成至少 1 次多人活動、累積出席紀錄後，才解鎖 1 對 1 配對資格；同時等級也會依表現有機會晉升為 🟡 Normal
 - 設計理由：安全把關不能靠「有沒有留 IG 這種填了就算數、無法驗證真假的東西」（見第 2 節個人資料門檻，那只是基礎過濾），而要靠「這個人有沒有真的出席過、被別人驗證過是真人」這種更扎實的信號——這正是 Reliability 系統本來就在算的東西，不用重造
 - 🔴 `required_total ≤ 2` 的門檻定義為「低人數」的具體切點，可能需依實際新人事故率調整，見第 16 節開放問題
 - **與 Downgrade 流程的邊界**：此限制只在 Request **建立/加入當下**檢查 `required_total`；若一個多人 Request 事後透過 Downgrade（見第 8 節）縮編到 ≤2 人，池中原本合規加入的 New 等級成員不會被追溯剔除，避免懲罰已經照規矩排隊的使用者
+
+#### 12.1.2 PENDING_CONFIRMATION：對稱雙向確認
+
+🟢 `required_total ≤ 2` 屬於近似 1 對 1 的低人數場景，社交壓力顯著更高。Matching Engine 盲配成功（第 7 節規則）後，不直接生成 Activity，而是先進入 **`PENDING_CONFIRMATION`** 中間態：
+
+- 雙方各自收到通知，有 `CONFIRM_WINDOW = 10 分鐘` 決定是否「確認參加」
+- 雙方都確認 → 生成 Activity（照第 9 節規則顯示聯絡方式、`MatchRequest` 定格在 `MATCHED`）
+- 任一方明確不確認，或超時未回應 → 配對**靜默解散**，`MatchRequest` 退回 `REQUESTING` 重新進池
+- 🟢 **關鍵原則：機制必須對稱、雙向，不能設計成其中一方審核/批准另一方。** 雙方看到的結果都只是「此次配對未成立」，不透露是誰沒確認、是主動拒絕還是超時——處理方式與第 8 節 Downgrade「超時視為拒絕、不追究」的邏輯一致，複用同一套不歸因原則，不另外發明一套「審核」語言或 UI
+
+#### 12.1.3 安全資訊卡
+
+- `required_total > 2`（多人局）：維持第 11 節既有規則，配對成功前不展示對方任何資訊
+- `required_total ≤ 2`：進入 `PENDING_CONFIRMATION` 時展示「小人數安全資訊卡」：
+  - **包含**：頭像、姓名、`school`、`department`、`degree_level`、Reliability 等級、已完成活動次數
+  - **明確不包含**：IG/LINE/Discord 等任何外部聯絡方式——理由是配對此時尚未確認成立，若在這個階段就曝露聯絡方式，會重新打開第 15 節已知風險「聯絡方式收割」的漏洞
+
+#### 12.1.4 配對冷卻（Match History Avoidance）
+
+- 若同一對使用者曾進入 `PENDING_CONFIRMATION` 但最終未成立（任一方未確認），近 7 天內 Matching Engine 對這一對使用者應**降低**（不是禁止）再次被配成同一組的權重
+- 這是軟性降權，不是永久或硬性拉黑，避免「只是當時時間不合」被永久排除
 
 ---
 
@@ -319,10 +359,13 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 |---|---|
 | 行動端 | Flutter |
 | 後端 | Supabase（Auth / PostgreSQL / Realtime / Storage） |
+| 背景排程 | Supabase pg_cron |
 | 通知 | Firebase Cloud Messaging |
 | 地圖 | Google Maps API |
 
 MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime connection 成本可觀測）再評估是否拆分。
+
+🟢 **背景排程機制**：spec 中至少三處狀態轉移依賴「時間到了自動觸發」——`REQUESTING → EXPIRED`（第 9 節，到 `latest_start`）、`ONGOING → COMPLETED`（第 9 節，`start_time + 24h` fallback）、`PENDING_CONFIRMATION → REQUESTING`（第 12.1.2 節，`CONFIRM_WINDOW` 超時）。這類轉移統一用 **Supabase pg_cron** 定期（例如每分鐘）掃描相關資料表、觸發對應轉移邏輯。這是**邏輯層**的排程任務，不需要在 ERD 新增資料表——ERD 裡各個已有 timeout 欄位的表（`match_request.latest_start`、`downgrade_request.expire_at`、`pending_confirmation.confirm_window_expire_at`）本身已足夠支撐 pg_cron 查詢「哪些記錄已經超時該轉移」。
 
 ---
 
@@ -357,7 +400,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 ## 17. Roadmap / 下一步
 
 1. ✅ Spec 定案（本文件）
-2. ✅ ERD，共 13 張表：User / ActivityType / Location / MatchRequest / RequestMember / Activity / ActivityMember / DowngradeRequest / DowngradeConsent / CompletionReport / UserReliabilityEvent / RematchVote / Notification → [ERD.md](ERD.md)
+2. ✅ ERD，共 15 張表：User / ActivityType / Location / MatchRequest / RequestMember / Activity / ActivityMember / DowngradeRequest / DowngradeConsent / CompletionReport / UserReliabilityEvent / RematchVote / Notification / PendingConfirmation / MatchHistoryAvoidance → [ERD.md](ERD.md)
 3. ✅ State Machine diagram（第 9 節核心版本 + 完整轉移觸發條件表）→ [STATE_MACHINE.md](STATE_MACHINE.md)
 4. ✅ Supabase migration（enum 來自 State Machine 定案值域）→ [migrations/](migrations/)
 5. ✅ API endpoint spec（建立在 ERD 定案之上）→ [API.md](API.md)
