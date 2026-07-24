@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.4 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.5 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -28,6 +28,13 @@
 > 5. 既有「New 等級不可直接參加 ≤2 人活動」規則併入第 12.1 節，與上述機制整合成同一節，不再分散重複
 > 6. 第 13 節補充背景排程機制（Supabase pg_cron），統一說明所有「時間到自動轉移」的實作方式
 
+> **v1.5 變更紀錄**（邀請連結取代好友系統、人數彈性化）：
+> 1. 新增邀請連結機制：`MatchRequest` 新增 `invite_token`（唯一，生命週期依附 Request 本身的狀態與 24 小時邊界，不另存到期時間）與 `revoked_at`（owner 可主動撤銷連結）；已完成身份驗證的使用者透過連結**直接加入**，不經 owner 二次審核，v1 沒有 Friend entity、不存任何朋友關係資料（見第 6.1 節）
+> 2. `required_total` 拆成 `min_participants`/`max_participants`（皆計入 owner 本人），`ActivityType` 新增對應的 `default_min_participants`/`default_max_participants`（fallback 2/6，比照 `default_duration` 的 admin 設定模式）；UI 不直接暴露 min/max 字眼，改用選項卡對應（見第 6 節）
+> 3. Matching Engine 明確採用「達到 `min_participants` 立即成局」的貪婪策略，不等待湊到 `max_participants`（見第 7 節）；Downgrade 觸發條件相應改為「連 `min_participants` 都湊不到」（見第 8 節）
+> 4. 新增 `known_member_count`：**不新增儲存欄位**，由查詢即時算出（同一 Activity 內與自己 `source_request_id` 相同的 `ActivityMember` 人數），見第 9 節
+> 5. 第 12.1 節准入/確認判準明確區分兩個時間點：發起/加入當下用 `min_participants ≤ 2` 把關新人資格，配對當下用**實際撮合人數** ≤ 2 觸發 `PENDING_CONFIRMATION`（機制本身不變，只是判準基準從固定數字換成動態欄位後需要重新說清楚）
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
@@ -38,6 +45,7 @@
 - **找一起做事的人，不是找對象。** 活動先發生，關係自然形成；認識人是副產品，不是目的。
 - 不做站內聊天室、不做好友系統、不做性別篩選導向設計。
 - MVP 階段，產品最大風險是「有沒有人用」，不是「scale 撐不撐得住」——所有技術選型以「快速驗證」為最高優先。
+- 🟢 **邀請連結（第 6.1 節）不是好友系統的例外**：v1 沒有 Friend entity，不存任何朋友關係資料；連結只是 Request 生命週期內「已完成身份驗證的使用者直接加入」的入口，用完即與該次 Request 的狀態一起結束，不留下任何跨 Request 的關係紀錄。
 
 ---
 
@@ -49,10 +57,12 @@
 | 活動類型 | 預設 4 種起（籃球🏀／咖啡☕／散步🚶／讀書📚），使用者可新增，見第 5 節 |
 | 身份驗證 | 學校專屬網域信箱（`@nycu.edu.tw` / `@nthu.edu.tw`，非泛用 `.edu.tw` 後綴；`school` 依網域自動判定）+ OTP（不做正式 CAS 串接） |
 | 個人資料門檻 | 頭像照片 + `degree_level`（學制下拉）+ 至少 1 項外部聯絡方式（IG/LINE/Discord 擇一）**註冊時強制必填**，未填無法發起/加入 Request（見第 2 節） |
-| 小人數活動准入與確認 | `required_total ≤ 2`：🔴 New 等級不可發起/加入；盲配成功後需雙方於 10 分鐘內對稱確認（`PENDING_CONFIRMATION`）才生成 Activity，見第 12.1 節 |
+| 人數設定 | 不開放自由輸入人數，改用選項卡對應到 `min_participants`/`max_participants`（皆含 owner 本人），見第 6 節 |
+| 小人數活動准入與確認 | `min_participants ≤ 2`：🔴 New 等級不可發起/加入；盲配成功後若**實際撮合人數** ≤ 2，需雙方於 10 分鐘內對稱確認（`PENDING_CONFIRMATION`）才生成 Activity，見第 12.1 節 |
+| 邀請連結 | Request 可產生 `invite_token`，已完成身份驗證的使用者點擊即直接加入，不經 owner 二次審核；owner 可隨時撤銷，見第 6.1 節 |
 | 地點 | 固定下拉清單，依 `school` 分列（NYCU/NTHU 各自清單），不開放自由輸入（清單內容平行填充，不卡 schema） |
 | 聯絡方式 | Activity 生成即顯示，24 小時後失效（起算點是 Activity 的建立時間，不是 Request 的），雙方按「再約」才永久保留 |
-| 好友系統 | 無。用「再約」機制取代 |
+| 好友系統 | 無 Friend entity。「再約」機制取代長期關係留存，邀請連結取代臨時揪團傳播 |
 | 聊天室 | 無 |
 
 ---
@@ -81,9 +91,9 @@
         ↓
 Matching Engine 定期掃描，依時間窗重疊 + 地點相同 + 類型相同 做 Merge
         ↓
-達成條件
-        ├─ required_total > 2 → 直接生成 Activity（聯絡方式立即顯示，24h 後失效）
-        └─ required_total ≤ 2 → 進入 PENDING_CONFIRMATION（雙方對稱確認，10 分鐘窗口，見第 12.1 節）
+達成條件（候選池達到 min_participants 立即成局，不等待湊到 max_participants，見第 7 節）
+        ├─ 實際撮合人數 > 2 → 直接生成 Activity（聯絡方式立即顯示，24h 後失效）
+        └─ 實際撮合人數 ≤ 2 → 進入 PENDING_CONFIRMATION（雙方對稱確認，10 分鐘窗口，見第 12.1 節）
                 ├─ 雙方皆確認 → 生成 Activity（聯絡方式立即顯示，24h 後失效）
                 └─ 任一方不確認或超時 → 靜默解散，回到 Queue 重新配對
         ↓
@@ -118,10 +128,11 @@ start_time 到 → ONGOING
 - 已上線（APPROVED）的類型仍保留事後檢舉機制：Report → Review → Remove/限制帳號
 - 新增類型前做**既有類型的模糊比對/autocomplete 提示**（如「羽球」vs「羽毛球」），減少重複類型稀釋配對池，MVP 不用做重，能擋掉大部分重複即可
 - `default_duration` 由 admin 審核通過時設定；**null 時 fallback = 60 分鐘**（SYSTEM_DEFAULT_DURATION），之後依資料調整
+- 🟢 `default_min_participants`/`default_max_participants` 同樣由 admin 審核通過時設定，供第 6 節 UI 選項卡「不限，人多熱鬧」選項的上限沒有指定時取用；**null 時 fallback = 2 / 6**，比照 `default_duration` 的 fallback 模式
 
 ```
 ActivityType
-- id, name, default_duration (nullable), status(PENDING/APPROVED/REJECTED), created_by, created_at
+- id, name, default_duration (nullable), default_min_participants (nullable), default_max_participants (nullable), status(PENDING/APPROVED/REJECTED), created_by, created_at
 ```
 
 ---
@@ -139,12 +150,15 @@ MatchRequest
 - acceptable_location_ids[]  # v1 只填 1 個，欄位預留未來多選
 - earliest_start, latest_start   # 硬約束：≤ created_at + 24h，UI 層擋掉超範圍輸入
 - flexible_minutes           # v1 固定 0，欄位預留
-- required_total
+- min_participants            # 含 owner 本人的活動總人數下限，CHECK >= 2
+- max_participants            # 含 owner 本人的活動總人數上限，nullable = 不設上限（fallback 至 activity_type.default_max_participants）
+- invite_token                 # nullable，唯一；生命週期依附本 Request 的 status/24h 邊界，不另存到期時間
+- revoked_at                   # nullable，owner 主動撤銷邀請連結的時間
 - allow_downgrade(bool)
 - status(DRAFT/REQUESTING/MATCHED/EXPIRED/CANCELLED)   # ONGOING/COMPLETED 移到 Activity，見第 9 節
 - created_at
 
-RequestMember              # 取代 member_ids[]；已組好的朋友直接放同一 Request，不做獨立 FriendGroup 表
+RequestMember              # 取代 member_ids[]；含透過邀請連結加入的使用者，不做獨立關係表
 - id
 - request_id
 - user_id
@@ -155,9 +169,30 @@ RequestMember              # 取代 member_ids[]；已組好的朋友直接放�
 
 拆成 join table 後，owner consent（第 8 節 `DowngradeConsent`）、member consent、Reliability 事件、CompletionReport 的參與者都能溯源到這裡，不用另外猜資料從哪來。
 
+🟢 **`min_participants`/`max_participants` 皆代表活動總人數，包含 owner 本人**——這是後端欄位的計數基準；第 6.1 節 UI 選項卡的文字描述的是「不含自己的同伴人數」，兩者刻意不同，換算關係見第 6.1 節對照表，避免前後端對「人數」的定義不一致造成實作誤解。
+
 **限制**：
 - 同一使用者同時只能有一個 `REQUESTING` 狀態的 Request（以 `owner_id` 判定）；`MATCHED` 之後不受此限制（已非等待中的資源）
 - `campus_location_id` 必須屬於 owner 的 `school`——這是配對池同校隔離（第 7 節）的落地點
+
+### 6.1 邀請連結（Invite Link）
+
+已完成身份驗證的使用者透過邀請連結加入 Request，不經 owner 二次審核——點擊連結並通過 `.edu` 驗證本身就是確認，v1 沒有 Friend entity、不重新檢查雙方是否有任何既有關係。
+
+- 連結對應 `match_request.invite_token`，生命週期依附 Request 本身：Request 離開 `REQUESTING`（配對成功/取消/過期）連結自然失效，不另存一個獨立的到期時間欄位
+- owner 可隨時將 `revoked_at` 設為現在時間，主動撤銷連結（例如連結外流到非預期對象），不用等 Request 自然離開 `REQUESTING` 或等 24 小時到期
+- 🟢 **連結有效 = `match_request.status = 'REQUESTING'` 且 `revoked_at IS NULL`**
+- 🔴 **不新增 `used_at`**：連結設計上是多人可重複使用（owner 分享到群組，多個不同使用者各自點擊加入），單一時間戳無法表達「多人各自使用」；若未來需要追蹤使用記錄，應另開 per-use 日誌表，MVP 不做
+- 撤銷連結的操作入口由 API.md 後續補齊，本節先定義行為，不現在設計 API
+
+**UI 選項卡 → `min_participants`/`max_participants` 對照表**（UI 顯示「不含自己」的同伴人數，換算成後端「含自己」的欄位值）：
+
+| UI 選項（不含自己） | min_participants（含自己） | max_participants（含自己） |
+|---|---|---|
+| 一個人 | 2 | 2 |
+| 2-3 人 | 3 | 4 |
+| 4-6 人 | 5 | 7 |
+| 不限，人多熱鬧 | 3 | 不設上限（🔴 或吃 `activity_type.default_max_participants`，見第 16 節開放問題） |
 
 ---
 
@@ -169,9 +204,14 @@ RequestMember              # 取代 member_ids[]；已組好的朋友直接放�
 | 地點 | 必須 `campus_location_id` 完全相同 |
 | 類型 | 必須相同 `activity_type_id` |
 | 學校 | 🟢 MVP 配對池以 `school` 隔離，僅同校可 merge；由「地點必屬 owner 的 school」+「地點必須完全相同」兩條規則天然保證，引擎不需額外判斷 |
-| 人數超額 | 優先填滿 `required_total`；多出的人保留原 Request，繼續進入下一輪撮合 |
-| 未湊滿 | 到 `latest_start` 仍未滿 → 若 `allow_downgrade=true` 觸發降門檻流程（見第 8 節）；否則 → `EXPIRED` |
-| 新人配對資格 | `required_total ≤ 2` 的 Request，🔴 New 等級使用者不能發起也不能加入；細節與理由見第 12 節 |
+| 成局時機 | 🟢 **貪婪策略：候選池一旦達到 `min_participants` 立即成局生成 Activity，不等待湊到 `max_participants`**；超過 `min_participants` 但尚未到 `max_participants` 的候選不會被刻意保留等待 |
+| 人數超額 | 若候選組合超過 `max_participants`，只取前 `max_participants` 人成局；多出的人保留原 Request，繼續進入下一輪撮合 |
+| 未湊滿 | 到 `latest_start` 仍未達 `min_participants` → 若 `allow_downgrade=true` 觸發降門檻流程（見第 8 節）；否則 → `EXPIRED` |
+| 新人配對資格 | `min_participants ≤ 2` 的 Request，🔴 New 等級使用者不能發起也不能加入；細節與理由見第 12 節 |
+
+🟢 **為什麼採貪婪「達 min 即關」而不是「盡量湊到 max」**：(1) 與整份 spec「降低等待時間、任何環節都不能被無限期卡住」的哲學一致；(2) 讓 Downgrade 語意維持乾淨——Downgrade 存在的意義正是「連 `min_participants` 都湊不到才需要」，若改採「盡量等到 max」策略，會多出一段「已達 min、未達 max、也還沒到 `latest_start`」的曖昧期，需要額外設計使用者能否主動喊停的機制，MVP 不做這個複雜度。
+
+🔴 **已知簡化**：貪婪策略下，「不限，人多熱鬧」選項（`min_participants=3`）與「2-3 人」選項（`max_participants=4`）在達到 3 人時會出現完全相同的成局行為，兩者目前無法區分（見第 16 節開放問題），先接受，之後若使用者對「不限」選項有「沒等到更多人」的落差反饋，再考慮加權重或差異化處理。
 
 架構上用 **Queue**（依 activity_type 分流）解耦候選池與配對演算法，未來換演算法不需動 Request/Activity 結構。
 
@@ -181,10 +221,12 @@ RequestMember              # 取代 member_ids[]；已組好的朋友直接放�
 
 ## 8. Downgrade（降門檻）流程
 
+- 觸發條件：到 `latest_start` 前，候選池**連 `min_participants` 都湊不到**且 `allow_downgrade=true`（呼應第 7 節貪婪策略——只要曾經達到 `min_participants` 就已經直接成局，走不到 Downgrade）
 - **owner 一人不能決定**：若 Request 有多個 `RequestMember`，需 owner + 所有已確認成員同意
 - 同意窗口 `CONSENT_WINDOW = 10 分鐘`，超時未回應 = 視為拒絕
-- **拒絕或超時 → Request 退回 `REQUESTING` 重新進池**（用原本 `required_total` 繼續找人），不是直接 `CANCELLED`
+- **拒絕或超時 → Request 退回 `REQUESTING` 重新進池**（用原本 `min_participants`/`max_participants` 繼續找人），不是直接 `CANCELLED`
 - **若剩餘時間 < 10 分鐘窗口，不發起降門檻詢問**，直接讓 Request 自然流向 `EXPIRED`（避免兩個計時器互相打架）
+- `downgrade_request.target_size` 驗證：必須低於原 `min_participants` 才有意義（等於或高於原 `min_participants` 代表根本不需要降門檻）
 
 ```
 DowngradeRequest
@@ -217,6 +259,8 @@ ActivityMember              # 取代 matched_request_ids[] / final_member_ids[]
 ```
 
 🟢 **`contact_visible_until` 修正**：起算點是 **Activity 自己的** `created_at`，不是來源 `MatchRequest` 的 `created_at`。Activity 是 match 成功後才產生的，如果誤用 Request 的 `created_at`，一個放了 20 小時才配對成功的 Request，聯絡方式就只剩 4 小時可見，不符合「配對成立後聯絡方式完整可見 24 小時」的產品意圖。
+
+🟢 **`known_member_count`：不新增儲存欄位，查詢即時算出**——對 Activity 內的某位使用者，其值 = 同一 `activity_id` 下與該使用者 `source_request_id` 相同的其他 `ActivityMember` 人數。用途是讓使用者在人數較多、由多個 Request merge 而成的 Activity 裡，知道「有幾個人是跟我同一個 Request 進來的」（含透過邀請連結加入者），區分於 Matching Engine 額外併入的陌生 Request 成員。不存欄位的理由與 Reliability 等級（第 12 節）相同：避免資料跟來源事實不同步。
 
 ### State Machine
 
@@ -316,7 +360,7 @@ UserReliabilityEvent
 
 Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` 即時 query 算出，不另外存一個分數快取欄位（避免資料跟事件來源不同步）。第 12.1 節「尚未完成過任何一次活動」= 該使用者沒有任何 `ATTENDED` 事件。
 
-### 12.1 小人數活動准入與確認機制（`required_total ≤ 2`）
+### 12.1 小人數活動准入與確認機制（`min_participants ≤ 2` 准入 / 實際撮合人數 ≤ 2 觸發確認）
 
 人少的場合（如一對一散步）社交壓力與安全風險都比多人局更高。以下四道機制共同構成低人數場合的安全防線，整合放在同一節，不分散在文件不同段落。
 
@@ -324,15 +368,16 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 
 這個防線**不另外發明新機制**，直接把既有的 Reliability 分級多用一層：
 
-- 🟢 **🔴 New 等級（尚未完成過任何一次活動）的使用者，不能直接發起或加入 `required_total ≤ 2` 的 Request**；第一次活動必須是多人局（如籃球 6 人局）
+- 🟢 **🔴 New 等級（尚未完成過任何一次活動）的使用者，不能直接發起或加入 `min_participants ≤ 2` 的 Request**；第一次活動必須是多人局（如籃球 6 人局）
 - 完成至少 1 次多人活動、累積出席紀錄後，才解鎖 1 對 1 配對資格；同時等級也會依表現有機會晉升為 🟡 Normal
 - 設計理由：安全把關不能靠「有沒有留 IG 這種填了就算數、無法驗證真假的東西」（見第 2 節個人資料門檻，那只是基礎過濾），而要靠「這個人有沒有真的出席過、被別人驗證過是真人」這種更扎實的信號——這正是 Reliability 系統本來就在算的東西，不用重造
-- 🔴 `required_total ≤ 2` 的門檻定義為「低人數」的具體切點，可能需依實際新人事故率調整，見第 16 節開放問題
-- **與 Downgrade 流程的邊界**：此限制只在 Request **建立/加入當下**檢查 `required_total`；若一個多人 Request 事後透過 Downgrade（見第 8 節）縮編到 ≤2 人，池中原本合規加入的 New 等級成員不會被追溯剔除，避免懲罰已經照規矩排隊的使用者
+- 🔴 `min_participants ≤ 2` 的門檻定義為「低人數」的具體切點，可能需依實際新人事故率調整，見第 16 節開放問題
+- **與 Downgrade 流程的邊界**：此限制只在 Request **建立/加入當下**檢查 `min_participants`；若一個多人 Request 事後透過 Downgrade（見第 8 節）縮編到 ≤2 人，池中原本合規加入的 New 等級成員不會被追溯剔除，避免懲罰已經照規矩排隊的使用者
+- 🟢 **與 12.1.2 的判準差異**：本節在 Request 建立/加入當下用 `min_participants ≤ 2` 把關新人資格（min 代表 owner 明確接受的人數下限）；12.1.2 的 `PENDING_CONFIRMATION` 觸發用的是配對當下的**實際撮合人數**，兩者判準基準不同但不衝突——依第 6.1 節 UI 對照表，只有「一個人」選項（`min_participants=2`）可能同時命中兩個判準，其餘三個選項 `min_participants≥3`，結構上不可能觸發任一判準
 
 #### 12.1.2 PENDING_CONFIRMATION：對稱雙向確認
 
-🟢 `required_total ≤ 2` 屬於近似 1 對 1 的低人數場景，社交壓力顯著更高。Matching Engine 盲配成功（第 7 節規則）後，不直接生成 Activity，而是先進入 **`PENDING_CONFIRMATION`** 中間態：
+🟢 Matching Engine 盲配成功（第 7 節規則）後，若**本次實際撮合的人數 ≤ 2**（近似 1 對 1 的低人數場景，社交壓力顯著更高——此判準依實際成局人數，不是 Request 的 `min_participants`/`max_participants` 靜態欄位，因為最終成局人數要到 Matching Engine 實際組隊當下才知道），不直接生成 Activity，而是先進入 **`PENDING_CONFIRMATION`** 中間態：
 
 - 雙方各自收到通知，有 `CONFIRM_WINDOW = 10 分鐘` 決定是否「確認參加」
 - 雙方都確認 → 生成 Activity（照第 9 節規則顯示聯絡方式、`MatchRequest` 定格在 `MATCHED`）
@@ -341,8 +386,8 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 
 #### 12.1.3 安全資訊卡
 
-- `required_total > 2`（多人局）：維持第 11 節既有規則，配對成功前不展示對方任何資訊
-- `required_total ≤ 2`：進入 `PENDING_CONFIRMATION` 時展示「小人數安全資訊卡」：
+- 實際撮合人數 `> 2`（多人局）：維持第 11 節既有規則，配對成功前不展示對方任何資訊
+- 實際撮合人數 `≤ 2`：進入 `PENDING_CONFIRMATION` 時展示「小人數安全資訊卡」：
   - **包含**：頭像、姓名、`school`、`department`、`degree_level`、Reliability 等級、已完成活動次數
   - **明確不包含**：IG/LINE/Discord 等任何外部聯絡方式——理由是配對此時尚未確認成立，若在這個階段就曝露聯絡方式，會重新打開第 15 節已知風險「聯絡方式收割」的漏洞
 
@@ -393,7 +438,10 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 4. 實際地點清單內容，依校分列（NYCU：光復籃球場／工程館／浩然／女二／竹湖…；NTHU：風雲球場…）
 5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION，細節待補）
 6. 隱私權政策文件（收集資料種類、聯絡方式用途、刪除帳號流程、第三方服務 Supabase 揭露）—— 上架前必須補齊
-7. 新人配對資格限制的 `required_total ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
+7. 新人配對資格限制的 `min_participants ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
+8. 「不限，人多熱鬧」選項（`min_participants=3`）在貪婪成局策略下與「2-3 人」選項行為一致（皆在湊到 3 人時立即收尾），是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 7 節）
+9. `max_participants` 為 NULL 時是否要在寫入當下就填入 `activity_type.default_max_participants`、還是維持 NULL 由讀取端 fallback，兩種做法對「人數超額」判斷（第 7 節）行為一致但實作路徑不同，待 API 設計階段定案
+10. 邀請連結撤銷（`revoked_at`）的操作入口與 API 尚未設計，見第 6.1 節
 
 ---
 

@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.4）
+# ERD — 校園活動配對 App（派生自 SPEC v1.5）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -63,6 +63,8 @@ erDiagram
         uuid id PK
         text name "模糊比對防重複（羽球 vs 羽毛球）"
         int default_duration_minutes "nullable，null 時 fallback 60"
+        int default_min_participants "nullable，null 時 fallback 2（v1.5）"
+        int default_max_participants "nullable，null 時 fallback 6（v1.5）"
         enum status "PENDING | APPROVED | REJECTED"
         uuid created_by FK
         timestamptz created_at
@@ -85,7 +87,10 @@ erDiagram
         timestamptz earliest_start
         timestamptz latest_start "CHECK：<= created_at + 24h"
         int flexible_minutes "v1 固定 0，欄位預留"
-        int required_total "CHECK：>= 2"
+        int min_participants "CHECK：>= 2，含 owner 本人的活動總人數下限（v1.5，取代 required_total）"
+        int max_participants "nullable，CHECK：>= min_participants，含 owner 本人；NULL = 不設上限，fallback 至 activity_type.default_max_participants（v1.5）"
+        text invite_token "nullable，UNIQUE；生命週期依附本列 status/24h 邊界，不另存到期時間（v1.5）"
+        timestamptz revoked_at "nullable，owner 主動撤銷邀請連結的時間（v1.5）"
         bool allow_downgrade
         enum status "DRAFT | REQUESTING | PENDING_CONFIRMATION | MATCHED | EXPIRED | CANCELLED（v1.4 新增 PENDING_CONFIRMATION）"
         timestamptz created_at
@@ -234,3 +239,8 @@ erDiagram
 14. **`pending_confirmation` 表結構固定雙方（`request_a_id`/`request_b_id`），不做成泛化的 `CandidateMatch`**（v1.4）：MVP 階段 `required_total ≤ 2` 場景下候選配對就是恰好兩個 Request 對上，沒有「多個候選同時競爭」的需求，不預先為「未來可能擴展成多方候選」做抽象；等真的出現該場景再重構表結構與命名。
 15. **`match_history_avoidance` 的 pair 正規化**（v1.4）：`user_a_id < user_b_id` 的 CHECK 約束確保同一對使用者不論誰是 request owner，都寫入同一筆 pair 記錄，Matching Engine 查詢降權只需查一次、不用 OR 兩種順序。
 16. **對稱不歸因設計的落地**（v1.4）：`pending_confirmation.user_a_response`/`user_b_response` 各自獨立存，但 API 層讀取規則是雙方都只查得到 `status`（`PENDING`/`CONFIRMED`/`DECLINED`/`TIMEOUT`），查不到對方的 response 明細——避免任一方知道「是不是我造成配對失敗」，落實 SPEC §12.1.2 的不歸因原則。
+17. **`min_participants`/`max_participants` 取代 `required_total`（v1.5）**：拆成上下限是為了讓 UI 選項卡（SPEC §6.1）能表達「2-3 人」「4-6 人」這種區間，而不是單一數字；`max_participants` 允許 NULL 表示「不設上限」，讀取端 fallback 到 `activity_type.default_max_participants`（是否在寫入當下就展開成具體數字，還是保留 NULL 由讀取端 fallback，見 SPEC §16 開放問題）。兩欄位皆以「含 owner 本人」為計數基準，這點只在 SPEC 文字定義，schema 本身無法用型別強制表達，需要靠 API 層驗證與文件約定。
+18. **`invite_token` 不另存到期時間、也不存 `used_at`（v1.5）**：到期邏輯依附 `match_request.status` 離開 `REQUESTING` 或 `revoked_at` 被設定，不需要獨立的 `expire_at`，因為 Request 本身已經有 24 小時邊界與狀態機管理生命週期，重複一份到期時間只會製造兩份真相不同步的風險；不存 `used_at` 是因為連結設計上允許多人各自重複使用，單一時間戳無法表達「多人各自使用」，需要追蹤才開 per-use 日誌表（MVP 不開）。
+19. **`PENDING_CONFIRMATION` 觸發判準無法用 CHECK 常數表達（v1.5）**：觸發依據是 Matching Engine 撮合當下的**實際人數**，不是 `min_participants`/`max_participants` 這兩個靜態欄位，因此這條規則只能落在應用層（Matching Engine 邏輯），DB 層沒有對應的 CHECK 或 trigger 可以完整表達「本次撮合人數 ≤ 2」這件事——這是設計上刻意的取捨，不是遺漏。
+20. **`known_member_count` 不是欄位（v1.5）**：這是查詢時算出的值，SQL 概念上等同 `SELECT count(*) FROM activity_member WHERE activity_id = :aid AND source_request_id = (SELECT source_request_id FROM activity_member WHERE activity_id = :aid AND user_id = :uid) AND user_id != :uid`，不落地成 `activity_member` 或 `activity` 上的任何欄位。
+21. **`downgrade_request.target_size` 沒有 DB 層 CHECK 約束（v1.5 補充）**：業務規則是「必須低於原 `min_participants`」，但 `min_participants` 存在 `match_request` 另一張表，PostgreSQL 的 CHECK 不能跨表引用，這條驗證留在應用層（或未來視需要補 trigger），schema 只存數值本身。
