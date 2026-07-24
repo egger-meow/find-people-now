@@ -15,7 +15,12 @@ create type degree_level as enum ('UNDERGRAD', 'MASTER', 'PHD');
 
 alter table app_user
   add column department   text,
-  add column degree_level degree_level not null;
+  add column degree_level degree_level;
+
+-- 此表目前必為空（尚未上線），故可直接補 SET NOT NULL；
+-- 若未來在已有資料的環境重跑此 migration，需要先 backfill 再補約束。
+alter table app_user
+  alter column degree_level set not null;
 
 -- -----------------------------------------------------------------------------
 -- 2. activity_type：補人數選項相關欄位（ERD.md activity_type 區塊，SPEC §6.2）
@@ -81,8 +86,10 @@ create index idx_pending_confirmation_request_b on pending_confirmation (request
 -- RLS：只開啟，不開 select policy。user_a_response/user_b_response 同存一行，
 -- RLS 只能整行放行或拒絕，做不到「看得到自己那份、看不到對方那份」的列級隔離；
 -- 硬開 policy 會讓任一方看到對方 response，違反 ERD 設計備註 16 / STATE_MACHINE
--- PC2「不透露對方回應內容」的不歸因設計。讀取留給未來專用 RPC（比照現有
--- get_activity_contacts 的模式），此處先只擋住直接讀取。
+-- PC2「不透露對方回應內容」的不歸因設計。
+-- ⚠ API.md 提醒：Matching Engine (SECURITY DEFINER / Service Role) 可自然繞過 RLS
+-- 進行全表讀寫；前端若需查詢雙方狀態，必須在 API.md 階段定義專用 SECURITY DEFINER RPC
+-- （如 get_pending_confirmation_status），僅回傳 status 而不暴露個人 response 明細。
 alter table pending_confirmation enable row level security;
 
 -- -----------------------------------------------------------------------------
@@ -105,6 +112,6 @@ create table match_history_avoidance (
 create index idx_match_history_avoidance_pair on match_history_avoidance (user_a_id, user_b_id);
 
 -- RLS：只開啟、不開任何 select policy。這張表記錄「誰跟誰配對失敗過」，比
--- 「對方回報內容不公開」更敏感，不該讓任何使用者直接查到；只留給 Matching
--- Engine 的 security definer 函數存取。
+-- 「對方回報內容不公開」更敏感，不該讓任何使用者直接查到；
+-- ⚠ API.md 提醒：此表僅由 Matching Engine 的 SECURITY DEFINER 函數於撮合時繞過 RLS 存取。
 alter table match_history_avoidance enable row level security;
