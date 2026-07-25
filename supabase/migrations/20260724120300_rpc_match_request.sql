@@ -35,31 +35,31 @@ declare
 begin
   -- 1. 身分與停權檢查
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select school into v_user_school from app_user where id = v_user_id;
   if v_user_school is null then
-    raise exception using errcode = 'PROFILE_INCOMPLETE', message = 'PROFILE_INCOMPLETE';
+    raise exception using message = 'PROFILE_INCOMPLETE';
   end if;
 
   if exists (select 1 from app_user where id = v_user_id and suspended_until > v_now) then
-    raise exception using errcode = 'USER_SUSPENDED', message = 'USER_SUSPENDED';
+    raise exception using message = 'USER_SUSPENDED';
   end if;
 
   -- 2. 同校池隔離檢查 (SPEC §6/§7)
   select school into v_loc_school from location where id = p_campus_location_id and is_active = true;
   if v_loc_school is null or v_loc_school <> v_user_school then
-    raise exception using errcode = 'SCHOOL_LOCATION_MISMATCH', message = 'SCHOOL_LOCATION_MISMATCH';
+    raise exception using message = 'SCHOOL_LOCATION_MISMATCH';
   end if;
 
   -- 3. 人數與離散步階檢查 (v1.5 / v1.6)
   if p_min_participants < 2 then
-    raise exception using errcode = 'INVALID_MIN_PARTICIPANTS', message = 'MIN_PARTICIPANTS_MUST_BE_AT_LEAST_2';
+    raise exception using message = 'INVALID_MIN_PARTICIPANTS', detail = 'MIN_PARTICIPANTS_MUST_BE_AT_LEAST_2';
   end if;
 
   if p_max_participants is not null and p_max_participants < p_min_participants then
-    raise exception using errcode = 'INVALID_MAX_PARTICIPANTS', message = 'MAX_PARTICIPANTS_MUST_BE_GTE_MIN';
+    raise exception using message = 'INVALID_MAX_PARTICIPANTS', detail = 'MAX_PARTICIPANTS_MUST_BE_GTE_MIN';
   end if;
 
   select default_min_participants, default_max_participants, group_size_step
@@ -68,16 +68,16 @@ begin
    where id = p_activity_type_id and status = 'APPROVED';
 
   if not found then
-    raise exception using errcode = 'INVALID_INPUT', message = 'ACTIVITY_TYPE_NOT_FOUND_OR_NOT_APPROVED';
+    raise exception using message = 'INVALID_INPUT', detail = 'ACTIVITY_TYPE_NOT_FOUND_OR_NOT_APPROVED';
   end if;
 
   -- 離散步階驗證（group_size_step 非 null 時）
   if v_act_step is not null and v_act_step > 0 then
     if mod(p_min_participants - coalesce(v_act_min, 2), v_act_step) <> 0 then
-      raise exception using errcode = 'INVALID_GROUP_SIZE_OPTION', message = 'INVALID_GROUP_SIZE_OPTION';
+      raise exception using message = 'INVALID_GROUP_SIZE_OPTION';
     end if;
     if p_max_participants is not null and mod(p_max_participants - coalesce(v_act_min, 2), v_act_step) <> 0 then
-      raise exception using errcode = 'INVALID_GROUP_SIZE_OPTION', message = 'INVALID_GROUP_SIZE_OPTION';
+      raise exception using message = 'INVALID_GROUP_SIZE_OPTION';
     end if;
   end if;
 
@@ -95,7 +95,7 @@ begin
     v_earliest := date_trunc('day', v_now) + interval '1 day' + interval '8 hours';
     v_latest   := date_trunc('day', v_now) + interval '1 day' + interval '12 hours';
   else
-    raise exception using errcode = 'INVALID_INPUT', message = 'INVALID_TIME_BUCKET';
+    raise exception using message = 'INVALID_INPUT', detail = 'INVALID_TIME_BUCKET';
   end if;
 
   if v_latest <= v_now then
@@ -127,6 +127,11 @@ $$;
 -- 送出 Request 進 Queue（輕量驗證與狀態改變，不同步執行引擎）
 -- -----------------------------------------------------------------------------
 
+-- 驗證順序為定案的固定序列 (SPEC §6.3)，任何未來重構都不能打亂：
+-- 1. UNAUTHORIZED  2. USER_SUSPENDED  3. PROFILE_INCOMPLETE
+-- 4. (結構性) NOT_FOUND / REQUEST_NOT_OPEN
+-- 5. ACTIVE_ACTIVITY_IN_PROGRESS  6. REQUEST_COOLDOWN_ACTIVE
+-- 7. ALREADY_REQUESTING  8. WINDOW_EXCEEDS_24H  9. NEW_USER_LOW_HEADCOUNT
 create or replace function submit_request(p_request_id uuid)
 returns match_request
 language plpgsql
@@ -134,37 +139,71 @@ security definer
 set search_path = public
 as $$
 declare
-  v_user_id  uuid := auth.uid();
-  v_request  match_request;
+  v_user_id     uuid := auth.uid();
+  v_user_school school;
+  v_request     match_request;
+  v_now         timestamptz := now();
+  v_cooldown    timestamptz;
 begin
+  -- 1. UNAUTHORIZED
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
+  -- 2. USER_SUSPENDED
+  if exists (select 1 from app_user where id = v_user_id and suspended_until > v_now) then
+    raise exception using message = 'USER_SUSPENDED';
+  end if;
+
+  -- 3. PROFILE_INCOMPLETE (與 create_request 同一套判準：school 為 null 代表尚未完成 complete_profile)
+  select school into v_user_school from app_user where id = v_user_id;
+  if v_user_school is null then
+    raise exception using message = 'PROFILE_INCOMPLETE';
+  end if;
+
+  -- 4. (結構性) NOT_FOUND / REQUEST_NOT_OPEN
   select * into v_request
     from match_request
    where id = p_request_id and owner_id = v_user_id
      for update;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'REQUEST_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'REQUEST_NOT_FOUND';
   end if;
 
   if v_request.status <> 'DRAFT' then
-    raise exception using errcode = 'REQUEST_NOT_OPEN', message = 'REQUEST_NOT_IN_DRAFT_STATUS';
+    raise exception using message = 'REQUEST_NOT_OPEN', detail = 'REQUEST_NOT_IN_DRAFT_STATUS';
   end if;
 
-  -- 單一 REQUESTING 限制 (SPEC §6)
+  -- 5. ACTIVE_ACTIVITY_IN_PROGRESS (v1.7，SPEC §6.3：排在冷卻檢查之前，
+  --    因為「活動還沒結束」是根源問題，跟「你剛退出了什麼」是不同階段)
+  if exists (
+    select 1 from activity_member am
+    join activity a on a.id = am.activity_id
+     where am.user_id = v_user_id
+       and am.status = 'JOINED'
+       and a.status in ('MATCHED', 'ONGOING')
+  ) then
+    raise exception using message = 'ACTIVE_ACTIVITY_IN_PROGRESS';
+  end if;
+
+  -- 6. REQUEST_COOLDOWN_ACTIVE (v1.7)
+  select next_request_allowed_at into v_cooldown from app_user where id = v_user_id;
+  if v_cooldown is not null and v_cooldown > v_now then
+    raise exception using message = 'REQUEST_COOLDOWN_ACTIVE';
+  end if;
+
+  -- 7. 單一 REQUESTING 限制 (SPEC §6)
   if exists (select 1 from match_request where owner_id = v_user_id and status = 'REQUESTING') then
-    raise exception using errcode = 'ALREADY_REQUESTING', message = 'ALREADY_REQUESTING';
+    raise exception using message = 'ALREADY_REQUESTING';
   end if;
 
-  -- 24h 時間窗限制 (SPEC §0)
+  -- 8. 24h 時間窗限制 (SPEC §0)
   if v_request.latest_start > v_request.created_at + interval '24 hours' then
-    raise exception using errcode = 'WINDOW_EXCEEDS_24H', message = 'WINDOW_EXCEEDS_24H';
+    raise exception using message = 'WINDOW_EXCEEDS_24H';
   end if;
 
-  -- 新人低人數門檻檢查 (SPEC §12.1)
+  -- 9. 新人低人數門檻檢查 (SPEC §12.1)
   if v_request.min_participants <= 2 then
     if exists (
       select 1 from request_member rm
@@ -172,7 +211,7 @@ begin
          and rm.status = 'JOINED'
          and fn_is_new_user(rm.user_id) = true
     ) then
-      raise exception using errcode = 'NEW_USER_LOW_HEADCOUNT', message = 'NEW_USER_LOW_HEADCOUNT';
+      raise exception using message = 'NEW_USER_LOW_HEADCOUNT';
     end if;
   end if;
 
@@ -201,7 +240,7 @@ declare
   v_request match_request;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select * into v_request
@@ -210,11 +249,11 @@ begin
      for update;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'REQUEST_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'REQUEST_NOT_FOUND';
   end if;
 
   if v_request.status not in ('DRAFT', 'REQUESTING', 'PENDING_CONFIRMATION') then
-    raise exception using errcode = 'REQUEST_NOT_OPEN', message = 'CANNOT_CANCEL_FINISHED_REQUEST';
+    raise exception using message = 'REQUEST_NOT_OPEN', detail = 'CANNOT_CANCEL_FINISHED_REQUEST';
   end if;
 
   update match_request
@@ -242,7 +281,7 @@ declare
   v_token   text;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select invite_token into v_token
@@ -250,7 +289,7 @@ begin
    where id = p_request_id and owner_id = v_user_id;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'REQUEST_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'REQUEST_NOT_FOUND';
   end if;
 
   if v_token is null then
@@ -279,12 +318,12 @@ declare
   v_current_count int;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select school into v_user_school from app_user where id = v_user_id;
   if v_user_school is null then
-    raise exception using errcode = 'PROFILE_INCOMPLETE', message = 'PROFILE_INCOMPLETE';
+    raise exception using message = 'PROFILE_INCOMPLETE';
   end if;
 
   -- 查找對應的 Request
@@ -296,13 +335,13 @@ begin
      for update;
 
   if not found then
-    raise exception using errcode = 'INVITE_LINK_EXPIRED', message = 'INVITE_LINK_EXPIRED_OR_REVOKED';
+    raise exception using message = 'INVITE_LINK_EXPIRED', detail = 'INVITE_LINK_EXPIRED_OR_REVOKED';
   end if;
 
   -- 同校隔離檢查
   select school into v_loc_school from location where id = v_request.campus_location_id;
   if v_loc_school <> v_user_school then
-    raise exception using errcode = 'SCHOOL_LOCATION_MISMATCH', message = 'SCHOOL_LOCATION_MISMATCH';
+    raise exception using message = 'SCHOOL_LOCATION_MISMATCH';
   end if;
 
   -- 人數上限檢查
@@ -311,12 +350,12 @@ begin
    where request_id = v_request.id and status = 'JOINED';
 
   if v_request.max_participants is not null and v_current_count >= v_request.max_participants then
-    raise exception using errcode = 'REQUEST_FULL', message = 'REQUEST_FULL';
+    raise exception using message = 'REQUEST_FULL';
   end if;
 
   -- 新人低人數門檻檢查
   if v_request.min_participants <= 2 and fn_is_new_user(v_user_id) = true then
-    raise exception using errcode = 'NEW_USER_LOW_HEADCOUNT', message = 'NEW_USER_LOW_HEADCOUNT';
+    raise exception using message = 'NEW_USER_LOW_HEADCOUNT';
   end if;
 
   -- 新增或復原成員狀態
@@ -339,7 +378,7 @@ declare
   v_user_id uuid := auth.uid();
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   update match_request
@@ -347,7 +386,7 @@ begin
    where id = p_request_id and owner_id = v_user_id;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'REQUEST_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'REQUEST_NOT_FOUND';
   end if;
 
   return true;

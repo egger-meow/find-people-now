@@ -23,6 +23,14 @@ alter table app_user
   alter column degree_level set not null;
 
 -- -----------------------------------------------------------------------------
+-- 1b. app_user：補 next_request_allowed_at（拒絕候選配對/LATE_CANCEL 觸發 30 分鐘
+--     冷卻，SPEC §6.3、ERD.md 設計備註 23，v1.7）
+-- -----------------------------------------------------------------------------
+
+alter table app_user
+  add column next_request_allowed_at timestamptz;
+
+-- -----------------------------------------------------------------------------
 -- 2. activity_type：補人數選項相關欄位（ERD.md activity_type 區塊，SPEC §6.2）
 -- -----------------------------------------------------------------------------
 

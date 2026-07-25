@@ -32,7 +32,7 @@ begin
   select * into v_req_b from match_request where id = p_request_b_id for update;
 
   if v_req_a is null or v_req_b is null then
-    raise exception using errcode = 'NOT_FOUND', message = 'REQUEST_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'REQUEST_NOT_FOUND';
   end if;
 
   select count(*) into v_count_a from request_member where request_id = p_request_a_id and status = 'JOINED';
@@ -176,7 +176,7 @@ declare
   v_pc      pending_confirmation;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select * into v_pc
@@ -186,7 +186,7 @@ begin
    limit 1;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'PENDING_CONFIRMATION_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'PENDING_CONFIRMATION_NOT_FOUND';
   end if;
 
   -- 嚴格落實對稱不歸因原則 (ERD 備註 16)：只回傳整體 status 與倒數時間，不透露個人 response 明細
@@ -216,7 +216,7 @@ declare
   v_other_resp  pending_confirmation_response;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select * into v_pc
@@ -225,11 +225,11 @@ begin
      for update;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'PENDING_CONFIRMATION_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'PENDING_CONFIRMATION_NOT_FOUND';
   end if;
 
   if v_pc.status <> 'PENDING' then
-    raise exception using errcode = 'CONFIRMATION_WINDOW_CLOSED', message = 'CONFIRMATION_WINDOW_CLOSED';
+    raise exception using message = 'CONFIRMATION_WINDOW_CLOSED';
   end if;
 
   -- 判定呼叫者是 Party A 還是 Party B
@@ -240,7 +240,7 @@ begin
     v_is_user_a := false;
     v_other_resp := v_pc.user_a_response;
   else
-    raise exception using errcode = 'FORBIDDEN', message = 'NOT_PARTY_TO_CONFIRMATION';
+    raise exception using message = 'FORBIDDEN', detail = 'NOT_PARTY_TO_CONFIRMATION';
   end if;
 
   v_new_resp := case when p_confirm then 'CONFIRMED'::pending_confirmation_response else 'DECLINED'::pending_confirmation_response end;
@@ -260,6 +260,9 @@ begin
   if p_confirm = false then
     -- 任一方拒絕 → 標記 DECLINED (清理作業由 Worker 或背景掃描執行)
     update pending_confirmation set status = 'DECLINED' where id = v_pc.id;
+
+    -- 主動拒絕觸發 30 分鐘冷卻 (v1.7，SPEC §6.3)；TIMEOUT 由背景 Worker 處理，不經過這裡，不觸發
+    update app_user set next_request_allowed_at = now() + interval '30 minutes' where id = v_user_id;
   elsif v_other_resp = 'CONFIRMED' then
     -- 雙方皆同意 → 觸發 PC1 建立 Activity
     update pending_confirmation set status = 'CONFIRMED' where id = v_pc.id;

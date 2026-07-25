@@ -7,7 +7,7 @@
 - **後端形態**：Supabase。純讀取走 PostgREST（RLS 已在 migration 定義）；**所有狀態轉移一律走 RPC**（`security definer` Postgres function，經 `supabase.rpc()` 呼叫），client 不直接 update 狀態欄位。轉移的合法性以 [STATE_MACHINE.md](STATE_MACHINE.md) 為準（編號 R1–R5、PC1–PC2、A1–A6）。
 - **RLS 專用受控存取**：`pending_confirmation` 與 `match_history_avoidance` 兩張表在 DB 層故意「啟用 RLS 但不安裝 SELECT Policy」，防止使用者直接讀取敏感資料。前端查詢候選配對狀態必須透過特定的 `SECURITY DEFINER` RPC（如 4.1 `get_pending_confirmation_status`），僅透露整體 `status`，嚴格隔離個案回應明細（落實 ERD 設計備註 16）。
 - **驗證**：所有呼叫需 Supabase Auth JWT（信箱 OTP 登入）。`auth.uid()` 即操作者，request body 不帶 `user_id`。
-- **錯誤格式**：RPC 以 `raise exception using errcode, message` 回傳；下表的「錯誤碼」為 message 內的機器可讀代碼。
+- **錯誤格式（v1.7 修正）**：RPC 以 `raise exception using message = '<CODE>'`（需要更細節的子原因時另加 `detail = '<detail>'`）回傳；下表的「錯誤碼」即為 `message` 的值，PostgREST 會將其映射到回應 JSON 的 `message` 欄位，client 應以此欄位比對錯誤碼。🔴 **不使用 `errcode = '<CODE>'`**：PL/pgSQL 的 `errcode` 只接受標準 5 碼 SQLSTATE 或內建的 condition name，塞入任意自訂字串（如 `'UNAUTHORIZED'`）會在 `raise` 當下直接拋出 `unrecognized exception condition`，蓋掉原本要回傳的錯誤，導致這裡列出的所有錯誤碼實際上從未真正生效過；v1.7 已修正全部 6 個 RPC migration 檔案的 65 處呼叫。
 - **停權檢查**：`suspended_until > now()` 的使用者呼叫任何寫入類 RPC 一律回 `USER_SUSPENDED`。
 
 ---
@@ -43,7 +43,7 @@
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
 | 3.1 | `rpc: create_request(activity_type_id, campus_location_id, bucket, min_participants, max_participants?, allow_downgrade)` | R1 | `bucket ∈ {NOW, TODAY, TONIGHT, TOMORROW_AM}` 換算成 `earliest_start/latest_start`（SPEC §4）。`min_participants >= 2`；`max_participants` 為 upper bound (null 則 fallback 至 `activity_type.default_max_participants`)。<br>🟢 **驗證規範**：① `min/max_participants` 計數**包含 owner 本人**。② 若 `group_size_step` 非 null，帶入的人數必須符合離散步階選項，否則回傳 `INVALID_GROUP_SIZE_OPTION`。③ 檢查 `campus_location_id` 屬於 owner 的 `school`，否則回 `SCHOOL_LOCATION_MISMATCH`（SPEC §6/§7 同校隔離）。④ 僅建立 owner 本人的 Request（此時 `request_member` 只有 owner 一人）；邀請朋友加入一律透過 3.7 生成邀請連結，好友透過 3.8 加入，在 Matching Engine 掃描撮合前陸續完成組隊。 |
-| 3.2 | `rpc: submit_request(request_id)` | R2 | 送出進 Queue。依序檢查：profile 門檻 → 單一 REQUESTING 限制 → 24h 時間窗 → **新人低人數限制**（`min_participants ≤ 2` 且任一成員 `fn_is_new_user()` = true → 拒絕 `NEW_USER_LOW_HEADCOUNT`，SPEC §12.1）。 |
+| 3.2 | `rpc: submit_request(request_id)` | R2 | 送出進 Queue。🟢 **驗證順序定案（deterministic，SPEC §6.3），任何未來重構都不能打亂**：① `UNAUTHORIZED`（未登入）② `USER_SUSPENDED`（停權中）③ `PROFILE_INCOMPLETE`（個人資料未完成）④ *(結構性檢查，載入 Request 本體)* `NOT_FOUND` / `REQUEST_NOT_OPEN` ⑤ **`ACTIVE_ACTIVITY_IN_PROGRESS`**（owner 名下有 `MATCHED`/`ONGOING` 的 Activity，v1.7 新增，見 SPEC §6.3——排在冷卻檢查之前，因為「活動還沒結束」是根源問題）⑥ **`REQUEST_COOLDOWN_ACTIVE`**（`app_user.next_request_allowed_at > now()`，v1.7 新增）⑦ 單一 `REQUESTING` 限制（`ALREADY_REQUESTING`）⑧ 24h 時間窗（`WINDOW_EXCEEDS_24H`）⑨ **新人低人數限制**（`min_participants ≤ 2` 且任一成員 `fn_is_new_user()` = true → `NEW_USER_LOW_HEADCOUNT`，SPEC §12.1）。 |
 | 3.3 | `rpc: cancel_request(request_id)` | R5 | 配對成立前取消，不記 Reliability 事件。 |
 | 3.4 | `rpc: join_request(request_id)` | — | 加入他人 Request 成為 member；同樣檢查 `max_participants` 上限與 3.2 的新人低人數門檻（SPEC §7）。 |
 | 3.5 | `rpc: leave_request(request_id)` | — | member 退出（`request_member.status → LEFT`）；配對成立前退出不記事件。 |
@@ -52,7 +52,7 @@
 | 3.8 | `rpc: join_request_by_token(invite_token)` | — | **透過邀請連結加入 Request (v1.5)**：已完成身份驗證的使用者帶入 `invite_token` 加入（本質為信任引導 Trust Bootstrap，不與 Friend 表綁定）。檢查：Token 未撤銷、未過期、未超過 `max_participants` 上限、通過新人低人數限制與同校隔離檢查。加入後新增 `request_member` 記錄。 |
 | 3.9 | `rpc: revoke_invite_link(request_id)` | — | **撤銷邀請連結 (v1.5)**：僅 owner 可呼叫，設定 `revoked_at = now()`，使該 Token 立即失效。 |
 
-錯誤碼：`ALREADY_REQUESTING`（單一 REQUESTING 限制）、`WINDOW_EXCEEDS_24H`、`NEW_USER_LOW_HEADCOUNT`（新人不可 ≤2 人局）、`SCHOOL_LOCATION_MISMATCH`（地點不屬於自己學校）、`INVALID_GROUP_SIZE_OPTION`（人數不符步階）、`INVITE_LINK_REVOKED`（邀請連結已撤銷）、`INVITE_LINK_EXPIRED`（邀請連結已失效）、`REQUEST_FULL`（已達人數上限）、`REQUEST_NOT_OPEN`、`USER_SUSPENDED`
+錯誤碼：`ALREADY_REQUESTING`（單一 REQUESTING 限制）、`WINDOW_EXCEEDS_24H`、`NEW_USER_LOW_HEADCOUNT`（新人不可 ≤2 人局）、`SCHOOL_LOCATION_MISMATCH`（地點不屬於自己學校）、`INVALID_GROUP_SIZE_OPTION`（人數不符步階）、`INVITE_LINK_REVOKED`（邀請連結已撤銷）、`INVITE_LINK_EXPIRED`（邀請連結已失效）、`REQUEST_FULL`（已達人數上限）、`REQUEST_NOT_OPEN`、`USER_SUSPENDED`、`ACTIVE_ACTIVITY_IN_PROGRESS`（名下有進行中活動，v1.7）、`REQUEST_COOLDOWN_ACTIVE`（拒絕/晚取消觸發的 30 分鐘冷卻未過，v1.7）
 
 ---
 
@@ -61,9 +61,9 @@
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
 | 4.1 | `rpc: get_pending_confirmation_status(request_id)` | — | **專用受控讀取 RPC（SECURITY DEFINER）**：給前端查詢當前候選配對進度。回傳 `{ pending_confirmation_id, status: PENDING\|CONFIRMED\|DECLINED\|TIMEOUT, confirm_window_expire_at }`。<br>🟢 **對稱不歸因原則（ERD 備註 16）**：RPC 僅傳回整體 `status`，**絕對不暴露**對方的個人選擇 (`CONFIRMED`/`DECLINED`/`NO_RESPONSE`)，避免任何一方判斷出是誰造成配對未成立。 |
-| 4.2 | `rpc: respond_pending_confirmation(pending_confirmation_id, confirm: bool)` | PC1 / PC2 | 使用者在 10 分鐘 `CONFIRM_WINDOW` 內回應。<br>🟢 **原子性與並發安全**：RPC **僅更新呼叫者自己的欄位**（`user_a_response` 或 `user_b_response`，設定為 `CONFIRMED` 或 `DECLINED`），並於同一 Transaction 內（利用 `UPDATE ... WHERE status = 'PENDING'` 或 `SELECT ... FOR UPDATE` 加鎖）原子性判定雙方回應結果：<br>① **若雙方皆為 CONFIRMED**：轉移至 **PC1**（`pending_confirmation.status → CONFIRMED`，建立 `Activity` + `activity_member` 並發送 `MATCH_SUCCESS` 通知）。<br>② **若任一方為 DECLINED**：轉移至 **PC2**（`pending_confirmation.status → DECLINED`；並由 RPC 或背景 Worker 執行 PC2 清理：寫入 `match_history_avoidance` 降權記錄、雙方 Request 無差別退回 Queue `REQUESTING`、發送無差別「配對未成立」通知）。 |
+| 4.2 | `rpc: respond_pending_confirmation(pending_confirmation_id, confirm: bool)` | PC1 / PC2 | 使用者在 10 分鐘 `CONFIRM_WINDOW` 內回應。🟢 **允許反悔（v1.7 澄清）**：窗口內可重複呼叫改變心意，覆寫先前的回應，不視為錯誤——過去版本文件曾列出 `ALREADY_RESPONDED` 錯誤碼，但 RPC 從未真正實作過這道擋，v1.7 正式移除，避免文件承諾不存在的行為。<br>🟢 **原子性與並發安全**：RPC **僅更新呼叫者自己的欄位**（`user_a_response` 或 `user_b_response`，設定為 `CONFIRMED` 或 `DECLINED`），並於同一 Transaction 內（利用 `UPDATE ... WHERE status = 'PENDING'` 或 `SELECT ... FOR UPDATE` 加鎖）原子性判定雙方回應結果：<br>① **若雙方皆為 CONFIRMED**：轉移至 **PC1**（`pending_confirmation.status → CONFIRMED`，建立 `Activity` + `activity_member` 並發送 `MATCH_SUCCESS` 通知）。<br>② **若任一方為 DECLINED**：轉移至 **PC2**（`pending_confirmation.status → DECLINED`；並由 RPC 或背景 Worker 執行 PC2 清理：寫入 `match_history_avoidance` 降權記錄、雙方 Request 無差別退回 Queue `REQUESTING`、發送無差別「配對未成立」通知）。**主動傳 `confirm=false` 的呼叫者另會被寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`（v1.7 冷卻機制，SPEC §6.3；由背景 Worker 觸發的 `TIMEOUT` 不寫入此欄位，因為無法歸咎任何一方）**。 |
 
-錯誤碼：`CONFIRMATION_WINDOW_CLOSED`（10 分鐘已過）、`ALREADY_RESPONDED`（已表達過意願）、`INVALID_PENDING_CONFIRMATION`
+錯誤碼：`CONFIRMATION_WINDOW_CLOSED`（10 分鐘已過）、`INVALID_PENDING_CONFIRMATION`
 
 ---
 
@@ -84,7 +84,7 @@
 |---|---|---|---|
 | 6.1 | `GET activity` + `GET activity_member`（PostgREST，RLS：成員） | — | 我的活動、成員名單、`source_request_id` 來源。 |
 | 6.2 | `rpc: get_activity_contacts(activity_id)` | — | **聯絡方式唯一出口**（不走 RLS 直讀 `app_user.contact_*`）。規則（SPEC §11）：呼叫者是該活動成員，且（`now() < contact_visible_until`【以 Activity 的 `created_at` 起算 +24h，SPEC v1.1 變更 5】**或** 與對方互按過再約）。回各成員自選公開的聯絡方式。 |
-| 6.3 | `rpc: cancel_activity_participation(activity_id)` | A5/A6 | 個別取消。server 依時點記事件：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h 或已開始 → `LATE_CANCEL`（SPEC §10 處罰分級）。 |
+| 6.3 | `rpc: cancel_activity_participation(activity_id)` | A5/A6 | 個別取消。server 依時點記事件：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h 或已開始 → `LATE_CANCEL`（SPEC §10 處罰分級，**同時寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`，v1.7 冷卻機制，SPEC §6.3；`EARLY_CANCEL` 不觸發**）。 |
 
 錯誤碼：`NOT_ACTIVITY_MEMBER`、`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED`
 
@@ -144,3 +144,6 @@
 | §11 聯絡方式 24h + 再約永久保留 | 6.2 + 7.2 |
 | §12 Reliability 即時 query | 1.4 |
 | §12.1 / ERD 備註 16 PENDING_CONFIRMATION 與不歸因設計 (v1.4) | 4.1 / 4.2 / §9 排程 (專用受控 RPC、PC2 雙方對稱無差別退回 Queue) |
+| §6.3 活動進行中鎖定 Request (v1.7) | 3.2 的 `ACTIVE_ACTIVITY_IN_PROGRESS` |
+| §6.3 拒絕/晚取消 30 分鐘冷卻 (v1.7) | 3.2 的 `REQUEST_COOLDOWN_ACTIVE` + 4.2 `confirm=false` 分支 + 6.3 `LATE_CANCEL` 分支寫入 `next_request_allowed_at` |
+| §6.3 `submit_request` 驗證順序定案 (v1.7) | 3.2 全文 |

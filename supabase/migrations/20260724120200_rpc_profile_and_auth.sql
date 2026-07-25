@@ -32,29 +32,29 @@ declare
 begin
   -- 驗證登入身分
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   -- 檢查停權狀態
   if exists (select 1 from app_user where id = v_user_id and suspended_until > now()) then
-    raise exception using errcode = 'USER_SUSPENDED', message = 'USER_SUSPENDED';
+    raise exception using message = 'USER_SUSPENDED';
   end if;
 
   -- 驗證硬性門檻
   if p_display_name is null or trim(p_display_name) = '' then
-    raise exception using errcode = 'PROFILE_INCOMPLETE', message = 'DISPLAY_NAME_REQUIRED';
+    raise exception using message = 'PROFILE_INCOMPLETE', detail = 'DISPLAY_NAME_REQUIRED';
   end if;
 
   if p_avatar_url is null or trim(p_avatar_url) = '' then
-    raise exception using errcode = 'PROFILE_INCOMPLETE', message = 'AVATAR_URL_REQUIRED';
+    raise exception using message = 'PROFILE_INCOMPLETE', detail = 'AVATAR_URL_REQUIRED';
   end if;
 
   if p_degree_level is null then
-    raise exception using errcode = 'DEGREE_LEVEL_REQUIRED', message = 'DEGREE_LEVEL_REQUIRED';
+    raise exception using message = 'DEGREE_LEVEL_REQUIRED';
   end if;
 
   if p_contact_ig is null and p_contact_line is null and p_contact_discord is null then
-    raise exception using errcode = 'NO_CONTACT_METHOD', message = 'AT_LEAST_ONE_CONTACT_REQUIRED';
+    raise exception using message = 'NO_CONTACT_METHOD', detail = 'AT_LEAST_ONE_CONTACT_REQUIRED';
   end if;
 
   -- 從 auth.users 取得 email 並推導學校（SPEC §2：不讓使用者自選）
@@ -63,7 +63,7 @@ begin
    where id = v_user_id;
 
   if v_email is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'USER_EMAIL_NOT_FOUND';
+    raise exception using message = 'UNAUTHORIZED', detail = 'USER_EMAIL_NOT_FOUND';
   end if;
 
   if v_email ~* '@nycu\.edu\.tw$' then
@@ -71,7 +71,7 @@ begin
   elsif v_email ~* '@nthu\.edu\.tw$' then
     v_school := 'NTHU';
   else
-    raise exception using errcode = 'INVALID_EMAIL_DOMAIN', message = 'INVALID_EMAIL_DOMAIN';
+    raise exception using message = 'INVALID_EMAIL_DOMAIN';
   end if;
 
   -- Upsert 到 app_user
@@ -117,7 +117,7 @@ declare
   v_user_id uuid := auth.uid();
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   return jsonb_build_object(

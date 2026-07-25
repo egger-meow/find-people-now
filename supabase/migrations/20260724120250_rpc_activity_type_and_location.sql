@@ -39,20 +39,20 @@ declare
   v_result  activity_type;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   if exists (select 1 from app_user where id = v_user_id and suspended_until > now()) then
-    raise exception using errcode = 'USER_SUSPENDED', message = 'USER_SUSPENDED';
+    raise exception using message = 'USER_SUSPENDED';
   end if;
 
   if v_trimmed is null or v_trimmed = '' then
-    raise exception using errcode = 'INVALID_INPUT', message = 'NAME_REQUIRED';
+    raise exception using message = 'INVALID_INPUT', detail = 'NAME_REQUIRED';
   end if;
 
   -- 重複名稱檢查
   if exists (select 1 from activity_type where name = v_trimmed) then
-    raise exception using errcode = 'DUPLICATE_TYPE_NAME', message = 'DUPLICATE_TYPE_NAME';
+    raise exception using message = 'DUPLICATE_TYPE_NAME';
   end if;
 
   insert into activity_type (name, status, created_by)

@@ -27,14 +27,14 @@ declare
   v_no_show_cnt   int;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   if not exists (
     select 1 from activity_member
      where activity_id = p_activity_id and user_id = v_user_id and status = 'JOINED'
   ) then
-    raise exception using errcode = 'NOT_ACTIVITY_MEMBER', message = 'NOT_ACTIVITY_MEMBER';
+    raise exception using message = 'NOT_ACTIVITY_MEMBER';
   end if;
 
   -- 寫入回報 (DB UNIQUE (activity_id, reporter_id) 防重複)
@@ -42,7 +42,7 @@ begin
     insert into completion_report (activity_id, reporter_id, result, absent_user_ids)
     values (p_activity_id, v_user_id, p_result, coalesce(p_absent_user_ids, '{}'));
   exception when unique_violation then
-    raise exception using errcode = 'ALREADY_REPORTED', message = 'ALREADY_REPORTED';
+    raise exception using message = 'ALREADY_REPORTED';
   end;
 
   -- 計算成員總數與目前回報數
@@ -123,17 +123,17 @@ declare
   v_is_mutual boolean := false;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   if v_user_id = p_to_user_id then
-    raise exception using errcode = 'INVALID_INPUT', message = 'CANNOT_VOTE_SELF';
+    raise exception using message = 'INVALID_INPUT', detail = 'CANNOT_VOTE_SELF';
   end if;
 
   -- 檢查雙方是否皆為該活動成員
   if not exists (select 1 from activity_member where activity_id = p_activity_id and user_id = v_user_id) or
      not exists (select 1 from activity_member where activity_id = p_activity_id and user_id = p_to_user_id) then
-    raise exception using errcode = 'NOT_ACTIVITY_MEMBER', message = 'NOT_ACTIVITY_MEMBER';
+    raise exception using message = 'NOT_ACTIVITY_MEMBER';
   end if;
 
   -- 寫入投票

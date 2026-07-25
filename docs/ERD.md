@@ -56,6 +56,7 @@ erDiagram
         text contact_line "nullable"
         text contact_discord "nullable，CHECK：三者至少一項 NOT NULL"
         timestamptz suspended_until "nullable，連續 3 次 No-show 停權 7 天"
+        timestamptz next_request_allowed_at "nullable，拒絕候選配對/LATE_CANCEL 觸發 30 分鐘冷卻（v1.7，SPEC §6.3）"
         timestamptz created_at
     }
 
@@ -246,3 +247,5 @@ erDiagram
 20. **`known_member_count` 不是欄位（v1.5）**：這是查詢時算出的值，SQL 概念上等同 `SELECT count(*) FROM activity_member WHERE activity_id = :aid AND source_request_id = (SELECT source_request_id FROM activity_member WHERE activity_id = :aid AND user_id = :uid) AND user_id != :uid`，不落地成 `activity_member` 或 `activity` 上的任何欄位。
 21. **`downgrade_request.target_size` 沒有 DB 層 CHECK 約束（v1.5 補充）**：業務規則是「必須低於原 `min_participants`」，但 `min_participants` 存在 `match_request` 另一張表，PostgreSQL 的 CHECK 不能跨表引用，這條驗證留在應用層（或未來視需要補 trigger），schema 只存數值本身。
 22. **`activity_type` 新增 `group_size_step`（nullable int，v1.6）**：不做成 `allowed_group_sizes[]` 陣列——若用陣列，admin 審核連續模式類型時要手動列舉每個可選人數，徒增管理負擔；用 `group_size_step` + `default_min_participants`/`default_max_participants` 三者，由前端動態算出離散選項即可，admin 只需設定三個數字。🟢 **`group_size_step` 只要被設定為非 null 值（包含 1），前端一律按離散選項渲染；null 才代表連續區間。不存在「連續區間但同時設了 step」的中間狀態，避免 `step=1` 這類邊界值造成解讀歧義。** 明確不新增 `group_size_mode` 欄位——`group_size_step` 的 nullability 已完整表達離散/連續兩種模式，另開欄位會造成兩欄位需彼此保持一致的重複真相問題，與第 18 點 `invite_token` 不另存 `expire_at`、第 20 點 `known_member_count` 不額外儲存同一精神。
+23. **`app_user.next_request_allowed_at`（nullable timestamptz，v1.7）**：拒絕候選配對／`LATE_CANCEL` 觸發的 30 分鐘冷卻期落地欄位（SPEC §6.3）。放在 `app_user` 而非另開一張冷卻記錄表，理由與第 6 點 `suspended_until` 相同：一人同時只需要一個生效中的「解鎖時間點」，不需要保留歷史紀錄，用單一欄位覆寫即可；若未來需要追蹤冷卻觸發的歷史（例如統計濫用行為），應另開 per-event 日誌表，v1.7 不做。
+24. **「活動進行中鎖定」不新增欄位（v1.7）**：`submit_request` 檢查「呼叫者名下是否有 `MATCHED`/`ONGOING` 的 Activity」直接查詢 `activity_member` join `activity` 即可，不需要在 `app_user` 或其他表存一個快取旗標——這類「當下狀態」的判定與第 3、20 點 Reliability 分數、`known_member_count` 不落地存欄位同一精神：查詢即時算出，避免資料跟來源事實不同步。

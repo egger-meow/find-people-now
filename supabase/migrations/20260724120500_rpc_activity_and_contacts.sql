@@ -21,7 +21,7 @@ declare
   v_members     jsonb;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select * into v_activity
@@ -29,7 +29,7 @@ begin
    where id = p_activity_id;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'ACTIVITY_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'ACTIVITY_NOT_FOUND';
   end if;
 
   -- 檢查呼叫者是否為該活動成員
@@ -37,7 +37,7 @@ begin
     select 1 from activity_member
      where activity_id = p_activity_id and user_id = v_user_id and status = 'JOINED'
   ) then
-    raise exception using errcode = 'NOT_ACTIVITY_MEMBER', message = 'NOT_ACTIVITY_MEMBER';
+    raise exception using message = 'NOT_ACTIVITY_MEMBER';
   end if;
 
   -- 判斷基礎時效：now() < contact_visible_until (+24h)
@@ -96,7 +96,7 @@ declare
   v_event_type reliability_event_type;
 begin
   if v_user_id is null then
-    raise exception using errcode = 'UNAUTHORIZED', message = 'UNAUTHORIZED';
+    raise exception using message = 'UNAUTHORIZED';
   end if;
 
   select * into v_activity
@@ -104,14 +104,14 @@ begin
    where id = p_activity_id;
 
   if not found then
-    raise exception using errcode = 'NOT_FOUND', message = 'ACTIVITY_NOT_FOUND';
+    raise exception using message = 'NOT_FOUND', detail = 'ACTIVITY_NOT_FOUND';
   end if;
 
   if not exists (
     select 1 from activity_member
      where activity_id = p_activity_id and user_id = v_user_id and status = 'JOINED'
   ) then
-    raise exception using errcode = 'NOT_ACTIVITY_MEMBER', message = 'NOT_ACTIVITY_MEMBER';
+    raise exception using message = 'NOT_ACTIVITY_MEMBER';
   end if;
 
   -- 依時間點判定懲罰分級 (SPEC §10)：開始前 >= 1h 為 EARLY_CANCEL，否則為 LATE_CANCEL
@@ -124,6 +124,11 @@ begin
   -- 寫入 Reliability 事件
   insert into user_reliability_event (user_id, activity_id, event_type)
   values (v_user_id, p_activity_id, v_event_type);
+
+  -- LATE_CANCEL 觸發 30 分鐘冷卻 (v1.7，SPEC §6.3)；EARLY_CANCEL 屬正常改行程，不觸發
+  if v_event_type = 'LATE_CANCEL' then
+    update app_user set next_request_allowed_at = now() + interval '30 minutes' where id = v_user_id;
+  end if;
 
   -- 更新成員狀態
   update activity_member

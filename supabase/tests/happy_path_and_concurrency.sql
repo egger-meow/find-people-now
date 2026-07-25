@@ -1,6 +1,10 @@
 -- =============================================================================
 -- Automated SQL Test Script — Release Checklist (Backend Domain v1.0)
 -- 涵蓋：Happy Path、Race Condition/並發寫入、Failure Cases 異常捕獲
+--
+-- 不屬於 migration chain（v1.7 移出，見 SPEC.md），`supabase db reset` 不會執行本檔。
+-- 手動執行：`supabase db execute --file supabase/tests/happy_path_and_concurrency.sql`
+-- 或直接透過 psql 連線本地資料庫執行。
 -- =============================================================================
 
 do $$

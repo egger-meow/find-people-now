@@ -42,6 +42,14 @@
 > 4. `min_participants`/`max_participants` 欄位本身、Matching Engine 貪婪成局策略、Downgrade 觸發條件皆不變
 > 5. 第 6.1 節拆分為「6.1 Invite Link（邀請連結）」與「6.2 人數選項呈現」，原本混在同一標題下的邀請連結行為與 UI 對照表分開陳述；下游引用舊「第 6.1 節 UI 對照表」處（含第 12.1.1 節）同步改指向第 6.2 節
 
+> **v1.7 變更紀錄**（活動進行中鎖定 Request + 拒絕/晚取消冷卻期；`submit_request` 檢查順序定案）：
+> 1. 🟢 **推翻 v1.5 之前的既有決定**：第 6 節原寫「同一使用者同時只能有一個 `REQUESTING` 狀態的 Request；`MATCHED` 之後不受此限制（已非等待中的資源）」，v1.7 起改為**同一使用者名下若有任何 `MATCHED`/`ONGOING` 狀態的 Activity，在該 Activity 轉為 `COMPLETED`/`CANCELLED` 之前，不能建立或送出新的 MatchRequest**。這不是新增限制，是推翻「配對成立後不受限制」這個舊結論——範圍從「配對階段」延伸到「整個活動生命週期」，理由是防止使用者同時腳踏多個活動、變相比較挑選，與產品核心「盲配不挑人」精神一致（見新增第 6.3 節）
+> 2. 新增**配對冷卻**機制：主動拒絕候選配對（`respond_pending_confirmation` 傳 `confirm=false`）或活動確定後才取消（`cancel_activity_participation` 觸發 `LATE_CANCEL`）者，30 分鐘內不能送出新 Request，防止「允許反悔」被濫用成變相重抽（見新增第 6.3 節）
+> 3. `app_user` 新增 `next_request_allowed_at`（nullable timestamptz），供上述冷卻機制使用（見 ERD.md）
+> 4. 🟢 `respond_pending_confirmation` 的行為澄清：**允許反悔**（10 分鐘確認窗口內可改變心意，不視為錯誤），API.md 第 4 節先前列出的 `ALREADY_RESPONDED` 錯誤碼從未真正實作過，v1.7 正式從文件移除，避免文件承諾不存在的行為
+> 5. `submit_request` 的驗證順序正式定案為固定序列，見第 6.3 節；此前 API.md 雖列出部分檢查項目但未定義順序、且 `USER_SUSPENDED`/`PROFILE_INCOMPLETE` 兩項實際上只在 `create_request` 檢查、`submit_request` 從未真正檢查過，v1.7 一併補上，避免「文件寫一套、程式碼另一套」
+> 6. 🔴 **修正一個影響所有 RPC 的既有 bug**：所有 migration 內的 `raise exception using errcode = '<CODE>', message = '<...>'` 寫法無效——PL/pgSQL 的 `errcode` 只接受標準 5 碼 SQLSTATE 或內建 condition name，塞入 `'UNAUTHORIZED'` 這類自訂字串會在 `raise` 當下直接拋出 `unrecognized exception condition`，蓋掉原本要回傳的錯誤，代表 API.md 記載的所有錯誤碼實際上從未真正生效過。v1.7 順帶修正全部 6 個 RPC migration 檔案共 65 處呼叫，統一改為 `raise exception using message = '<CODE>'`（需要更細節的子原因時加 `detail = '<...>'`），詳見 API.md §0
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
@@ -180,7 +188,8 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 🟢 **`min_participants`/`max_participants` 皆代表活動總人數，包含 owner 本人**——這是後端欄位的計數基準，UI 選項卡標籤直接顯示這兩個欄位的實際數值，不做任何「不含自己」的換算（見第 6.2 節）。
 
 **限制**：
-- 同一使用者同時只能有一個 `REQUESTING` 狀態的 Request（以 `owner_id` 判定）；`MATCHED` 之後不受此限制（已非等待中的資源）
+- 同一使用者同時只能有一個 `REQUESTING` 狀態的 Request（以 `owner_id` 判定）
+- 🟢 **（v1.7 推翻）同一使用者名下若有任何 `MATCHED`/`ONGOING` 狀態的 Activity，在該 Activity 轉為 `COMPLETED`/`CANCELLED` 之前，不能建立或送出新的 Request**——v1.6 及之前版本認為「`MATCHED` 之後不受此限制（已非等待中的資源）」，v1.7 起推翻此結論，細節與理由見第 6.3 節
 - `campus_location_id` 必須屬於 owner 的 `school`——這是配對池同校隔離（第 7 節）的落地點
 
 ### 6.1 Invite Link（邀請連結）
@@ -200,6 +209,43 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 - **`group_size_step` 非 null（離散模式）**：前端在 `[default_min_participants, default_max_participants]` 區間內以 `group_size_step` 為間隔生成一組固定人數選項；使用者選擇其中一個數字，`min_participants` 與 `max_participants` 皆設為該數字（精確成團人數，無彈性區間）。例：籃球 `default_min_participants=6`、`default_max_participants=12`、`group_size_step=2` → 選項為「6 人」「8 人」「10 人」「12 人」
 - **`group_size_step` 為 null（連續模式）**：前端提供落在 `[default_min_participants, default_max_participants]` 的區間選擇，使用者選定的上下界直接寫入 `min_participants`/`max_participants`，允許彈性區間。例：咖啡 `default_min_participants=2`、`default_max_participants=4` → 使用者可選「2~4 人」這類區間，對應 `min_participants=2`、`max_participants=4`
 - 🟢 `group_size_step` 語意定義見第 5 節；null = 連續區間，非 null（含 1）= 離散選項，不存在中間狀態
+
+### 6.3 配對進行中鎖定與拒絕冷卻（v1.7）
+
+`respond_pending_confirmation` 已確認**允許反悔**（10 分鐘確認窗口內可改變心意，不視為錯誤，見第 12.1.2 節）。但「允許反悔」若沒有配套的冷卻機制，會被濫用成變相的「重抽」——配到不喜歡的人就拒絕、馬上重新發起新 Request 換人選，實質上繞過了「盲配不挑人」的核心設計。以下兩條規則補上這個缺口：
+
+**規則一：活動進行中鎖定（v1.7 推翻 v1.6 決定，見第 6 節）**
+- 同一使用者名下若有任何 `MATCHED`/`ONGOING` 狀態的 Activity，在該 Activity 轉為 `COMPLETED`/`CANCELLED` 之前，不能建立或送出新的 MatchRequest
+- 檢查點：`submit_request`（見下方驗證順序）
+- 錯誤碼：`ACTIVE_ACTIVITY_IN_PROGRESS`
+
+**規則二：拒絕/晚取消觸發 30 分鐘冷卻**
+- 適用範圍（僅限「主動造成配對/活動未成立」的情況）：
+  - `respond_pending_confirmation` 主動傳 `confirm=false`（主動拒絕候選配對）
+  - `cancel_activity_participation` 觸發 `LATE_CANCEL`（活動確定後、開始前 <1 小時取消，或活動開始後取消）
+- 明確排除、不觸發冷卻的情況：
+  - `respond_pending_confirmation` 因超時被背景任務標記 `TIMEOUT`（雙方都沒回應，不能歸咎任何一方）
+  - `cancel_activity_participation` 觸發 `EARLY_CANCEL`（提前 ≥1 小時取消，屬於既有政策允許的正常改行程）
+- 冷卻期長度：🟢 **30 分鐘**（比 `PENDING_CONFIRMATION` 的 10 分鐘確認窗口稍長，足以形成有意義的等待成本，但不至於讓使用者因一次正當的臨時取消就長時間用不了這個 App）
+- 落地欄位：`app_user.next_request_allowed_at`（nullable timestamptz），觸發時寫入 `now() + interval '30 minutes'`（見 ERD.md）
+- 檢查點：`submit_request`（見下方驗證順序）
+- 錯誤碼：`REQUEST_COOLDOWN_ACTIVE`
+
+**`submit_request` 驗證順序（定案，deterministic）**
+
+🟢 `submit_request` 累積了多道門檻檢查，過去文件未明確定義先後順序，導致「同一使用者同時違反兩條規則時回傳哪個錯誤碼」不確定。以下順序正式定案，**任何未來的 RPC 重構都不能打亂這個順序**，理由是讓錯誤訊息盡量對應使用者真正的處境（越貼近「根本原因」的檢查排越前面）：
+
+1. `UNAUTHORIZED`（未登入）
+2. `USER_SUSPENDED`（連續 No-show 停權中）
+3. `PROFILE_INCOMPLETE`（個人資料未完成必填門檻）
+4. *（結構性檢查，非業務規則，不編號但順序固定於此：載入 Request 本體）* `NOT_FOUND` / `REQUEST_NOT_OPEN`
+5. `ACTIVE_ACTIVITY_IN_PROGRESS`（名下有 `MATCHED`/`ONGOING` 的活動——排在冷卻檢查之前，因為「活動還沒結束」是問題的根源，不該先被冷卻期這個不相干的檢查擋下來；冷卻期檢查的前提是「你剛退出了什麼」，跟「你現在正卡著」是不同階段的問題）
+6. `REQUEST_COOLDOWN_ACTIVE`（冷卻期未過）
+7. `ALREADY_REQUESTING`（單一 REQUESTING 限制）
+8. `WINDOW_EXCEEDS_24H`（時間窗超過 24 小時）
+9. `NEW_USER_LOW_HEADCOUNT`（新人低人數限制）
+
+🔴 **與既有實作的落差（v1.7 一併修正）**：`USER_SUSPENDED`/`PROFILE_INCOMPLETE` 此前只在 `create_request` 檢查，`submit_request` 從未真正檢查過這兩項（儘管 API.md 舊版文字已提及「profile 門檻」）；v1.7 起 `submit_request` 也補上這兩項檢查，理由是 Draft 建立後到送出前這段時間，使用者狀態可能已經改變（例如剛建立 Draft 就被停權），送出當下應該重新驗證，不能只依賴建立當下的檢查結果。
 
 ---
 
