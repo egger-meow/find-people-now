@@ -1,5 +1,9 @@
 # Supabase CLI 本地状态，不进版控
 .branches
 .temp
+
+# dotenvx
 .env
+.env.keys
 .env.local
+.env.*.local
