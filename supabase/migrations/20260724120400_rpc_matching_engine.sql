@@ -83,7 +83,7 @@ begin
     insert into pending_confirmation (
       request_a_id, request_b_id, confirm_window_expire_at, status
     ) values (
-      p_request_a_id, p_request_b_id, now() + interval '10 minutes', 'PENDING'
+      p_request_a_id, p_request_b_id, now() + fn_get_config_interval('confirm_window_minutes'), 'PENDING'
     );
 
     update match_request set status = 'PENDING_CONFIRMATION' where id in (p_request_a_id, p_request_b_id);
@@ -261,8 +261,8 @@ begin
     -- 任一方拒絕 → 標記 DECLINED (清理作業由 Worker 或背景掃描執行)
     update pending_confirmation set status = 'DECLINED' where id = v_pc.id;
 
-    -- 主動拒絕觸發 30 分鐘冷卻 (v1.7，SPEC §6.3)；TIMEOUT 由背景 Worker 處理，不經過這裡，不觸發
-    update app_user set next_request_allowed_at = now() + interval '30 minutes' where id = v_user_id;
+    -- 主動拒絕觸發冷卻 (v1.7，SPEC §6.3；冷卻時長來自 app_config.cooldown_minutes)；TIMEOUT 由背景 Worker 處理，不經過這裡，不觸發
+    update app_user set next_request_allowed_at = now() + fn_get_config_interval('cooldown_minutes') where id = v_user_id;
   elsif v_other_resp = 'CONFIRMED' then
     -- 雙方皆同意 → 觸發 PC1 建立 Activity
     update pending_confirmation set status = 'CONFIRMED' where id = v_pc.id;

@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.7 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.8 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -49,6 +49,11 @@
 > 4. 🟢 `respond_pending_confirmation` 的行為澄清：**允許反悔**（10 分鐘確認窗口內可改變心意，不視為錯誤），API.md 第 4 節先前列出的 `ALREADY_RESPONDED` 錯誤碼從未真正實作過，v1.7 正式從文件移除，避免文件承諾不存在的行為
 > 5. `submit_request` 的驗證順序正式定案為固定序列，見第 6.3 節；此前 API.md 雖列出部分檢查項目但未定義順序、且 `USER_SUSPENDED`/`PROFILE_INCOMPLETE` 兩項實際上只在 `create_request` 檢查、`submit_request` 從未真正檢查過，v1.7 一併補上，避免「文件寫一套、程式碼另一套」
 > 6. 🔴 **修正一個影響所有 RPC 的既有 bug**：所有 migration 內的 `raise exception using errcode = '<CODE>', message = '<...>'` 寫法無效——PL/pgSQL 的 `errcode` 只接受標準 5 碼 SQLSTATE 或內建 condition name，塞入 `'UNAUTHORIZED'` 這類自訂字串會在 `raise` 當下直接拋出 `unrecognized exception condition`，蓋掉原本要回傳的錯誤，代表 API.md 記載的所有錯誤碼實際上從未真正生效過。v1.7 順帶修正全部 6 個 RPC migration 檔案共 65 處呼叫，統一改為 `raise exception using message = '<CODE>'`（需要更細節的子原因時加 `detail = '<...>'`），詳見 API.md §0
+
+> **v1.8 變更紀錄**（新增 `app_config` 系統可調運營參數表）：
+> 1. 新增 `app_config`（`key`/`value`/`description`/`updated_at`）：把原本寫死在 RPC function 裡的時間參數抽出成可調整的設定值，方便冷啟動階段與系統穩定後採用不同數值，不需重新部署即可調整（見新增第 13.1 節）
+> 2. 初始 seed 值沿用目前 SPEC 定案的數值，這次僅將寫死改為可調，不改變數值本身：`cooldown_minutes = 30`（第 6.3 節）、`confirm_window_minutes = 10`（第 12.1.2 節）、`downgrade_consent_window_minutes = 10`（第 8 節，目前尚無 RPC 建立 `downgrade_request`，此值先 seed 供未來使用）
+> 3. MVP 階段不新增管理用的 API/RPC，直接透過 Supabase Dashboard 的 Table Editor 調整（見第 13.1 節）
 
 ---
 
@@ -464,6 +469,18 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime connection 成本可觀測）再評估是否拆分。
 
 🟢 **背景排程機制**：spec 中至少三處狀態轉移依賴「時間到了自動觸發」——`REQUESTING → EXPIRED`（第 9 節，到 `latest_start`）、`ONGOING → COMPLETED`（第 9 節，`start_time + 24h` fallback）、`PENDING_CONFIRMATION → REQUESTING`（第 12.1.2 節，`CONFIRM_WINDOW` 超時）。這類轉移統一用 **Supabase pg_cron** 定期（例如每分鐘）掃描相關資料表、觸發對應轉移邏輯。這是**邏輯層**的排程任務，不需要在 ERD 新增資料表——ERD 裡各個已有 timeout 欄位的表（`match_request.latest_start`、`downgrade_request.expire_at`、`pending_confirmation.confirm_window_expire_at`）本身已足夠支撐 pg_cron 查詢「哪些記錄已經超時該轉移」。
+
+### 13.1 系統可調運營參數（`app_config`，v1.8）
+
+部分時間參數（冷卻時間、確認窗口）原本寫死在 RPC function 內，v1.8 起改為讀取 `app_config`（`key`/`value`/`description`/`updated_at`）設定表，冷啟動階段與系統穩定後可用不同數值，不需重新部署即可調整。
+
+| key | 初始值 | 用途 |
+|---|---|---|
+| `cooldown_minutes` | `30 minutes` | 拒絕候選配對（`respond_pending_confirmation` 的 DECLINED 分支）或 `LATE_CANCEL`（`cancel_activity_participation`）後的請求冷卻時間（第 6.3 節） |
+| `confirm_window_minutes` | `10 minutes` | `PENDING_CONFIRMATION` 的確認窗口時長（第 12.1.2 節） |
+| `downgrade_consent_window_minutes` | `10 minutes` | Downgrade 同意窗口時長（第 8 節）；目前尚無 RPC 建立 `downgrade_request`，此值先 seed 供未來實作使用 |
+
+**MVP 階段透過 Dashboard 直接調整，未來量大後可評估是否需要獨立的 admin 介面。** 不新增管理用的 API/RPC——這是給團隊內部調整用的運營參數，不是使用者可見或可操作的功能。
 
 ---
 

@@ -125,9 +125,9 @@ begin
   insert into user_reliability_event (user_id, activity_id, event_type)
   values (v_user_id, p_activity_id, v_event_type);
 
-  -- LATE_CANCEL 觸發 30 分鐘冷卻 (v1.7，SPEC §6.3)；EARLY_CANCEL 屬正常改行程，不觸發
+  -- LATE_CANCEL 觸發冷卻 (v1.7，SPEC §6.3；冷卻時長來自 app_config.cooldown_minutes)；EARLY_CANCEL 屬正常改行程，不觸發
   if v_event_type = 'LATE_CANCEL' then
-    update app_user set next_request_allowed_at = now() + interval '30 minutes' where id = v_user_id;
+    update app_user set next_request_allowed_at = now() + fn_get_config_interval('cooldown_minutes') where id = v_user_id;
   end if;
 
   -- 更新成員狀態
