@@ -1,0 +1,40 @@
+# supadart config — generates typed Dart classes for the 16 public.* tables
+# by introspecting the local Supabase instance's PostgREST OpenAPI schema.
+#
+# NOTE: supadart (like every other Dart codegen tool for Supabase) only reads
+# the table/view swagger definitions. It does NOT generate parameter/return
+# types for RPC (Postgres function) calls — those are hand-written in
+# lib/rpc/ instead. See lib/rpc/README.md for why.
+#
+# Run against the local `supabase start` instance:
+#   supadart --url http://127.0.0.1:54321 --key <SERVICE_ROLE_KEY>
+# (service_role is used only to ensure the swagger reflects every table's
+# full column set regardless of RLS grants; the generated code itself does
+# not embed the key.)
+
+output: lib/generated/
+separated: true
+dart: false
+exclude: []
+jsonbToDynamic: false
+
+# Postgres ENUM types → Dart enum. supadart does not introspect enum labels
+# automatically; values below were pulled from pg_type/pg_enum on the local
+# instance (source of truth: supabase/migrations/*.sql) and must be kept in
+# sync if a migration adds/renames a label.
+enums:
+  activity_member_status: [JOINED, CANCELLED]
+  activity_status: [MATCHED, ONGOING, COMPLETED, CANCELLED]
+  activity_type_status: [PENDING, APPROVED, REJECTED]
+  completion_result: [WENT_WELL, REPORTED_ABSENT, SELF_CANCELLED]
+  degree_level: [UNDERGRAD, MASTER, PHD]
+  downgrade_response: [AGREE, DISAGREE, NO_RESPONSE]
+  downgrade_status: [PENDING, APPROVED, REJECTED, TIMEOUT]
+  notification_event_type: [MATCH_SUCCESS, DOWNGRADE_REQUEST, DOWNGRADE_RESULT, ACTIVITY_REMINDER, COMPLETE_CONFIRMATION]
+  pending_confirmation_response: [CONFIRMED, DECLINED, NO_RESPONSE]
+  pending_confirmation_status: [PENDING, CONFIRMED, DECLINED, TIMEOUT]
+  reliability_event_type: [ATTENDED, EARLY_CANCEL, LATE_CANCEL, NO_SHOW]
+  request_member_role: [OWNER, MEMBER]
+  request_member_status: [JOINED, LEFT]
+  request_status: [DRAFT, REQUESTING, PENDING_CONFIRMATION, MATCHED, EXPIRED, CANCELLED]
+  school: [NYCU, NTHU]

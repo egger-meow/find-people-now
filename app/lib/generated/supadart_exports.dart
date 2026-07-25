@@ -1,0 +1,18 @@
+library models;
+
+export 'downgrade_request.dart';
+export 'downgrade_consent.dart';
+export 'location.dart';
+export 'activity.dart';
+export 'rematch_vote.dart';
+export 'completion_report.dart';
+export 'request_member.dart';
+export 'match_history_avoidance.dart';
+export 'activity_member.dart';
+export 'activity_type.dart';
+export 'app_config.dart';
+export 'notification.dart';
+export 'pending_confirmation.dart';
+export 'app_user.dart';
+export 'match_request.dart';
+export 'user_reliability_event.dart';
