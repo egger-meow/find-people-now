@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.6）
+# ERD — 校園活動配對 App（派生自 SPEC v1.7）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >

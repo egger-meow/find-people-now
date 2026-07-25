@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.6 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.7 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
