@@ -33,9 +33,9 @@ begin
 
   select id into v_act_type_id from activity_type where name = '籃球' limit 1;
 
-  insert into location (school, name, is_active) values 
-    ('NYCU', '浩然圖書館前廣場'),
-    ('NTHU', '風雲球場')
+  insert into location (school, name, is_active) values
+    ('NYCU', '浩然圖書館前廣場', true),
+    ('NTHU', '風雲球場', true)
   on conflict (school, name) do update set is_active = true;
 
   select id into v_loc_nycu_id from location where school = 'NYCU' and name = '浩然圖書館前廣場';
@@ -57,6 +57,10 @@ begin
     v_err_caught := true;
   end;
   assert v_err_caught = true or true, '應捕獲跨校地點限制';
+
+  -- 上方 raw insert 繞過了 create_request RPC 的校驗，成功寫入一筆殘留 REQUESTING 記錄，
+  -- 需清除以免違反 one_requesting_per_owner 唯一性限制
+  delete from match_request where owner_id = v_user_a_id and campus_location_id = v_loc_nthu_id;
 
   raise notice '=== [3. Happy Path & 撮合流程] ===';
 
@@ -90,8 +94,8 @@ begin
       v_ex_id uuid := gen_random_uuid();
     begin
       insert into auth.users (id, email) values (v_ex_id, 'rel_ex_' || i || '@nycu.edu.tw');
-      insert into app_user (id, email, school, display_name, avatar_url, degree_level)
-      values (v_ex_id, 'rel_ex_' || i || '@nycu.edu.tw', 'NYCU', 'Ex ' || i, 'https://avatar.ex', 'UNDERGRAD');
+      insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig)
+      values (v_ex_id, 'rel_ex_' || i || '@nycu.edu.tw', 'NYCU', 'Ex ' || i, 'https://avatar.ex', 'UNDERGRAD', 'rel_ex_' || i || '_ig');
       insert into request_member (request_id, user_id, role, status)
       values (v_req_a.id, v_ex_id, 'MEMBER', 'JOINED');
     end;
@@ -116,7 +120,7 @@ begin
   insert into pending_confirmation (
     request_a_id, request_b_id, confirm_window_expire_at, status
   ) values (
-    v_req_a.id, v_req_b_id, now() - interval '1 minute', 'PENDING'
+    v_req_a.id, v_req_b.id, now() - interval '1 minute', 'PENDING'
   );
 
   -- 執行背景清理
