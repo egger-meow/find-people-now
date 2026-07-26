@@ -87,9 +87,11 @@ begin
   returning * into v_act1;
   insert into activity_member (activity_id, user_id, source_request_id, status) values (v_act1.id, v_user1, v_req1.id, 'JOINED');
 
-  -- act2: start_time 只有 5 小時前，ONGOING，還沒到 24h → 不應被動
+  -- act2: start_time 只有 5 小時前，ONGOING，還沒到 24h → 不應被動；estimated_end_time
+  -- 特意設在未來，避免這筆也被 fn_remind_completions 撿到，維持這筆只測
+  -- fn_complete_activities 邊界的單一目的
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
-  values (v_act_type_id, 'NYCU', v_campus, now() - interval '5 hours', now() - interval '4 hours', 'ONGOING')
+  values (v_act_type_id, 'NYCU', v_campus, now() - interval '5 hours', now() + interval '1 hour', 'ONGOING')
   returning * into v_act2;
   insert into activity_member (activity_id, user_id, source_request_id, status) values (v_act2.id, v_user2, v_req2.id, 'JOINED');
 
