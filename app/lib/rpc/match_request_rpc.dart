@@ -58,14 +58,34 @@ Future<MatchRequest> cancelRequest(SupabaseClient client, String requestId) {
   );
 }
 
-// NOTE: docs/API.md §3.4 `join_request(request_id)` and §3.5
-// `leave_request(request_id)` are documented but have NO corresponding
-// `create or replace function` anywhere under supabase/migrations/ — grepped
-// the full migrations directory, no match. Only `join_request_by_token`
-// (§3.8) exists. No wrapper is written for them; calling
+// NOTE: docs/API.md §3.4 `join_request(request_id)` was removed from
+// API.md — see the CHANGELOG note added there. No UI path ever calls a
+// non-token join (the only invite mechanism is `join_request_by_token`,
+// §3.8); this wasn't a missing implementation, it was design leftover from
+// before invite tokens existed. No wrapper is written for it; calling
 // `client.rpc('join_request', ...)` against this backend will fail with
 // PostgREST's function-not-found error, not one of the ApiErrorCode values.
 // See RPC_COVERAGE.md.
+
+/// docs/API.md §3.5 — `rpc: leave_request(request_id)`.
+/// Implemented in supabase/migrations/20260724121000_rpc_leave_request.sql —
+/// previously documented but not implemented at all (see RPC_COVERAGE.md).
+/// Non-owner members only: the owner gets `FORBIDDEN` (detail
+/// `OWNER_CANNOT_LEAVE_USE_CANCEL_REQUEST`) and must use [cancelRequest]
+/// instead, since a Request can't be left without an owner. Only valid
+/// before a match (`DRAFT`/`REQUESTING`/`PENDING_CONFIRMATION`) — after
+/// that, leaving is handled on the Activity side via
+/// `cancel_activity_participation` (§6.3), matching the two-state-diagram
+/// boundary API.md §9 documents. Leaving before a match records no
+/// Reliability event (API.md §3.5).
+Future<MatchRequest> leaveRequest(SupabaseClient client, String requestId) {
+  return callRpc<MatchRequest>(
+    client,
+    'leave_request',
+    params: {'p_request_id': requestId},
+    decode: (data) => MatchRequest.fromJson(data as Map<String, dynamic>),
+  );
+}
 
 /// docs/API.md §3.7 — `rpc: get_or_create_invite_link(request_id)`.
 Future<String> getOrCreateInviteLink(SupabaseClient client, String requestId) {

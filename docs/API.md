@@ -40,13 +40,14 @@
 
 ## 3. MatchRequest（找人流程；只動 `match_request` 側）
 
+> 🔴 **v1.9 移除**：原 `3.4 rpc: join_request(request_id)`（非邀請連結、直接加入他人 Request 的版本）已從本節移除，編號不遞補（3.5 起維持原編號）。產品自 v1.5 邀請連結機制上線後，就沒有任何「瀏覽/挑選他人 Request」的 UI 路徑（v1.5 變更紀錄：「v1 沒有 Friend entity、不存任何朋友關係資料」；核心設計是「盲配不挑人」）——加入他人 Request 的唯一合法方式是 3.8 `join_request_by_token`。這是 v1.5 之前的設計遺留、從未有對應 UI 路徑會呼叫它，不是漏實作；理由與更早移除 `create_request` 的 `invited_user_ids` 參數相同。詳見 SPEC.md v1.9 變更紀錄。
+
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
 | 3.1 | `rpc: create_request(activity_type_id, campus_location_id, bucket, min_participants, max_participants?, allow_downgrade)` | R1 | `bucket ∈ {NOW, TODAY, TONIGHT, TOMORROW_AM}` 換算成 `earliest_start/latest_start`（SPEC §4）。`min_participants >= 2`；`max_participants` 為 upper bound (null 則 fallback 至 `activity_type.default_max_participants`)。<br>🟢 **驗證規範**：① `min/max_participants` 計數**包含 owner 本人**。② 若 `group_size_step` 非 null，帶入的人數必須符合離散步階選項，否則回傳 `INVALID_GROUP_SIZE_OPTION`。③ 檢查 `campus_location_id` 屬於 owner 的 `school`，否則回 `SCHOOL_LOCATION_MISMATCH`（SPEC §6/§7 同校隔離）。④ 僅建立 owner 本人的 Request（此時 `request_member` 只有 owner 一人）；邀請朋友加入一律透過 3.7 生成邀請連結，好友透過 3.8 加入，在 Matching Engine 掃描撮合前陸續完成組隊。 |
 | 3.2 | `rpc: submit_request(request_id)` | R2 | 送出進 Queue。🟢 **驗證順序定案（deterministic，SPEC §6.3），任何未來重構都不能打亂**：① `UNAUTHORIZED`（未登入）② `USER_SUSPENDED`（停權中）③ `PROFILE_INCOMPLETE`（個人資料未完成）④ *(結構性檢查，載入 Request 本體)* `NOT_FOUND` / `REQUEST_NOT_OPEN` ⑤ **`ACTIVE_ACTIVITY_IN_PROGRESS`**（owner 名下有 `MATCHED`/`ONGOING` 的 Activity，v1.7 新增，見 SPEC §6.3——排在冷卻檢查之前，因為「活動還沒結束」是根源問題）⑥ **`REQUEST_COOLDOWN_ACTIVE`**（`app_user.next_request_allowed_at > now()`，v1.7 新增）⑦ 單一 `REQUESTING` 限制（`ALREADY_REQUESTING`）⑧ 24h 時間窗（`WINDOW_EXCEEDS_24H`）⑨ **新人低人數限制**（`min_participants ≤ 2` 且任一成員 `fn_is_new_user()` = true → `NEW_USER_LOW_HEADCOUNT`，SPEC §12.1）。 |
-| 3.3 | `rpc: cancel_request(request_id)` | R5 | 配對成立前取消，不記 Reliability 事件。 |
-| 3.4 | `rpc: join_request(request_id)` | — | 加入他人 Request 成為 member；同樣檢查 `max_participants` 上限與 3.2 的新人低人數門檻（SPEC §7）。 |
-| 3.5 | `rpc: leave_request(request_id)` | — | member 退出（`request_member.status → LEFT`）；配對成立前退出不記事件。 |
+| 3.3 | `rpc: cancel_request(request_id)` | R5 | 配對成立前取消，不記 Reliability 事件。owner 專用；非 owner 成員請改用 3.5 `leave_request`。 |
+| 3.5 | `rpc: leave_request(request_id)` | — | 非 owner 成員退出（`request_member.status → LEFT`）；配對成立前退出不記事件。owner 呼叫回 `FORBIDDEN`（應改用 3.3 `cancel_request`）；配對成立後（非 `DRAFT`/`REQUESTING`/`PENDING_CONFIRMATION`）回 `REQUEST_NOT_OPEN`，改走 6.3 `cancel_activity_participation`。 |
 | 3.6 | `GET match_request`（PostgREST，RLS：owner 或成員） | — | 查自己的 Request 與狀態。 |
 | 3.7 | `rpc: get_or_create_invite_link(request_id)` | — | **生成/取得專屬邀請連結 (v1.5)**：回傳 `invite_token`。生命週期依附本列 `status = 'REQUESTING'` 且未被主動撤銷（`revoked_at is null`），不另存到期時間（ERD 備註 18）。 |
 | 3.8 | `rpc: join_request_by_token(invite_token)` | — | **透過邀請連結加入 Request (v1.5)**：已完成身份驗證的使用者帶入 `invite_token` 加入（本質為信任引導 Trust Bootstrap，不與 Friend 表綁定）。檢查：Token 未撤銷、未過期、未超過 `max_participants` 上限、通過新人低人數限制與同校隔離檢查。加入後新增 `request_member` 記錄。 |
@@ -131,13 +132,13 @@
 |---|---|
 | §2 網域驗證（雙校） | 1.1 + DB CHECK |
 | §2 school 自動判定、不讓 user 選 | 1.2 server 端 mapping + DB CHECK |
-| §2 profile 硬門檻 + degree_level 必填 (v1.4) | 1.2 + 3.2/3.4 前置檢查 + DB CHECK |
+| §2 profile 硬門檻 + degree_level 必填 (v1.4) | 1.2 + 3.2/3.8 前置檢查 + DB CHECK |
 | §2 `bio` / `department` 選填、不進配對邏輯 (v1.4) | 1.2/1.3（無門檻檢查）+ ERD 無 NOT NULL |
 | §5 activity_type 人數選單預設與步階 (v1.5/v1.6) | 2.1 描述與 3.1 步階驗證 (`INVALID_GROUP_SIZE_OPTION`) |
 | §6/§7 配對池同校隔離 | 3.1 的 `SCHOOL_LOCATION_MISMATCH` + location 的 school 歸屬 |
 | §6 單一 REQUESTING | 3.2 + partial unique index |
 | §6.1 / §16 邀請連結與信任引導 (v1.5) | 3.7 / 3.8 / 3.9 (Token 產生、受控加入、主動撤銷) |
-| §7/§12.1 新人低人數限制 | 3.2 / 3.4 的 `NEW_USER_LOW_HEADCOUNT` |
+| §7/§12.1 新人低人數限制 | 3.2 / 3.8 的 `NEW_USER_LOW_HEADCOUNT` |
 | §8 Downgrade 全套 | 5.1 + 背景任務 |
 | §9 兩張狀態圖分離 | §3 只動 request、§6 只動 activity 的 endpoint 邊界 |
 | §10 多數決 / 2 人互咬 / 停權 | 7.1 結算邏輯 |

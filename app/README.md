@@ -44,9 +44,12 @@ update them if a migration adds/renames an enum label.
 
 ## Running the verification test
 
-Needs a location row to exist (the RLS policy exists but, as documented in
-`test/rpc_smoke_test.dart`, no migration grants `SELECT` to any client role —
-the test reads it via `docker exec ... psql`, same as the seed step):
+Needs a location row to exist (no migration seeds `location` rows — only
+`activity_type` gets seed data). The test reads it via `docker exec ...
+psql` rather than `client.from('location').select()`, matching how the
+seed step below writes it — this is just fixture setup, not a workaround
+for a permissions bug (see `20260724120800_grants.sql` — the table-level
+GRANTs that endpoint needed were missing until v1.9, now fixed):
 
 ```bash
 docker exec supabase_db_find-people-now psql -U postgres -d postgres -c \

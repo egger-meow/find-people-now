@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.8 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.9 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -54,6 +54,12 @@
 > 1. 新增 `app_config`（`key`/`value`/`description`/`updated_at`）：把原本寫死在 RPC function 裡的時間參數抽出成可調整的設定值，方便冷啟動階段與系統穩定後採用不同數值，不需重新部署即可調整（見新增第 13.1 節）
 > 2. 初始 seed 值沿用目前 SPEC 定案的數值，這次僅將寫死改為可調，不改變數值本身：`cooldown_minutes = 30`（第 6.3 節）、`confirm_window_minutes = 10`（第 12.1.2 節）、`downgrade_consent_window_minutes = 10`（第 8 節，目前尚無 RPC 建立 `downgrade_request`，此值先 seed 供未來使用）
 > 3. MVP 階段不新增管理用的 API/RPC，直接透過 Supabase Dashboard 的 Table Editor 調整（見第 13.1 節）
+
+> **v1.9 變更紀錄**（補齊 GRANT 遺漏 + `respond_downgrade`/`leave_request` 實作 + 移除設計遺留的 `join_request`）：
+> 1. 🔴 **修正一個影響所有 PostgREST 直讀端點的 bug**：`supabase/migrations/` 從第一份 migration 開始就沒有任何 `grant` 陳述式——RLS policy 都正確定義，但 Postgres 的資料表權限系統是 RLS 之外**獨立的一層外層閘門**，沒有底層 SELECT/UPDATE 授權，RLS 根本不會被求值，直接 403（`permission denied`）。Supabase 平台過去會在建立新專案時自動幫所有表補上 `grant all ... to anon, authenticated, service_role`，這個自動行為後來被平台取消，此 repo 從未跟著補上手動 GRANT，導致 API.md 內每一個標 `(PostgREST)` 的端點對 `anon`/`authenticated`/`service_role` 全部悄悄回 403，只有 `SECURITY DEFINER` 的 RPC（以 function owner 身分執行，不受呼叫者角色的表權限限制）不受影響。新增 `20260724120800_grants.sql`：依每張表既有的 RLS policy 集合精確授權（有 `for select` policy 才 `grant select`，以此類推），不是無差別 `grant all`；`pending_confirmation`/`match_history_avoidance`（刻意不開 SELECT policy）與 `app_config`（刻意不啟用 RLS，Dashboard-only）維持不授權
+> 2. 新增 `rpc: respond_downgrade(downgrade_request_id, agree)`（第 8 節）：第 8 節與 ERD 設計備註 21 定案已久，但這個使用者回應 endpoint 從未真正實作過，功能對使用者來說形同不存在。行為依 STATE_MACHINE.md「Downgrade 子流程」：任一人 `DISAGREE` 立即 `REJECTED`，全員 `AGREE` 才 `APPROVED`；重複回應回 `ALREADY_RESPONDED`（此碼在第 5 節 error table 從未被移除，跟第 4 節 `respond_pending_confirmation` 的「允許反悔」是不同的既有設計）。**範圍限定**：只補使用者回應這一半，`downgrade_request` 的建立仍是背景任務（第 9 節「Request 過期」排程）的職責，尚未實作
+> 3. 新增 `rpc: leave_request(request_id)`（第 6 節）：透過邀請連結（6.1 節）加入別人 Request 的非 owner 成員，先前完全沒有任何方式可以退出——`cancel_request` 嚴格限定 owner_id，非 owner 成員呼叫只會得到 `NOT_FOUND`。owner 呼叫 `leave_request` 回 `FORBIDDEN`（應改用 `cancel_request`，語意上「換 owner」不在本次範圍內）；配對成立後不可再用此 endpoint 退出（改走第 9 節 `cancel_activity_participation`，維持兩張狀態圖分界）
+> 4. 🔴 **移除設計遺留的 `join_request(request_id)`**（非邀請連結版本的直接加入）：產品自 v1.5 邀請連結機制上線後，就沒有任何「瀏覽/挑選他人 Request」的 UI 路徑（v1.5 變更紀錄第 1 條：「v1 沒有 Friend entity、不存任何朋友關係資料」），加入他人 Request 的唯一合法方式是 `join_request_by_token`（6.1 節）。這條端點是 v1.5 之前的設計遺留、從未有對應 UI 路徑會呼叫它，不是遺漏的實作——與更早移除 `create_request` 的 `invited_user_ids` 參數是同一個理由。API.md 第 3 節編號不遞補（3.4 空缺、3.5 起維持原編號），避免牽動其他文件的既有交叉引用
 
 ---
 

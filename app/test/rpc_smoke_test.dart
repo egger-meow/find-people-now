@@ -113,23 +113,17 @@ void main() {
 
       // 6. Look up the NYCU test location seeded for this run.
       //
-      // WORKAROUND, not a frontend bug: `client.from('location').select()`
-      // 403s here with "permission denied for table location" (code 42501)
-      // for BOTH `authenticated` AND `service_role` — confirmed by trying
-      // service_role first, same error. RLS itself is fine
-      // (`active_locations_select` policy exists) but NO migration under
-      // supabase/migrations/ ever runs a `grant select`: `\dp location` on
-      // the local instance shows anon/authenticated/service_role only have
-      // D/x/t/m (delete/references/trigger/maintain), no SELECT. This
-      // breaks every `(PostgREST)`-tagged endpoint in docs/API.md (2.1, 2.4,
-      // 3.6, 5.2, 6.1, 8.1, 8.2, ...) for every real client role; pgTAP's
-      // tests never catch it because they run as the `postgres` superuser
-      // inside BEGIN/ROLLBACK, bypassing PostgREST's role layer entirely.
-      // Reported separately in RPC_COVERAGE.md — going around it here via a
-      // direct psql read (same pattern pgTAP fixtures use for setup) so this
-      // test's actual subject (create_request/submit_request, both
-      // SECURITY DEFINER and unaffected by the GRANT bug) stays verifiable
-      // without masking the bug behind an out-of-band GRANT.
+      // HISTORICAL NOTE: `client.from('location').select()` used to 403 here
+      // with "permission denied for table location" (42501) for every client
+      // role — no migration under supabase/migrations/ ran a `grant select`
+      // on any table, breaking every `(PostgREST)`-tagged endpoint in
+      // docs/API.md. Fixed in 20260724120800_grants.sql (v1.9) — see that
+      // migration's header comment for the full root-cause writeup and
+      // RPC_COVERAGE.md for the fix summary. `client.from('location')...`
+      // would work now too; this still reads via `docker exec ... psql`
+      // instead purely because no migration seeds `location` rows (only
+      // `activity_type` does), so a raw read after the raw seed insert below
+      // is the simplest fixture setup, not a permissions workaround anymore.
       final psql = await Process.run('docker', [
         'exec',
         'supabase_db_find-people-now',

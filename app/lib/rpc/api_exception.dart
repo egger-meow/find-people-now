@@ -38,6 +38,8 @@ enum ApiErrorCode {
   forbidden('FORBIDDEN'),
   notActivityMember('NOT_ACTIVITY_MEMBER'),
   alreadyReported('ALREADY_REPORTED'),
+  consentWindowClosed('CONSENT_WINDOW_CLOSED'),
+  alreadyResponded('ALREADY_RESPONDED'),
   unknown('__UNKNOWN__');
 
   final String code;
