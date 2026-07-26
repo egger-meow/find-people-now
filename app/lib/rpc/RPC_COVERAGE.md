@@ -66,7 +66,7 @@ Three more things added after v1.9, same day:
 
 1. **`activity_type.description`** (nullable text) added in
    `supabase/migrations/20260724121100_activity_type_description_and_seed.sql`,
-   plus a seeded official type "先聚聚看" (`status='APPROVED'`, not routed
+   plus a seeded official type "先聚了再說" (`status='APPROVED'`, not routed
    through `propose_activity_type` — same pattern as the other 7 seeded
    types). `description` is admin-set at Dashboard review time alongside
    `default_duration_minutes` etc., not a `propose_activity_type` parameter,
