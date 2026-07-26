@@ -8,24 +8,21 @@
 // the full propose -> vote -> tally -> fn_start_activities lock flow.
 //
 // Getting to a real MATCHED Activity through the actual RPC surface (not a
-// raw SQL fixture, like the pgTAP tests use) requires routing around two
-// things client code can't drive:
-//   1. `fn_run_matching_engine()` is a `pg_cron`-only function, no client
-//      RPC triggers it (see docs/API.md §9) — invoked here via `docker exec
-//      psql`, the same escape hatch rpc_smoke_test.dart already uses for
-//      seeding.
-//   2. `commit_match` only creates a real `activity` row when the merged
-//      pair's *total* JOINED request_member count is > 2 (SPEC §7's "greedy
-//      merge" R3a branch); <=2 total goes through PENDING_CONFIRMATION
-//      instead. Two solo real users merging is exactly 2, which would hit
-//      that branch — and independently verified while writing this test
-//      (see the flagged follow-up task) that path never actually produces
-//      an Activity even after both sides confirm, so it's not usable here
-//      regardless. Instead, one real user's request is padded with 2
-//      raw-SQL fixture members (mirroring the exact technique
-//      supabase/tests/database/01_happy_path_and_concurrency.test.sql uses)
-//      so the real merge totals 4, landing squarely in the >2 branch that
-//      IS verified working end-to-end (pgTAP + this test).
+// raw SQL fixture, like the pgTAP tests use) requires routing around one
+// thing client code can't drive: `fn_run_matching_engine()` is a
+// `pg_cron`-only function, no client RPC triggers it (see docs/API.md §9) —
+// invoked here via `docker exec psql`, the same escape hatch
+// rpc_smoke_test.dart already uses for seeding.
+//
+// Two solo real users merging totals exactly 2 JOINED members, which routes
+// through `commit_match`'s <=2 branch -> PENDING_CONFIRMATION, requiring
+// both sides to call `respond_pending_confirmation(confirm: true)` before an
+// Activity exists. This used to be unusable here because that PC1 path had a
+// bug (commit_match re-entry re-derived the same <=2 branch and inserted a
+// duplicate pending_confirmation instead of creating the Activity — fixed in
+// supabase/migrations/20260724122000_fix_commit_match_pc1.sql, covered by
+// supabase/tests/database/08_pc1_activity_creation.test.sql). This test now
+// exercises that real 2-person path end-to-end instead of routing around it.
 //
 // Run: flutter test test/activity_location_voting_smoke_test.dart
 import 'dart:convert';
@@ -41,6 +38,7 @@ import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/activity_rpc.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
+import 'package:find_people_now/rpc/confirmation_rpc.dart';
 import 'package:find_people_now/rpc/match_request_rpc.dart';
 
 Future<SupabaseClient> _createAndSignIn(
@@ -162,7 +160,10 @@ void main() {
       // RPC surface. min_participants=3 (not 2) so brand-new users clear
       // submit_request's NEW_USER_LOW_HEADCOUNT gate (SPEC §12.1.1) —
       // unrelated to the eventual match size, which is decided by actual
-      // request_member counts at merge time, not this field.
+      // request_member counts at merge time, not this field. Neither request
+      // gets extra fixture members, so the real merge total is exactly 2
+      // (1+1), landing in commit_match's <=2 PENDING_CONFIRMATION branch —
+      // this is the real 2-person path, not routed around it.
       final types = await searchActivityType(clientA, query: '咖啡');
       expect(types, isNotEmpty);
       final coffeeId = types.firstWhere((t) => t.name == '咖啡').id;
@@ -178,30 +179,6 @@ void main() {
       // ignore: avoid_print
       print('[create_request/submit_request] A -> ${requestA.id} REQUESTING');
 
-      // 4. Pad A's request with 2 fixture members via raw SQL (mirrors
-      // 01_happy_path_and_concurrency.test.sql's exact technique) so the
-      // real merge below lands in commit_match's >2 branch (direct Activity
-      // creation), not the <=2 PENDING_CONFIRMATION branch — see the file
-      // header comment for why the latter is routed around entirely.
-      await _psqlScalar('''
-        do \$\$
-        declare
-          v_ex1 uuid := gen_random_uuid();
-          v_ex2 uuid := gen_random_uuid();
-        begin
-          insert into auth.users (id, email) values
-            (v_ex1, 'alv-ex1-$stamp@nycu.edu.tw'), (v_ex2, 'alv-ex2-$stamp@nycu.edu.tw');
-          insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_line) values
-            (v_ex1, 'alv-ex1-$stamp@nycu.edu.tw', 'NYCU', 'Ex1', 'https://x', 'MASTER', 'alv_ex1_line'),
-            (v_ex2, 'alv-ex2-$stamp@nycu.edu.tw', 'NYCU', 'Ex2', 'https://x', 'MASTER', 'alv_ex2_line');
-          insert into request_member (request_id, user_id, role, status) values
-            ('${requestA.id}', v_ex1, 'MEMBER', 'JOINED'),
-            ('${requestA.id}', v_ex2, 'MEMBER', 'JOINED');
-        end \$\$;
-      ''');
-      // ignore: avoid_print
-      print('[fixture] padded request A to 3 JOINED members');
-
       final requestB = await createRequest(
         clientB,
         activityTypeId: coffeeId,
@@ -213,13 +190,50 @@ void main() {
       // ignore: avoid_print
       print('[create_request/submit_request] B -> ${requestB.id} REQUESTING');
 
-      // 5. Trigger the matching engine (pg_cron-only, no client RPC exists —
-      // see docs/API.md §9). Total merged size = 3 (A + 2 fixtures) + 1 (B)
-      // = 4 > 2, so commit_match creates a real Activity directly.
+      // 4. Trigger the matching engine (pg_cron-only, no client RPC exists —
+      // see docs/API.md §9). Total merged size = 1 (A) + 1 (B) = 2 <= 2, so
+      // commit_match creates a pending_confirmation instead of an Activity —
+      // both sides must respond_pending_confirmation(confirm: true) below.
       final matchCount = await _psqlScalar('select fn_run_matching_engine();');
       expect(matchCount, '1', reason: 'expected exactly one merge to fire');
 
-      // 6. Fetch the resulting activity via a real authenticated PostgREST
+      // 5. Each side independently reads its own pending confirmation status
+      // through the real RPC (not raw SQL) — mirrors how a client would
+      // actually discover it needs to respond.
+      final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
+      expect(statusForA.status, PENDING_CONFIRMATION_STATUS.PENDING);
+      final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
+      expect(statusForB.status, PENDING_CONFIRMATION_STATUS.PENDING);
+      expect(statusForB.pendingConfirmationId, statusForA.pendingConfirmationId);
+      // ignore: avoid_print
+      print('[fn_run_matching_engine] merged -> PENDING_CONFIRMATION id=${statusForA.pendingConfirmationId}');
+
+      // 6. Both sides confirm. This is exactly the PC1 path that used to be
+      // broken: commit_match's re-entry re-derived the same <=2 branch and
+      // inserted a duplicate pending_confirmation instead of creating the
+      // Activity (fixed in
+      // supabase/migrations/20260724122000_fix_commit_match_pc1.sql).
+      await respondPendingConfirmation(
+        clientA,
+        pendingConfirmationId: statusForA.pendingConfirmationId,
+        confirm: true,
+      );
+      await respondPendingConfirmation(
+        clientB,
+        pendingConfirmationId: statusForB.pendingConfirmationId,
+        confirm: true,
+      );
+      // ignore: avoid_print
+      print('[respond_pending_confirmation] both A and B confirmed');
+
+      // Live regression check of the exact bug: exactly one
+      // pending_confirmation row for this pair, not two.
+      final pcCount = await _psqlScalar(
+        "select count(*) from pending_confirmation where id='${statusForA.pendingConfirmationId}';",
+      );
+      expect(pcCount, '1');
+
+      // 7. Fetch the resulting activity via a real authenticated PostgREST
       // read (client.from(...), not raw SQL) — this is also a live
       // regression check of the activity_member RLS recursion fix (see
       // supabase/migrations/20260724121900_fix_activity_member_rls_recursion.sql):
@@ -231,7 +245,7 @@ void main() {
       expect(memberRows, isNotEmpty, reason: 'user B should be a member of the merged activity');
       final activityId = memberRows.first['activity_id'] as String;
       // ignore: avoid_print
-      print('[fn_run_matching_engine] merged -> activity_id=$activityId');
+      print('[respond_pending_confirmation] PC1 created -> activity_id=$activityId');
 
       final activityRow = await clientA.from('activity').select().eq('id', activityId).single();
       final activity = Activity.fromJson(activityRow);
@@ -245,7 +259,7 @@ void main() {
         'campus=${activity.campus} activityLocationId=${activity.activityLocationId}',
       );
 
-      // 7. User A proposes the candidate (auto-votes for it), user B votes
+      // 8. User A proposes the candidate (auto-votes for it), user B votes
       // for the same candidate explicitly -> tally should be 2.
       final option = await proposeActivityLocation(
         clientA,
@@ -267,7 +281,7 @@ void main() {
       // ignore: avoid_print
       print('[vote_activity_location] B voted for locationId=${vote.locationId}');
 
-      // 8. Tally via a real authenticated PostgREST read of
+      // 9. Tally via a real authenticated PostgREST read of
       // activity_location_vote (RLS is deliberately transparent to activity
       // members, see SPEC §9.1) — not a count we compute client-side from
       // the two calls above, an independent query against the DB.
@@ -280,8 +294,8 @@ void main() {
       // ignore: avoid_print
       print('[tally] ${voteRows.length} votes for locationId=$locationId');
 
-      // 9. Backdate start_time and trigger fn_start_activities (same
-      // pg_cron-only-function escape hatch as step 5) -> the single
+      // 10. Backdate start_time and trigger fn_start_activities (same
+      // pg_cron-only-function escape hatch as step 4) -> the single
       // candidate should get locked and the activity should flip ONGOING.
       await _psqlScalar(
         "update activity set start_time = now() - interval '1 minute' where id='$activityId';",

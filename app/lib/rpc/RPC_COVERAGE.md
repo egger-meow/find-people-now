@@ -262,31 +262,61 @@ root README), this pair didn't.
    same escape hatch `rpc_smoke_test.dart` already uses for fixture seeding),
    and why it avoids the `<=2`-person merge branch entirely (see next section).
 
-### Bug found while building the smoke test, not fixed (flagged as a follow-up task)
+### Bug found while building the smoke test — since fixed
 
-Verified directly against the local instance (raw SQL, reproduced twice) that
-**a 2-person match can never actually produce an `Activity`, even when both
-sides confirm**: `commit_match(request_a_id, request_b_id)` decides its
-branch by re-querying `count(*) from request_member` for each request at
-call time. The `PENDING_CONFIRMATION` flow (SPEC §12.1.2) calls
-`commit_match` a *second* time from `respond_pending_confirmation` once both
-sides have confirmed — but the two requests' `request_member` counts haven't
-changed since the first call, so `v_total` is still `<= 2`, and `commit_match`
-takes the `else` branch again: it inserts *another* `pending_confirmation`
-row instead of creating an `Activity`. The first `pending_confirmation` row
-does correctly end up `status = 'CONFIRMED'`, but no `Activity` is ever
-created and `match_request.status` never advances past `PENDING_CONFIRMATION`.
-This means the entire "≤2-person activity" path — the exact scenario
-`PENDING_CONFIRMATION` was built for (SPEC §12.1) — has probably never
+**Status: FIXED** in `supabase/migrations/20260724122000_fix_commit_match_pc1.sql`,
+covered by the new `supabase/tests/database/08_pc1_activity_creation.test.sql`
+(8 pgTAP assertions) and by `test/activity_location_voting_smoke_test.dart`,
+which now exercises this exact path for real instead of routing around it
+(see below).
+
+Original finding, verified directly against the local instance (raw SQL,
+reproduced twice): **a 2-person match could never actually produce an
+`Activity`, even when both sides confirmed**. `commit_match(request_a_id,
+request_b_id)` decided its branch by re-querying `count(*) from
+request_member` for each request at call time. The `PENDING_CONFIRMATION`
+flow (SPEC §12.1.2) calls `commit_match` a *second* time from
+`respond_pending_confirmation` once both sides have confirmed — but the two
+requests' `request_member` counts haven't changed since the first call, so
+`v_total` was still `<= 2`, and `commit_match` took the `else` branch again:
+it inserted *another* `pending_confirmation` row instead of creating an
+`Activity`. The first `pending_confirmation` row did correctly end up
+`status = 'CONFIRMED'`, but no `Activity` was ever created and
+`match_request.status` never advanced past `PENDING_CONFIRMATION`. This
+meant the entire "≤2-person activity" path — the exact scenario
+`PENDING_CONFIRMATION` was built for (SPEC §12.1) — had probably never
 actually produced a real Activity via the real RPC flow. No existing pgTAP
-test catches this: `02_app_config_behavior.test.sql` only exercises the
-`confirm=false` branch of `respond_pending_confirmation`; nothing calls it
-with `confirm=true` on both sides and checks for a resulting `Activity` row.
-Routed around it for the smoke test above by padding one side to 3 members
-so the merge lands in the `>2` branch, which is verified working. Not fixed
-here — this is a correctness bug in the core matching engine, not part of
-either of this round's two tracks, and deserves its own review rather than a
-rushed fix bundled into unrelated work.
+test caught this: `02_app_config_behavior.test.sql` only exercised the
+`confirm=false` branch of `respond_pending_confirmation`; nothing called it
+with `confirm=true` on both sides and checked for a resulting `Activity` row.
+
+**Fix**: extracted the "unconditionally merge two requests into one new
+Activity" logic (previously `commit_match`'s `v_total > 2` branch, verbatim)
+into a new function `fn_create_activity_from_requests(request_a_id,
+request_b_id)`. `commit_match` (used only by `fn_run_matching_engine`'s first
+pairing attempt) now calls it for the `>2` branch; the `<=2` branch is
+unchanged. `respond_pending_confirmation`'s PC1 transition (both sides
+`CONFIRMED`) no longer calls `commit_match` at all — it calls
+`fn_create_activity_from_requests` directly, since at that point there is
+nothing left to decide: a `pending_confirmation` already exists and both
+parties agreed, so the only correct action is to create the Activity
+unconditionally. This was chosen over adding a `p_skip_pending_check`
+boolean parameter to `commit_match` because the two call sites have
+genuinely different preconditions (first-pairing-decides-branch vs.
+already-decided-just-create), and a boolean flag would leave `commit_match`
+with two contradictory implied contracts depending on who calls it and
+whether they remember to pass the flag.
+
+**Regression check baked into the fix**: `08_pc1_activity_creation.test.sql`
+asserts there is still exactly 1 `pending_confirmation` row for the pair
+after both sides confirm (the original bug's direct symptom — a second row
+appearing was the signature of the failure), plus that an `Activity`
+containing both users actually exists and both `match_request` rows reach
+`MATCHED`. `activity_location_voting_smoke_test.dart` was rewritten to drop
+its member-padding workaround entirely and now drives the real 2-person
+`PENDING_CONFIRMATION` → both-confirm → `Activity` path end to end, including
+a live `docker exec psql` count check that only one `pending_confirmation`
+row exists for the pair after both confirm.
 
 ## Functions with no implementation (documented, don't exist in the DB)
 
@@ -322,7 +352,7 @@ out of scope for this pass, since none of them are client-callable RPCs.
 ## Confirmed exact matches (worth calling out — not everything is a gap)
 
 - `submit_request`'s 9-step validation order (§3.2, "任何未來重構都不能打亂") matches the migration's inline numbered comments exactly, in order.
-- `respond_pending_confirmation`'s atomic per-caller-field update + PC1/PC2 transition logic matches §4.2's description exactly, including the 30-minute cooldown write on `confirm=false` (via `fn_get_config_interval('cooldown_minutes')`) and PC1's `commit_match(...)` call.
+- `respond_pending_confirmation`'s atomic per-caller-field update + PC1/PC2 transition logic matches §4.2's description exactly, including the 30-minute cooldown write on `confirm=false` (via `fn_get_config_interval('cooldown_minutes')`) and PC1's Activity-creation call — as of `20260724122000_fix_commit_match_pc1.sql`, PC1 calls `fn_create_activity_from_requests(...)` directly rather than `commit_match(...)` (see the "Bug found while building the smoke test" section above for why).
 - `cancel_activity_participation`'s EARLY_CANCEL (≥1h before start) vs LATE_CANCEL split, and the cooldown write only on LATE_CANCEL, matches §6.3.
 - `respond_downgrade`'s STATE_MACHINE.md-derived transitions match exactly: any single `DISAGREE` → immediate `REJECTED` without waiting for the rest of the party; only unanimous `AGREE` → `APPROVED`; a second response from the same user → `ALREADY_RESPONDED` (§5's table still lists this code, unlike §4's — see above); and ERD design note 21's "target_size must be below the original min_participants, checked by both the creation and response RPC" is enforced here as an `INVALID_INPUT` guard even though the creation RPC doesn't exist yet to be the first line of defense.
 

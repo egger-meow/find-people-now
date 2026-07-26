@@ -22,12 +22,15 @@ what's found-but-not-implemented in the backend.
   `submit_request` (deliberately stops at the expected
   `NEW_USER_LOW_HEADCOUNT` exception, doesn't reach a real match).
 - `test/activity_location_voting_smoke_test.dart` — same real-instance
-  approach, but drives two separately authenticated users all the way to a
-  real `MATCHED` activity, then `propose_activity_location` →
-  `vote_activity_location` → tally → `fn_start_activities` lock. See the
-  file's header comment for how it routes around the pg_cron-only
-  matching-engine function and a known bug in the ≤2-person confirmation
-  path (`lib/rpc/RPC_COVERAGE.md`, "Line B update").
+  approach, but drives two separately authenticated users all the way through
+  the real ≤2-person path (`PENDING_CONFIRMATION` → both sides
+  `respond_pending_confirmation(confirm: true)` → real `Activity`), then
+  `propose_activity_location` → `vote_activity_location` → tally →
+  `fn_start_activities` lock. See the file's header comment for how it routes
+  around the pg_cron-only matching-engine function; the ≤2-person
+  confirmation path itself used to be broken (see
+  `lib/rpc/RPC_COVERAGE.md`, "Bug found while building the smoke test") and
+  is now exercised directly rather than routed around.
 
 ## Setup
 
