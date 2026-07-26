@@ -1,4 +1,4 @@
-# State Machine — 校園活動配對 App（派生自 SPEC v1.7）
+# State Machine — 校園活動配對 App（派生自 SPEC v1.11.1）
 
 > 本文件由 [SPEC.md](SPEC.md) §6.2、§7、§8、§9、§12.1 推導。**狀態值域已在 [ERD.md](ERD.md) 定案**（`request_status`、`activity_status`），本文件不新增狀態，價值在於補齊每條轉移的**觸發條件**：誰觸發（使用者／Matching Engine／排程）、什麼條件下觸發、伴隨哪些副作用。
 
@@ -87,7 +87,18 @@ stateDiagram-v2
 | `start_time` 前 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）仍零候選 | 背景任務 `fn_remind_missing_location_candidates()` 向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知；去重靠查詢 `notification` 表本身是否已發過，不另存欄位 |
 | `activity_location_id` 已鎖定後 | `propose_activity_location`/`vote_activity_location` 一律回 `ACTIVITY_LOCATION_LOCKED` |
 
-🔴 **前瞻性設計原則（Meeting Point 尚未實作）**：即使 `activity_location_id` 為 `NULL`，未來實作「集合地點」（Meeting Point）這類協調工具時必須獨立於此欄位是否鎖定可用，不能讓「零候選」等於「系統內沒有任何協調工具可用」，見 SPEC §9.1。
+🟢 **Meeting Point / Meeting Hint 已於 v1.11.1 正式實作**（原 v1.11 這裡只寫了前瞻性原則，未落地），見下方子流程；`activity_location_id` 是否鎖定不影響這兩者是否可用。
+
+### Meeting Point / Meeting Hint 子流程（掛在 MATCHED/ONGOING 內部，不是獨立狀態，v1.11.1）
+
+跟 Activity Location 子流程同一種設計精神，但**刻意獨立於 `activity_location_id` 是否鎖定**——不等投票有結果就可以使用：
+
+| 情境 | 行為 |
+|---|---|
+| Activity 建立（A1）起，`status in (MATCHED, ONGOING)` 期間 | 任何 `JOINED` 成員可呼叫 `update_meeting_point` 新增一筆集合點描述（append-only，見 API.md 6.6）；同一人 2 分鐘內連續呼叫回 `MEETING_POINT_UPDATE_COOLDOWN`（`app_config.meeting_point_update_cooldown_minutes`） |
+| 同一期間 | 任何 `JOINED` 成員可呼叫 `update_meeting_hint` 設定/覆寫自己最多 30 字的個人化提示（見 API.md 6.7），沒有冷卻限制（不是 append-only，直接覆寫） |
+| 每次 `update_meeting_point` 成功 | 向該活動全體 `JOINED` 成員發送 `MEETING_POINT_UPDATED` 通知；`update_meeting_hint` 是個人化欄位，不觸發通知 |
+| `activity.status` 轉為 `COMPLETED`/`CANCELLED` 後 | 兩支 RPC 一律回 `ACTIVITY_NOT_ACTIVE`——協調動作在活動結束/取消後已無實質對象，見 SPEC §9.2 邊界判斷 |
 
 ### 完成確認三選一（SPEC §10）與事件對映
 

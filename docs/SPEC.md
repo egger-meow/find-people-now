@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.10 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.11.1 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -76,6 +76,15 @@
 > 7. 🟢 **新錯誤碼 `INVALID_CAMPUS_SCOPE`**：語意是「學校正確，但該校區在 DB 裡沒有任何已核准的地點」，跟既有 `SCHOOL_LOCATION_MISMATCH`（學校本身不對，用於 `join_request_by_token` 的跨校加入檢查）刻意分開，不沿用舊碼。`campus` 打字錯誤風險不加額外 DB 層約束（UNIQUE/lookup 表）：`create_request` 的存在性檢查已經能擋掉使用者端輸入錯誤，剩餘的「admin 手動維護地點清單打字不一致」風險屬於操作紀律問題，不是 schema 該解決的問題。
 > 8. `propose_location` 加 `p_campus` 參數：核准後的地點需要 `campus`（現在是 `NOT NULL`）才能參與任何撮合，不補這個參數會產生無法使用的死地點。
 > 9. 實際地點清單內容（含每筆地點的 `campus` 標注）仍是 SPEC §16 開放問題 4 的一部分，本輪只完成 schema 與 RPC 改動，清單本身另外補 insert。
+
+> **v1.11.1 變更紀錄**（Meeting Point / Meeting Hint 正式落地成 schema + 修正 `activity_member` RLS 遞迴 bug）：
+> 1. 🟢 **這輪才是「正式實作」，跟 v1.11 §9.1 的前瞻性文件定案區分開**：v1.11 只寫了一條原則（Meeting Point 必須獨立於 `activity_location_id` 是否鎖定），沒有對應的 table/RPC；v1.11.1 才真正把 Meeting Point（集合地點）與 Meeting Hint（見面提示）落地成 schema，見新增第 9.2 節。
+> 2. 🟢 **Meeting Point 用 append-only 記錄表**（`activity_meeting_point_update`），不做「只存最新一筆」的設計，也不刪舊資料——「目前集合點」＝依 `created_at` 取最新一筆，歷史展示＝取最近 N 筆，跟 `known_member_count`/Reliability 分數「不額外存欄位，查詢時算」是同一個精神。**2 分鐘修改冷卻**同樣不開獨立欄位，直接查詢這張表「該使用者對該活動最近一次更新是否在冷卻窗口內」；冷卻時間走既有 `app_config`（新增第 4 筆 `meeting_point_update_cooldown_minutes = 2 minutes`，見第 13.1 節）。
+> 3. 🟢 **Meeting Hint 是 `activity_member` 的一個 nullable 欄位**（`meeting_hint`，`CHECK (char_length(meeting_hint) <= 30)`）——每人在每個 Activity 只有一個提示，沒有歷史需求，不需要獨立表。
+> 4. 🟢 **邊界判斷（COMPLETED/CANCELLED 之後不可再修改）**：兩支 RPC（`update_meeting_point`/`update_meeting_hint`）都限制 `activity.status in ('MATCHED', 'ONGOING')`，刻意**不**限定在 `MATCHED`——活動當天（`ONGOING`）仍可能需要修正集合點，這是規格明確要求放寬的部分。`COMPLETED`/`CANCELLED` 之後協調動作已經沒有實質對象（`COMPLETED` 沒有人還要去集合；`CANCELLED` 活動根本不會發生），繼續允許修改只會產生沒有意義的通知，也讓活動記錄在事後被繼續竄改，故擋下（`ACTIVITY_NOT_ACTIVE`）。
+> 5. 🟢 每次成功更新 Meeting Point 都通知全體成員（新增 `notification_event_type` = `MEETING_POINT_UPDATED`），沿用既有通知機制；Meeting Hint 是個人化欄位，不觸發通知。
+> 6. 🟢 RLS 公開透明給活動全體成員，比照 §9.1 的 `ActivityLocationOption`/`ActivityLocationVote`，不比照 `pending_confirmation` 的刻意不歸因設計——集合點協調是良性的群體資訊同步，不是需要隱藏的敏感情境。
+> 7. 🔴 **修正一個既有、範圍比這次功能更大的 bug（撰寫本輪 RLS 測試時發現）**：`activity_member` 的 SELECT RLS policy 從 `20260724120000_init.sql` 起就寫成自我參照（`exists (select 1 from activity_member me where ...)`），PostgreSQL 對「同一張表在自己的 policy 裡查詢自己」會直接判定為無限遞迴並報錯——不是效能問題，是直接炸掉。範圍不只影響這次新增的 Meeting Point：`activity` 的 SELECT policy 也會 join `activity_member`，間接觸發同一個遞迴，等於**任何 `authenticated` 角色對 `activity`/`activity_member` 的直接查詢，先前都會 500**。過去沒被抓到是因為所有既有 pgTAP 測試都用 postgres superuser 連線做設置/斷言（略過 RLS），前端也只透過 `SECURITY DEFINER` RPC 存取這兩張表，從未真的以 `authenticated` 角色直接 SELECT 過。修法：新增 `fn_is_activity_member(activity_id, user_id)`（`SECURITY DEFINER`，比照 `fn_get_config_interval` 的既有 helper function 慣例），把判斷邏輯包進去，內部查詢以 function owner 身份執行、不會再觸發呼叫者的 RLS policy，因此不遞迴；`activity_member` 的 SELECT policy 改呼叫這個 function。
 
 ---
 
@@ -370,6 +379,29 @@ ActivityLocationVote
 
 得票數不落地存欄位，查詢 `ActivityLocationVote` 即時算出，理由與 `known_member_count`/Reliability 分數相同：避免資料跟來源事實不同步。RLS 上，候選與得票對該 Activity 全體成員公開透明——跟 `PENDING_CONFIRMATION` 的刻意不歸因設計相反：地點偏好分歧是真實分歧，不是需要隱藏的個人選擇，公開透明才符合「大家一起選」的精神。
 
+### 9.2 Meeting Point / Meeting Hint（集合地點與見面提示，v1.11.1 正式落地）
+
+第 9.1 節的 Activity Location 決定的是「去哪個 `location`」，這裡的 Meeting Point 是「在那個地點的哪裡集合」的自由文字補充（例如 Activity Location 選定「浩然圖書館」，Meeting Point 可以是「一樓大廳的自動門旁邊」）。兩者刻意分開：Activity Location 是投票決定的正式候選地點，Meeting Point 是任何人隨時可補充的自由文字資訊。
+
+- **獨立於 `activity_location_id` 是否鎖定**：Meeting Point/Hint 只要求 `activity_id` 存在即可使用，不要求 `activity_location_id` 已鎖定、也不要求投票已有結果——延續第 9.1 節定下的前瞻原則，避免「正式候選地點沒投出結果」變成「系統內沒有任何協調工具可用，只能靠外部私訊」。
+- **Meeting Point 是 append-only 記錄，不是「只存最新一筆」**：任何活動成員可隨時新增一筆新的集合點描述；「目前集合點」＝依 `created_at` 取最新一筆，歷史展示＝取最近幾筆，不刪除舊記錄。
+- **2 分鐘修改冷卻**：同一人對同一活動的連續修改需間隔 `app_config.meeting_point_update_cooldown_minutes`（預設 2 分鐘，見第 13.1 節）——直接查詢這張記錄表本身「該使用者最近一次更新是否在冷卻窗口內」判斷，不另開欄位存冷卻狀態。
+- **每次成功更新通知全體成員**：新增通知事件 `MEETING_POINT_UPDATED`，沿用既有 `notification` 機制。
+- **Meeting Hint 是每人一則、最多 30 字的個人化提示**（例如「穿紅色外套，帶著筆電」），不是 append-only 記錄——不需要歷史，直接覆寫即可，存在 `ActivityMember` 上。
+- **可修改邊界**：`activity.status in ('MATCHED', 'ONGOING')` 時皆可修改（活動當天仍可修正集合點）；`COMPLETED`/`CANCELLED` 之後不可再修改（`ACTIVITY_NOT_ACTIVE`）——協調動作在活動結束/取消後已無實質對象。
+
+```
+ActivityMeetingPointUpdate
+- id, activity_id, updated_by, description, created_at
+# append-only；「目前集合點」= 依 created_at 取最新一筆
+
+ActivityMember（沿用第 9 節既有表，新增一個欄位）
+- ...（既有欄位不變）
+- meeting_hint (nullable text，CHECK char_length <= 30)
+```
+
+RLS 上，集合點記錄對該 Activity 全體成員公開透明，跟 `ActivityLocationOption`/`ActivityLocationVote` 同一個精神。
+
 ### State Machine
 
 🟢 **拆成兩張獨立的狀態圖，不再混用**：原本 `MatchRequest` 的狀態（DRAFT/REQUESTING/…）和 `Activity` 的狀態（MATCHED/ONGOING/COMPLETED）混在同一張圖裡，但它們是兩個不同的東西——`MatchRequest` 只代表「找人的流程」，`Activity` 才代表「實際發生的活動」。
@@ -531,6 +563,8 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 | `cooldown_minutes` | `30 minutes` | 拒絕候選配對（`respond_pending_confirmation` 的 DECLINED 分支）或 `LATE_CANCEL`（`cancel_activity_participation`）後的請求冷卻時間（第 6.3 節） |
 | `confirm_window_minutes` | `10 minutes` | `PENDING_CONFIRMATION` 的確認窗口時長（第 12.1.2 節） |
 | `downgrade_consent_window_minutes` | `10 minutes` | Downgrade 同意窗口時長（第 8 節）；目前尚無 RPC 建立 `downgrade_request`，此值先 seed 供未來實作使用 |
+| `location_reminder_lead_minutes` | `30 minutes` | `fn_remind_missing_location_candidates()` 的提前量：`start_time` 前多久仍零候選就發送 `LOCATION_NOT_YET_PROPOSED`（第 9.1 節，v1.11，先前遺漏補列於此表） |
+| `meeting_point_update_cooldown_minutes` | `2 minutes` | `update_meeting_point` 同一使用者對同一活動連續修改的冷卻時間（第 9.2 節，v1.11.1） |
 
 **MVP 階段透過 Dashboard 直接調整，未來量大後可評估是否需要獨立的 admin 介面。** 不新增管理用的 API/RPC——這是給團隊內部調整用的運營參數，不是使用者可見或可操作的功能。
 

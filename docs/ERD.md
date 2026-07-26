@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.7）
+# ERD — 校園活動配對 App（派生自 SPEC v1.11.1）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 實體關聯圖（18 張表）
+## 1. 實體關聯圖（19 張表）
 
 ```mermaid
 erDiagram
@@ -29,6 +29,9 @@ erDiagram
     location ||--o{ activity_location_vote : "location_id"
     app_user ||--o{ activity_location_vote : "user_id"
     location ||--o{ activity : "activity_location_id（nullable，鎖定後才有，v1.11）"
+
+    activity ||--o{ activity_meeting_point_update : "集合點更新記錄，append-only（v1.11.1）"
+    app_user ||--o{ activity_meeting_point_update : "updated_by"
 
     match_request ||--o{ downgrade_request : ""
     downgrade_request ||--o{ downgrade_consent : ""
@@ -151,6 +154,15 @@ erDiagram
         uuid user_id PK, FK
         uuid source_request_id FK "從哪個 Request 併進來"
         enum status "JOINED | CANCELLED"
+        text meeting_hint "nullable，CHECK char_length <= 30；個人化見面提示，覆寫不留歷史（v1.11.1）"
+    }
+
+    activity_meeting_point_update {
+        uuid id PK
+        uuid activity_id FK
+        uuid updated_by FK "app_user"
+        text description "自由文字，無長度上限"
+        timestamptz created_at "default clock_timestamp()，見設計備註 36；「目前集合點」= 依此排序取最新一筆"
     }
 
     downgrade_request {
@@ -216,7 +228,7 @@ erDiagram
     notification {
         uuid id PK
         uuid user_id FK
-        enum event_type "MATCH_SUCCESS | DOWNGRADE_REQUEST | DOWNGRADE_RESULT | ACTIVITY_REMINDER | COMPLETE_CONFIRMATION"
+        enum event_type "MATCH_SUCCESS | DOWNGRADE_REQUEST | DOWNGRADE_RESULT | ACTIVITY_REMINDER | COMPLETE_CONFIRMATION | LOCATION_NOT_YET_PROPOSED（v1.11） | MEETING_POINT_UPDATED（v1.11.1）"
         jsonb payload
         timestamptz read_at "nullable"
         timestamptz created_at
@@ -243,7 +255,7 @@ erDiagram
 | `pending_confirmation_response` | `CONFIRMED` `DECLINED` `NO_RESPONSE` | §12.1（v1.4） |
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
-| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） | §16 開放問題 5（清單可能擴充） |
+| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） | §16 開放問題 5（清單可能擴充） |
 
 > **註記**：`request_member_status` 與 `activity_member_status` 兩個欄位 SPEC 只寫了「status」沒列值域，此處補定為最小可用集合（成員可在配對前退出 Request → `LEFT`；成員可個別取消已成立的活動 → `CANCELLED`，活動本身可能照常進行）。這是 schema 層補完，不是產品邏輯變更。
 
@@ -252,9 +264,9 @@ erDiagram
 ## 3. 設計備註（陷阱與取捨的落地方式）
 
 1. **兩張 join table 取代三個 array**（SPEC v1.1 變更 1、2）：`request_member` 取代 `member_ids[]`；`activity_member` 取代 `matched_request_ids[]` + `final_member_ids[]`，且 `source_request_id` 直接回答「小明從哪個 Request 併進來」。
-2. **仍保留的兩個 array 欄位**（皆 SPEC 明文保留，非遺漏）：
-   - `match_request.acceptable_location_ids[]` — v1 只填 1 個，純預留位，不參與查詢。
+2. **仍保留的 array 欄位**（SPEC 明文保留，非遺漏）：
    - `completion_report.absent_user_ids[]` — 一次性寫入的回報 payload，只在結算當下讀取做多數決運算，不做關聯查詢，array 成本可接受。
+   - （`match_request.acceptable_location_ids[]` 已於 v1.11 移除，見設計備註 30——這裡曾經列過它，v1.11 改動後未同步更新，屬於文件遺留，v1.11.1 順手修正）
 3. **Reliability 不存分數欄位**（SPEC v1.1 變更 4）：`app_user` 上**沒有** `reliability_score` / `tier` 欄位，等級由近 30 天 `user_reliability_event` 即時 query 算出。「New 等級」的判定 = 該 user 沒有任何 `ATTENDED` 事件。
 4. **`contact_visible_until` 掛在 activity 上**（SPEC v1.1 變更 5）：以 `activity.created_at` 起算 +24h，與來源 Request 無關。
 5. **單一 REQUESTING 限制**（SPEC §6）：用 partial unique index 落地——`UNIQUE (owner_id) WHERE status = 'REQUESTING'`，DB 層直接擋住，不依賴應用層自律。
@@ -288,3 +300,6 @@ erDiagram
 33. **`activity.activity_location_id` 允許長期為 `NULL`，`fn_start_activities()` 不做 fallback 代選（v1.11）**：到 `start_time` 仍零候選時，維持 `NULL` 而不是隨便挑一個該 `(school, campus)` 下的地點頂上——地點跟活動性質可能完全不相關（例如讀書活動被系統代選到球場），代替使用者做這個決定比「沒有結果」的體驗更差。改用另一個背景任務 `fn_remind_missing_location_candidates()`（`start_time` 前 `app_config.location_reminder_lead_minutes` 分鐘仍零候選 → 發 `LOCATION_NOT_YET_PROPOSED` 通知）把問題交還給使用者自己解決，去重靠查詢既有 `notification` 表本身，不額外加欄位（同設計備註 32 的精神）。
 34. **新錯誤碼 `INVALID_CAMPUS_SCOPE`，不沿用 `SCHOOL_LOCATION_MISMATCH`（v1.11）**：兩者語意不同——`SCHOOL_LOCATION_MISMATCH`（`join_request_by_token` 沿用）是「你的學校跟這個 Request 的學校不一樣」；`INVALID_CAMPUS_SCOPE`（`create_request`/`propose_activity_location` 新用）是「學校正確，但你選的校區在 DB 裡沒有任何已核准的地點」。前者是身分層級的錯誤，後者是資料/輸入層級的錯誤，混用同一個碼會讓 client 端錯誤處理邏輯失去區分能力。
 35. **不做「候選地點依 `activity_type.category` 過濾」（v1.11）**：`location.category` 目前這個 repo 裡完全不存在（v1.10 只加了 `status`/`created_by`），這輪也刻意不補——現在沒有任何程式碼會讀它，加了只是死欄位，違反「不做過度設計」的既有原則；未來真的有 UI 分組/搜尋需求時再加，schema 不因此卡住。
+36. **`activity_meeting_point_update` 是 append-only 記錄表、不做「只存最新一筆」設計（v1.11.1）**：跟 `activity_location_option`（設計備註 31/32 的計票不落地存欄位）同精神，但這裡連「目前值」本身都不落地存——`activity`/`activity_member` 上都沒有 `current_meeting_point` 這類欄位，「目前集合點」＝對這張表依 `created_at` 取最新一筆，歷史展示＝取最近幾筆，都是查詢而非欄位。**`created_at` 的預設值刻意用 `clock_timestamp()`，不是全庫慣用的 `now()`**：`now()` 回傳的是「目前 transaction 開始的時間」，同一個 transaction 內多次寫入會拿到完全相同的時間戳，對其他表的 `created_at`（多半只用來記錄「何時發生」，或在不同 transaction/RPC 呼叫之間比較）無所謂，但這張表的存在意義就是「依時間排序找最新」，同 transaction 內時間戳全部一樣會讓排序失去意義（撰寫 pgTAP 測試時就是被這個問題卡住才發現，見 `07_meeting_point_and_hint.test.sql`）；`clock_timestamp()` 回傳真實時鐘時間，同一 transaction 內每次呼叫都不同，才能保證這張表唯一的查詢需求（依時間取最新）永遠正確。
+37. **2 分鐘修改冷卻直接查記錄表本身，不開獨立欄位（v1.11.1）**：跟第 20/32 點同精神——`update_meeting_point` 判斷「該使用者對該活動是否還在冷卻中」，查詢 `activity_meeting_point_update where activity_id=... and updated_by=... and created_at > now() - cooldown` 即可，不需要在 `app_user` 或另一張表存一個「下次可修改時間」欄位（這點也刻意跟 `app_user.next_request_allowed_at`，設計備註 23 不同——那裡是「一人同時只有一個生效中的解鎖時間」，覆寫即可；這裡的冷卻窗口本來就要用這張表的歷史記錄回答，不需要額外欄位重複同一份事實）。
+38. **修正 `activity_member` 的 SELECT RLS policy 自我參照造成無限遞迴（v1.11.1，bug fix）**：`20260724120000_init.sql` 原始定義的 `my_activity_members_select` policy 在自己的 `USING` 子句裡查詢 `activity_member` 本身（`exists (select 1 from activity_member me where ...)`），PostgreSQL 對「一張表的 RLS policy 查詢自己」會直接判定為無限遞迴並報錯，不是效能問題。範圍比這次新增的 `activity_meeting_point_update` 更大：`activity` 的 SELECT policy 也會 join `activity_member`，等於任何 `authenticated` 角色對 `activity`/`activity_member` 的直接查詢，過去都會 500，只是從未被任何測試或前端路徑實際觸發過（前端只透過 `SECURITY DEFINER` RPC 存取，pgTAP 測試只用 postgres superuser 連線）。修法：新增 `fn_is_activity_member(activity_id, user_id)`（`SECURITY DEFINER`，比照 `fn_get_config_interval` 的既有 helper function 慣例）包住判斷邏輯，讓內部查詢以 function owner 身份執行、不再觸發呼叫者的 RLS policy。

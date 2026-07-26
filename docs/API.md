@@ -1,4 +1,4 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.7）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.11.1）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.7 與 [STATE_MACHINE.md](STATE_MACHINE.md) 定案之上。若與 SPEC 衝突，先改 SPEC。
 
@@ -86,13 +86,15 @@
 
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
-| 6.1 | `GET activity` + `GET activity_member`（PostgREST，RLS：成員） | — | 我的活動、成員名單、`source_request_id` 來源。 |
+| 6.1 | `GET activity` + `GET activity_member`（PostgREST，RLS：成員） | — | 我的活動、成員名單、`source_request_id` 來源。🔴 v1.11.1 修正一個 bug：兩表的 RLS SELECT policy 過去會觸發「infinite recursion detected in policy」（`activity_member` policy 自我參照），這個端點對 `authenticated` 角色實際上一直是 500，見 SPEC v1.11.1 變更紀錄第 7 條、ERD 設計備註 38。 |
 | 6.2 | `rpc: get_activity_contacts(activity_id)` | — | **聯絡方式唯一出口**（不走 RLS 直讀 `app_user.contact_*`）。規則（SPEC §11）：呼叫者是該活動成員，且（`now() < contact_visible_until`【以 Activity 的 `created_at` 起算 +24h，SPEC v1.1 變更 5】**或** 與對方互按過再約）。回各成員自選公開的聯絡方式。 |
 | 6.3 | `rpc: cancel_activity_participation(activity_id)` | A5/A6 | 個別取消。server 依時點記事件：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h 或已開始 → `LATE_CANCEL`（SPEC §10 處罰分級，**同時寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`，v1.7 冷卻機制，SPEC §6.3；`EARLY_CANCEL` 不觸發**）。 |
 | 6.4 | `rpc: propose_activity_location(activity_id, location_id)`（v1.11） | — | **提案 Activity Location 候選（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須屬於該活動的 `(school, campus)` 範圍內、`status='APPROVED'` 的地點。提案動作同時視為投給該候選一票；若該地點已是既有候選（他人先提過），本次呼叫退化成投票，不視為錯誤。 |
 | 6.5 | `rpc: vote_activity_location(activity_id, location_id)`（v1.11） | — | **對既有候選投票（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須已是該活動的既有候選（先前透過 6.4 建立），否則回 `NOT_FOUND`。一人一票，可改票（重複呼叫覆寫先前的投票）。得票最高者於 `start_time` 由背景任務 `fn_start_activities()` 鎖定；同票取最早提案者勝出（見 SPEC §9.1、ERD 設計備註 31/32）。 |
+| 6.6 | `rpc: update_meeting_point(activity_id, description)`（v1.11.1） | — | **更新集合地點（SPEC §9.2）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`；`description` 不可為空白。獨立於 `activity_location_id` 是否鎖定，append-only（不覆寫舊記錄，「目前集合點」＝取最新一筆）。同一人 2 分鐘內連續呼叫回 `MEETING_POINT_UPDATE_COOLDOWN`（`app_config.meeting_point_update_cooldown_minutes`，預設 2 分鐘）。成功後向該活動全體 `JOINED` 成員發送 `MEETING_POINT_UPDATED` 通知。 |
+| 6.7 | `rpc: update_meeting_hint(activity_id, hint)`（v1.11.1） | — | **更新個人化見面提示（SPEC §9.2）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`；`hint` 最多 30 字（RPC 層 `INVALID_INPUT` + DB 層 CHECK 雙重防線），可傳空字串/空白清空。直接覆寫 `activity_member.meeting_hint`，不像 6.6 是 append-only 記錄，不觸發通知。 |
 
-錯誤碼：`NOT_ACTIVITY_MEMBER`、`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）
+錯誤碼：`NOT_ACTIVITY_MEMBER`、`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）、`ACTIVITY_NOT_ACTIVE`（v1.11.1，6.6/6.7 的活動已 `COMPLETED`/`CANCELLED`，見 SPEC §9.2 邊界判斷）、`MEETING_POINT_UPDATE_COOLDOWN`（v1.11.1，6.6 冷卻中）、`INVALID_INPUT`（v1.11.1，6.6 空白描述 / 6.7 提示超過 30 字）
 
 ---
 
@@ -157,3 +159,4 @@
 | §6/§7 Matching Scope 改成 (school, campus) 範圍匹配 (v1.11) | 3.1 的 `INVALID_CAMPUS_SCOPE` + `fn_run_matching_engine` merge 條件 |
 | §9.1 Activity Location 投票機制 (v1.11) | 6.4 / 6.5 + §9 背景任務「Activity 開始」`fn_start_activities()` |
 | §9.1 零候選地點不代選、改發提醒 (v1.11) | §9 背景任務「Activity Location 零候選提醒」`fn_remind_missing_location_candidates()` |
+| §9.2 Meeting Point / Meeting Hint，獨立於 activity_location_id 是否鎖定 (v1.11.1) | 6.6 / 6.7 |

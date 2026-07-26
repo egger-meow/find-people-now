@@ -174,6 +174,65 @@ Schema/RPC changes, all in `supabase/migrations/20260724121400_campus_scope_sche
    `lib/rpc/activity_rpc.dart`; `api_exception.dart` gained
    `invalidCampusScope`/`activityLocationLocked`.
 
+## v1.11.1 update: Meeting Point / Meeting Hint schema + `activity_member` RLS recursion fix
+
+Two independent things landed in this round, kept in separate migrations:
+
+**Meeting Point / Meeting Hint** (`supabase/migrations/20260724121700_meeting_point_schema.sql`
++ `20260724121800_meeting_point_rpc.sql`) — this is the first real
+implementation; v1.11's SPEC §9.1 only wrote a forward-looking principle
+("Meeting Point must work independent of whether `activity_location_id` is
+locked"), no table/RPC existed yet.
+
+1. New append-only table `activity_meeting_point_update`
+   (`activity_id`/`updated_by`/`description`/`created_at`) — deliberately not
+   a "latest value only" column. "Current meeting point" = `order by
+   created_at desc limit 1` query, same non-materialized-state philosophy as
+   `known_member_count`. **`created_at` defaults to `clock_timestamp()`, not
+   the codebase's usual `now()`** — `now()` is frozen for the whole
+   transaction in Postgres, which is invisible in production (each RPC call
+   is its own transaction) but broke the "take the latest row" ordering
+   inside a single pgTAP test file (everything in one `begin;...rollback;`).
+   This was caught by the new pgTAP test, not by inspection.
+2. `activity_member.meeting_hint` (nullable text, `CHECK (char_length(...)
+   <= 30)`) — no separate table, one hint per person per activity, overwritten
+   in place, no history needed.
+3. `app_config` gained a 4th key: `meeting_point_update_cooldown_minutes`
+   (default `2 minutes`) — the cooldown lookup itself queries
+   `activity_meeting_point_update` directly (no extra state column), same
+   pattern as `fn_get_config_interval` usage elsewhere.
+4. Two new RPCs: `update_meeting_point(activity_id, description)` and
+   `update_meeting_hint(activity_id, hint)`. Both require caller to be a
+   `JOINED` activity member and `activity.status in ('MATCHED', 'ONGOING')`
+   — deliberately *not* restricted to `MATCHED` only (spec explicitly wanted
+   same-day edits during `ONGOING` to still work); `COMPLETED`/`CANCELLED`
+   reject with `ACTIVITY_NOT_ACTIVE`. `update_meeting_point` additionally
+   enforces the cooldown and fires a new `MEETING_POINT_UPDATED` notification
+   event to every `JOINED` member on success.
+5. New Dart wrappers in `lib/rpc/activity_rpc.dart`
+   (`updateMeetingPoint`/`updateMeetingHint`); `api_exception.dart` gained
+   `activityNotActive`/`meetingPointUpdateCooldown`.
+
+**Bug fix, discovered while writing this round's RLS pgTAP assertions, out of
+scope of Meeting Point itself** (`supabase/migrations/20260724121900_fix_activity_member_rls_recursion.sql`):
+`activity_member`'s own SELECT RLS policy
+(`20260724120000_init.sql`) queries `activity_member` from inside its own
+`USING` clause — Postgres treats that as genuine infinite recursion and
+throws `infinite recursion detected in policy for relation
+"activity_member"`, not a performance issue, a hard error. Verified directly
+via `psql` that this breaks **any** `authenticated`-role query against
+`activity` too (its own SELECT policy joins `activity_member`, so the
+recursion propagates transitively) — meaning API.md 6.1's `GET activity` /
+`GET activity_member` PostgREST endpoints have been silently 500ing for any
+real client this whole time. Never caught before because every pgTAP test
+prior to this round only queried these two tables via the `postgres`
+superuser connection (which bypasses RLS entirely) or through
+`SECURITY DEFINER` RPCs (which run as the function owner, also bypassing the
+caller's RLS). Fixed with a `SECURITY DEFINER` helper
+(`fn_is_activity_member(activity_id, user_id)`, same pattern as
+`fn_get_config_interval`) so the inner existence check runs as the function
+owner and doesn't re-trigger the caller's policy.
+
 ## Functions with no implementation (documented, don't exist in the DB)
 
 `§9`'s remaining background scheduler jobs (Matching Engine and
