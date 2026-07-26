@@ -4,6 +4,7 @@ export 'downgrade_request.dart';
 export 'downgrade_consent.dart';
 export 'pending_review.dart';
 export 'location.dart';
+export 'activity_meeting_point_update.dart';
 export 'activity.dart';
 export 'rematch_vote.dart';
 export 'completion_report.dart';

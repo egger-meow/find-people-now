@@ -43,6 +43,8 @@ enum ApiErrorCode {
   consentWindowClosed('CONSENT_WINDOW_CLOSED'),
   alreadyResponded('ALREADY_RESPONDED'),
   activityLocationLocked('ACTIVITY_LOCATION_LOCKED'),
+  activityNotActive('ACTIVITY_NOT_ACTIVE'),
+  meetingPointUpdateCooldown('MEETING_POINT_UPDATE_COOLDOWN'),
   unknown('__UNKNOWN__');
 
   final String code;

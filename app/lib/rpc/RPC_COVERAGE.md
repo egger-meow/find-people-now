@@ -233,6 +233,61 @@ caller's RLS). Fixed with a `SECURITY DEFINER` helper
 `fn_get_config_interval`) so the inner existence check runs as the function
 owner and doesn't re-trigger the caller's policy.
 
+## Line B update: Activity Location voting wired up to Flutter
+
+`propose_activity_location`/`vote_activity_location` and their two backing
+tables shipped in the v1.11 round, but had zero Dart wrapper or client-side
+verification — every other RPC in this repo has a `flutter test` run
+attached to it (see the run logs in this file's git history and in the repo
+root README), this pair didn't.
+
+1. Ran `supadart` regen against the live local instance — picked up
+   `activity_location_option.dart`/`activity_location_vote.dart` (already
+   existed from the v1.11 backend round, now re-verified current) plus
+   whatever else had drifted since (this round's Meeting Point tables/column/
+   enum value — supadart regenerates the whole schema in one pass, there's
+   no way to scope it to just two tables).
+2. `proposeActivityLocation`/`voteActivityLocation` wrappers in
+   `lib/rpc/activity_rpc.dart` already existed (written in the v1.11 round
+   alongside the backend, just never exercised against a live instance)
+   — verified their signatures still match the current RPC params.
+3. New `test/activity_location_voting_smoke_test.dart`: two independently
+   authenticated users, real `create_request`/`submit_request` calls, a real
+   merge into a `MATCHED` activity, real `propose_activity_location`/
+   `vote_activity_location` calls, a tally verified via a real authenticated
+   `client.from('activity_location_vote')` read (not computed client-side),
+   and a real `fn_start_activities()` lock verification. See the file's
+   header comment for why it routes around two things: `fn_run_matching_engine`/
+   `fn_start_activities` have no client RPC (triggered via `docker exec psql`,
+   same escape hatch `rpc_smoke_test.dart` already uses for fixture seeding),
+   and why it avoids the `<=2`-person merge branch entirely (see next section).
+
+### Bug found while building the smoke test, not fixed (flagged as a follow-up task)
+
+Verified directly against the local instance (raw SQL, reproduced twice) that
+**a 2-person match can never actually produce an `Activity`, even when both
+sides confirm**: `commit_match(request_a_id, request_b_id)` decides its
+branch by re-querying `count(*) from request_member` for each request at
+call time. The `PENDING_CONFIRMATION` flow (SPEC §12.1.2) calls
+`commit_match` a *second* time from `respond_pending_confirmation` once both
+sides have confirmed — but the two requests' `request_member` counts haven't
+changed since the first call, so `v_total` is still `<= 2`, and `commit_match`
+takes the `else` branch again: it inserts *another* `pending_confirmation`
+row instead of creating an `Activity`. The first `pending_confirmation` row
+does correctly end up `status = 'CONFIRMED'`, but no `Activity` is ever
+created and `match_request.status` never advances past `PENDING_CONFIRMATION`.
+This means the entire "≤2-person activity" path — the exact scenario
+`PENDING_CONFIRMATION` was built for (SPEC §12.1) — has probably never
+actually produced a real Activity via the real RPC flow. No existing pgTAP
+test catches this: `02_app_config_behavior.test.sql` only exercises the
+`confirm=false` branch of `respond_pending_confirmation`; nothing calls it
+with `confirm=true` on both sides and checks for a resulting `Activity` row.
+Routed around it for the smoke test above by padding one side to 3 members
+so the merge lands in the `>2` branch, which is verified working. Not fixed
+here — this is a correctness bug in the core matching engine, not part of
+either of this round's two tracks, and deserves its own review rather than a
+rushed fix bundled into unrelated work.
+
 ## Functions with no implementation (documented, don't exist in the DB)
 
 `§9`'s remaining background scheduler jobs (Matching Engine and

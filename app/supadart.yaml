@@ -1,6 +1,7 @@
-# supadart config — generates typed Dart classes for the 18 public.* tables
-# (v1.11: +activity_location_option, +activity_location_vote) by
-# introspecting the local Supabase instance's PostgREST OpenAPI schema.
+# supadart config — generates typed Dart classes for the 19 public.* tables
+# (v1.11: +activity_location_option, +activity_location_vote;
+#  v1.11.1: +activity_meeting_point_update) by introspecting the local
+# Supabase instance's PostgREST OpenAPI schema.
 #
 # NOTE: supadart (like every other Dart codegen tool for Supabase) only reads
 # the table/view swagger definitions. It does NOT generate parameter/return
@@ -31,7 +32,7 @@ enums:
   degree_level: [UNDERGRAD, MASTER, PHD]
   downgrade_response: [AGREE, DISAGREE, NO_RESPONSE]
   downgrade_status: [PENDING, APPROVED, REJECTED, TIMEOUT]
-  notification_event_type: [MATCH_SUCCESS, DOWNGRADE_REQUEST, DOWNGRADE_RESULT, ACTIVITY_REMINDER, COMPLETE_CONFIRMATION, LOCATION_NOT_YET_PROPOSED]
+  notification_event_type: [MATCH_SUCCESS, DOWNGRADE_REQUEST, DOWNGRADE_RESULT, ACTIVITY_REMINDER, COMPLETE_CONFIRMATION, LOCATION_NOT_YET_PROPOSED, MEETING_POINT_UPDATED]
   pending_confirmation_response: [CONFIRMED, DECLINED, NO_RESPONSE]
   pending_confirmation_status: [PENDING, CONFIRMED, DECLINED, TIMEOUT]
   reliability_event_type: [ATTENDED, EARLY_CANCEL, LATE_CANCEL, NO_SHOW]

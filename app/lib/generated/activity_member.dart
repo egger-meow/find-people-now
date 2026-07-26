@@ -8,12 +8,14 @@ class ActivityMember implements SupadartClass<ActivityMember> {
   final String userId;
   final String sourceRequestId;
   final ACTIVITY_MEMBER_STATUS status;
+  final String? meetingHint;
 
   const ActivityMember({
     required this.activityId,
     required this.userId,
     required this.sourceRequestId,
     required this.status,
+    this.meetingHint,
   });
 
   static String get table_name => 'activity_member';
@@ -21,6 +23,7 @@ class ActivityMember implements SupadartClass<ActivityMember> {
   static String get c_userId => 'user_id';
   static String get c_sourceRequestId => 'source_request_id';
   static String get c_status => 'status';
+  static String get c_meetingHint => 'meeting_hint';
 
   static List<ActivityMember> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityMember.fromJson).toList();
@@ -35,12 +38,14 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? userId,
     String? sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
+    String? meetingHint,
   }) {
     return {
       if (activityId != null) 'activity_id': activityId,
       if (userId != null) 'user_id': userId,
       if (sourceRequestId != null) 'source_request_id': sourceRequestId,
       if (status != null) 'status': status.toString().split('.').last,
+      if (meetingHint != null) 'meeting_hint': meetingHint,
     };
   }
 
@@ -49,12 +54,14 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? userId,
     required String sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
+    String? meetingHint,
   }) {
     return _generateMap(
       activityId: activityId,
       userId: userId,
       sourceRequestId: sourceRequestId,
       status: status,
+      meetingHint: meetingHint,
     );
   }
 
@@ -63,12 +70,14 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? userId,
     String? sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
+    String? meetingHint,
   }) {
     return _generateMap(
       activityId: activityId,
       userId: userId,
       sourceRequestId: sourceRequestId,
       status: status,
+      meetingHint: meetingHint,
     );
   }
 
@@ -84,6 +93,9 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       status: jsonn['status'] != null
           ? ACTIVITY_MEMBER_STATUS.values.byName(jsonn['status'].toString())
           : ACTIVITY_MEMBER_STATUS.values.first,
+      meetingHint: jsonn['meeting_hint'] != null
+          ? jsonn['meeting_hint'].toString()
+          : null,
     );
   }
 
@@ -92,12 +104,14 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? userId,
     String? sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
+    String? meetingHint,
   }) {
     return {
       if (activityId != null) 'activity_id': activityId,
       if (userId != null) 'user_id': userId,
       if (sourceRequestId != null) 'source_request_id': sourceRequestId,
       if (status != null) 'status': status,
+      if (meetingHint != null) 'meeting_hint': meetingHint,
     };
   }
 
@@ -107,6 +121,7 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       userId: userId,
       sourceRequestId: sourceRequestId,
       status: status,
+      meetingHint: meetingHint,
     );
   }
 
@@ -116,6 +131,7 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     Object? userId = _unset,
     Object? sourceRequestId = _unset,
     Object? status = _unset,
+    Object? meetingHint = _unset,
   }) {
     return ActivityMember(
       activityId: activityId == _unset ? this.activityId : activityId as String,
@@ -124,6 +140,9 @@ class ActivityMember implements SupadartClass<ActivityMember> {
           ? this.sourceRequestId
           : sourceRequestId as String,
       status: status == _unset ? this.status : status as ACTIVITY_MEMBER_STATUS,
+      meetingHint: meetingHint == _unset
+          ? this.meetingHint
+          : meetingHint as String?,
     );
   }
 }

@@ -39,6 +39,8 @@ extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get downgrade_consent => from('downgrade_consent');
   SupabaseQueryBuilder get pending_review => from('pending_review');
   SupabaseQueryBuilder get location => from('location');
+  SupabaseQueryBuilder get activity_meeting_point_update =>
+      from('activity_meeting_point_update');
   SupabaseQueryBuilder get activity => from('activity');
   SupabaseQueryBuilder get rematch_vote => from('rematch_vote');
   SupabaseQueryBuilder get completion_report => from('completion_report');
@@ -85,6 +87,7 @@ enum NOTIFICATION_EVENT_TYPE {
   ACTIVITY_REMINDER,
   COMPLETE_CONFIRMATION,
   LOCATION_NOT_YET_PROPOSED,
+  MEETING_POINT_UPDATED,
 }
 
 enum PENDING_CONFIRMATION_RESPONSE { CONFIRMED, DECLINED, NO_RESPONSE }

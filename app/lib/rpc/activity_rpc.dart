@@ -2,6 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
+import '../generated/activity_meeting_point_update.dart';
+import '../generated/activity_member.dart';
 import '../generated/supadart_header.dart' show RELIABILITY_EVENT_TYPE;
 import 'rpc_client.dart';
 
@@ -159,5 +161,43 @@ Future<ActivityLocationVote> voteActivityLocation(
     params: {'p_activity_id': activityId, 'p_location_id': locationId},
     decode: (data) =>
         ActivityLocationVote.fromJson(data as Map<String, dynamic>),
+  );
+}
+
+/// docs/API.md §6.6 — `rpc: update_meeting_point(activity_id, description)`
+/// (v1.11.1). Append-only — each call adds a new row, it does not overwrite
+/// a previous one. Independent of whether `activity_location_id` is locked;
+/// only requires `activity.status in (MATCHED, ONGOING)`. Throws
+/// `ApiErrorCode.meetingPointUpdateCooldown` if the caller updated this same
+/// activity within the last `app_config.meeting_point_update_cooldown_minutes`.
+Future<ActivityMeetingPointUpdate> updateMeetingPoint(
+  SupabaseClient client, {
+  required String activityId,
+  required String description,
+}) {
+  return callRpc<ActivityMeetingPointUpdate>(
+    client,
+    'update_meeting_point',
+    params: {'p_activity_id': activityId, 'p_description': description},
+    decode: (data) =>
+        ActivityMeetingPointUpdate.fromJson(data as Map<String, dynamic>),
+  );
+}
+
+/// docs/API.md §6.7 — `rpc: update_meeting_hint(activity_id, hint)`
+/// (v1.11.1). Overwrites the caller's own `activity_member.meeting_hint` in
+/// place (not append-only, unlike [updateMeetingPoint]). `hint` is capped at
+/// 30 characters (RPC-level `INVALID_INPUT` + a DB `CHECK` constraint both
+/// enforce this); pass an empty/blank string to clear it.
+Future<ActivityMember> updateMeetingHint(
+  SupabaseClient client, {
+  required String activityId,
+  required String hint,
+}) {
+  return callRpc<ActivityMember>(
+    client,
+    'update_meeting_hint',
+    params: {'p_activity_id': activityId, 'p_hint': hint},
+    decode: (data) => ActivityMember.fromJson(data as Map<String, dynamic>),
   );
 }

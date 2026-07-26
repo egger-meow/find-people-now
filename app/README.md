@@ -8,9 +8,9 @@ what's found-but-not-implemented in the backend.
 ## Layout
 
 - `lib/generated/` — [supadart](https://pub.dev/packages/supadart)-generated
-  Dart classes for all 18 `public.*` tables (config: `supadart.yaml`). Never
+  Dart classes for all 19 `public.*` tables (config: `supadart.yaml`). Never
   hand-edit; regenerate (see below).
-- `lib/rpc/` — hand-written typed wrappers for the 21 client-facing RPCs
+- `lib/rpc/` — hand-written typed wrappers for the 23 client-facing RPCs
   (Postgres functions). No Dart codegen tool generates RPC parameter/return
   types (neither `supadart` nor `supabase_codegen_flutter` reads PostgREST's
   `/rpc/*` OpenAPI paths) — see `lib/rpc/RPC_COVERAGE.md` for the full
@@ -18,7 +18,16 @@ what's found-but-not-implemented in the backend.
   documented-but-unimplemented endpoints and error codes found while writing
   this.
 - `test/rpc_smoke_test.dart` — real (not mocked) verification run against a
-  local `supabase start` instance.
+  local `supabase start` instance: `complete_profile` → `create_request` →
+  `submit_request` (deliberately stops at the expected
+  `NEW_USER_LOW_HEADCOUNT` exception, doesn't reach a real match).
+- `test/activity_location_voting_smoke_test.dart` — same real-instance
+  approach, but drives two separately authenticated users all the way to a
+  real `MATCHED` activity, then `propose_activity_location` →
+  `vote_activity_location` → tally → `fn_start_activities` lock. See the
+  file's header comment for how it routes around the pg_cron-only
+  matching-engine function and a known bug in the ≤2-person confirmation
+  path (`lib/rpc/RPC_COVERAGE.md`, "Line B update").
 
 ## Setup
 
@@ -53,7 +62,8 @@ GRANTs that endpoint needed were missing until v1.9, now fixed):
 
 ```bash
 docker exec supabase_db_find-people-now psql -U postgres -d postgres -c \
-  "insert into location (school, campus, name, is_active) values ('NYCU', '光復', 'Flutter 驗證測試地點', true) on conflict (school, name) do update set is_active = true;"
+  "insert into location (school, campus, name, is_active) values ('NYCU', '光復', 'Flutter 驗證測試地點', true) on conflict (school, name) do update set is_active = true, campus = excluded.campus;"
 
 flutter test test/rpc_smoke_test.dart
+flutter test test/activity_location_voting_smoke_test.dart
 ```
