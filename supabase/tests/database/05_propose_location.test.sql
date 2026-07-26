@@ -1,7 +1,8 @@
 -- =============================================================================
 -- pgTAP Test — propose_location (docs/API.md §2.5, v1.10)
 -- 涵蓋：成功提案 (PENDING + created_by 正確)、重複名稱 (DUPLICATE_LOCATION_NAME)、
--- 空白名稱 (INVALID_INPUT)、RLS 可見性（提案者看得到自己那筆 PENDING，其他人看不到）。
+-- 空白名稱 (INVALID_INPUT)、空白 campus (INVALID_INPUT，v1.11 新增 p_campus 參數)、
+-- RLS 可見性（提案者看得到自己那筆 PENDING，其他人看不到）。
 --
 -- 執行：`supabase test db`
 -- 全檔包在 BEGIN;...ROLLBACK; 內，測試結束自動還原，不需手動清理資料。
@@ -12,7 +13,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(5);
+select plan(6);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -53,7 +54,7 @@ do $$ begin
 end $$;
 
 select results_eq(
-  format($sql$select status::text, created_by from propose_location(%L, 'NYCU')$sql$, 'pgTAP 測試地點 A'),
+  format($sql$select status::text, created_by from propose_location(%L, 'NYCU', '光復')$sql$, 'pgTAP 測試地點 A'),
   format($sql$values ('PENDING', %L::uuid)$sql$, (select proposer_id from fixtures)),
   'propose_location 成功後應為 PENDING，created_by 為呼叫者本人'
 );
@@ -63,7 +64,7 @@ select results_eq(
 -- -----------------------------------------------------------------------------
 
 select throws_ok(
-  $sql$select propose_location('pgTAP 測試地點 A', 'NYCU')$sql$,
+  $sql$select propose_location('pgTAP 測試地點 A', 'NYCU', '光復')$sql$,
   'DUPLICATE_LOCATION_NAME',
   '同校同名地點重複提案應被 DUPLICATE_LOCATION_NAME 擋下'
 );
@@ -73,9 +74,19 @@ select throws_ok(
 -- -----------------------------------------------------------------------------
 
 select throws_ok(
-  $sql$select propose_location('   ', 'NYCU')$sql$,
+  $sql$select propose_location('   ', 'NYCU', '光復')$sql$,
   'INVALID_INPUT',
   '空白名稱應被 INVALID_INPUT 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 3b. 空白 campus 應被 INVALID_INPUT 擋下 (v1.11)
+-- -----------------------------------------------------------------------------
+
+select throws_ok(
+  $sql$select propose_location('pgTAP 測試地點 B', 'NYCU', '  ')$sql$,
+  'INVALID_INPUT',
+  '空白 campus 應被 INVALID_INPUT 擋下 (v1.11)'
 );
 
 -- -----------------------------------------------------------------------------

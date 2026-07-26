@@ -24,8 +24,8 @@ create temp table fixtures (
   user_b_id     uuid,
   user_c_id     uuid,
   act_type_id   uuid,
-  loc_nycu_id   uuid,
-  loc_nthu_id   uuid,
+  campus_nycu   text,
+  campus_nthu   text,
   req_a_id      uuid,
   req_b_id      uuid,
   new_req_a_id  uuid,
@@ -39,8 +39,8 @@ declare
   v_user_b_id   uuid := gen_random_uuid();
   v_user_c_id   uuid := gen_random_uuid();
   v_act_type_id uuid;
-  v_loc_nycu_id uuid;
-  v_loc_nthu_id uuid;
+  v_campus_nycu text := '光復';
+  v_campus_nthu text := '校本部';
   v_req_a       match_request;
   v_req_b       match_request;
 begin
@@ -56,20 +56,19 @@ begin
 
   select id into v_act_type_id from activity_type where name = '籃球' limit 1;
 
-  insert into location (school, name, is_active) values
-    ('NYCU', '浩然圖書館前廣場', true),
-    ('NTHU', '風雲球場', true)
-  on conflict (school, name) do update set is_active = true;
-
-  select id into v_loc_nycu_id from location where school = 'NYCU' and name = '浩然圖書館前廣場';
-  select id into v_loc_nthu_id from location where school = 'NTHU' and name = '風雲球場';
+  -- v1.11：location 新增 campus，Matching Scope 改成 (school, campus) 範圍匹配，
+  -- 不再是精確地點 FK；這裡 seed 的兩筆地點分別是各自 campus 底下唯一的候選
+  insert into location (school, campus, name, is_active) values
+    ('NYCU', v_campus_nycu, '浩然圖書館前廣場', true),
+    ('NTHU', v_campus_nthu, '風雲球場', true)
+  on conflict (school, name) do update set is_active = true, campus = excluded.campus;
 
   -- User A / B 各自發起 籃球 (min 6, max 12)，直接寫入 REQUESTING 以重現既有撮合情境
   insert into match_request (
-    owner_id, activity_type_id, campus_location_id,
+    owner_id, activity_type_id, school, campus,
     earliest_start, latest_start, min_participants, max_participants, status
   ) values (
-    v_user_a_id, v_act_type_id, v_loc_nycu_id,
+    v_user_a_id, v_act_type_id, 'NYCU', v_campus_nycu,
     now(), now() + interval '2 hours', 6, 12, 'REQUESTING'
   ) returning * into v_req_a;
 
@@ -77,10 +76,10 @@ begin
   values (v_req_a.id, v_user_a_id, 'OWNER', 'JOINED');
 
   insert into match_request (
-    owner_id, activity_type_id, campus_location_id,
+    owner_id, activity_type_id, school, campus,
     earliest_start, latest_start, min_participants, max_participants, status
   ) values (
-    v_user_b_id, v_act_type_id, v_loc_nycu_id,
+    v_user_b_id, v_act_type_id, 'NYCU', v_campus_nycu,
     now(), now() + interval '2 hours', 6, 12, 'REQUESTING'
   ) returning * into v_req_b;
 
@@ -105,17 +104,19 @@ begin
     user_b_id   = v_user_b_id,
     user_c_id   = v_user_c_id,
     act_type_id = v_act_type_id,
-    loc_nycu_id = v_loc_nycu_id,
-    loc_nthu_id = v_loc_nthu_id,
+    campus_nycu = v_campus_nycu,
+    campus_nthu = v_campus_nthu,
     req_a_id    = v_req_a.id,
     req_b_id    = v_req_b.id;
 end;
 $setup$;
 
 -- -----------------------------------------------------------------------------
--- 1. Failure Cases：異校地點驗證 (SCHOOL_LOCATION_MISMATCH)
+-- 1. Failure Cases：Matching Scope 範圍驗證 (INVALID_CAMPUS_SCOPE，v1.11)
 --    改走真正的 create_request RPC（而非繞過校驗的 raw insert），
---    才能真的驗證 v1.7 errcode 修正後 RPC 層是否正確拋出
+--    才能真的驗證 RPC 層是否正確拋出。v1.11 起 create_request 不再接受精確地點，
+--    campus 存在性檢查失敗回 INVALID_CAMPUS_SCOPE，取代原本的 SCHOOL_LOCATION_MISMATCH
+--    （該碼 v1.11 起僅用於 join_request_by_token 的跨校加入檢查，見 04 測試）
 -- -----------------------------------------------------------------------------
 
 do $$ begin
@@ -126,11 +127,11 @@ select throws_ok(
   format(
     $sql$select create_request(%L, %L, %L, %s, %s, %L)$sql$,
     (select act_type_id from fixtures),
-    (select loc_nthu_id from fixtures),
+    (select campus_nthu from fixtures),
     'NOW', 6, 12, false
   ),
-  'SCHOOL_LOCATION_MISMATCH',
-  'NYCU 學生對 NTHU 地點發起請求應被拒絕 (SCHOOL_LOCATION_MISMATCH)'
+  'INVALID_CAMPUS_SCOPE',
+  'NYCU 學生對只存在於 NTHU 的 campus 發起請求應被拒絕 (INVALID_CAMPUS_SCOPE)'
 );
 
 -- -----------------------------------------------------------------------------
@@ -148,7 +149,8 @@ select is(fn_run_matching_engine(), 0, '再次執行不應重複撮合');
 select ok(
   exists (
     select 1 from activity
-     where campus_location_id = (select loc_nycu_id from fixtures)
+     where school = 'NYCU'
+       and campus = (select campus_nycu from fixtures)
        and status = 'MATCHED'
   ),
   '應成功建立 Activity'
@@ -194,7 +196,7 @@ begin
   perform set_config('request.jwt.claim.sub', v_user_a_id::text, true);
   v_req := create_request(
     (select act_type_id from fixtures),
-    (select loc_nycu_id from fixtures),
+    (select campus_nycu from fixtures),
     'NOW', 6, 12, false
   );
   update fixtures set new_req_a_id = v_req.id;
@@ -217,7 +219,7 @@ begin
   perform set_config('request.jwt.claim.sub', v_user_c_id::text, true);
   v_req := create_request(
     (select act_type_id from fixtures),
-    (select loc_nthu_id from fixtures),
+    (select campus_nthu from fixtures),
     'NOW', 6, 12, false
   );
   update fixtures set new_req_c_id = v_req.id;

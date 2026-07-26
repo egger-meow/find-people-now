@@ -6,33 +6,39 @@ import 'supadart_header.dart';
 class Activity implements SupadartClass<Activity> {
   final String id;
   final String activityTypeId;
-  final String campusLocationId;
   final DateTime startTime;
   final DateTime estimatedEndTime;
   final ACTIVITY_STATUS status;
   final DateTime contactVisibleUntil;
   final DateTime createdAt;
+  final SCHOOL school;
+  final String campus;
+  final String? activityLocationId;
 
   const Activity({
     required this.id,
     required this.activityTypeId,
-    required this.campusLocationId,
     required this.startTime,
     required this.estimatedEndTime,
     required this.status,
     required this.contactVisibleUntil,
     required this.createdAt,
+    required this.school,
+    required this.campus,
+    this.activityLocationId,
   });
 
   static String get table_name => 'activity';
   static String get c_id => 'id';
   static String get c_activityTypeId => 'activity_type_id';
-  static String get c_campusLocationId => 'campus_location_id';
   static String get c_startTime => 'start_time';
   static String get c_estimatedEndTime => 'estimated_end_time';
   static String get c_status => 'status';
   static String get c_contactVisibleUntil => 'contact_visible_until';
   static String get c_createdAt => 'created_at';
+  static String get c_school => 'school';
+  static String get c_campus => 'campus';
+  static String get c_activityLocationId => 'activity_location_id';
 
   static List<Activity> converter(List<Map<String, dynamic>> data) {
     return data.map(Activity.fromJson).toList();
@@ -45,17 +51,18 @@ class Activity implements SupadartClass<Activity> {
   static Map<String, dynamic> _generateMap({
     String? id,
     String? activityTypeId,
-    String? campusLocationId,
     DateTime? startTime,
     DateTime? estimatedEndTime,
     ACTIVITY_STATUS? status,
     DateTime? contactVisibleUntil,
     DateTime? createdAt,
+    SCHOOL? school,
+    String? campus,
+    String? activityLocationId,
   }) {
     return {
       if (id != null) 'id': id,
       if (activityTypeId != null) 'activity_type_id': activityTypeId,
-      if (campusLocationId != null) 'campus_location_id': campusLocationId,
       if (startTime != null) 'start_time': startTime.toUtc().toIso8601String(),
       if (estimatedEndTime != null)
         'estimated_end_time': estimatedEndTime.toUtc().toIso8601String(),
@@ -63,50 +70,62 @@ class Activity implements SupadartClass<Activity> {
       if (contactVisibleUntil != null)
         'contact_visible_until': contactVisibleUntil.toUtc().toIso8601String(),
       if (createdAt != null) 'created_at': createdAt.toUtc().toIso8601String(),
+      if (school != null) 'school': school.toString().split('.').last,
+      if (campus != null) 'campus': campus,
+      if (activityLocationId != null)
+        'activity_location_id': activityLocationId,
     };
   }
 
   static Map<String, dynamic> insert({
     String? id,
     required String activityTypeId,
-    required String campusLocationId,
     required DateTime startTime,
     required DateTime estimatedEndTime,
     ACTIVITY_STATUS? status,
     DateTime? contactVisibleUntil,
     DateTime? createdAt,
+    required SCHOOL school,
+    required String campus,
+    String? activityLocationId,
   }) {
     return _generateMap(
       id: id,
       activityTypeId: activityTypeId,
-      campusLocationId: campusLocationId,
       startTime: startTime,
       estimatedEndTime: estimatedEndTime,
       status: status,
       contactVisibleUntil: contactVisibleUntil,
       createdAt: createdAt,
+      school: school,
+      campus: campus,
+      activityLocationId: activityLocationId,
     );
   }
 
   static Map<String, dynamic> update({
     String? id,
     String? activityTypeId,
-    String? campusLocationId,
     DateTime? startTime,
     DateTime? estimatedEndTime,
     ACTIVITY_STATUS? status,
     DateTime? contactVisibleUntil,
     DateTime? createdAt,
+    SCHOOL? school,
+    String? campus,
+    String? activityLocationId,
   }) {
     return _generateMap(
       id: id,
       activityTypeId: activityTypeId,
-      campusLocationId: campusLocationId,
       startTime: startTime,
       estimatedEndTime: estimatedEndTime,
       status: status,
       contactVisibleUntil: contactVisibleUntil,
       createdAt: createdAt,
+      school: school,
+      campus: campus,
+      activityLocationId: activityLocationId,
     );
   }
 
@@ -115,9 +134,6 @@ class Activity implements SupadartClass<Activity> {
       id: jsonn['id'] != null ? jsonn['id'].toString() : '',
       activityTypeId: jsonn['activity_type_id'] != null
           ? jsonn['activity_type_id'].toString()
-          : '',
-      campusLocationId: jsonn['campus_location_id'] != null
-          ? jsonn['campus_location_id'].toString()
           : '',
       startTime: jsonn['start_time'] != null
           ? DateTime.parse(jsonn['start_time'].toString())
@@ -134,29 +150,41 @@ class Activity implements SupadartClass<Activity> {
       createdAt: jsonn['created_at'] != null
           ? DateTime.parse(jsonn['created_at'].toString())
           : DateTime.fromMillisecondsSinceEpoch(0),
+      school: jsonn['school'] != null
+          ? SCHOOL.values.byName(jsonn['school'].toString())
+          : SCHOOL.values.first,
+      campus: jsonn['campus'] != null ? jsonn['campus'].toString() : '',
+      activityLocationId: jsonn['activity_location_id'] != null
+          ? jsonn['activity_location_id'].toString()
+          : null,
     );
   }
 
   static Object New({
     String? id,
     String? activityTypeId,
-    String? campusLocationId,
     DateTime? startTime,
     DateTime? estimatedEndTime,
     ACTIVITY_STATUS? status,
     DateTime? contactVisibleUntil,
     DateTime? createdAt,
+    SCHOOL? school,
+    String? campus,
+    String? activityLocationId,
   }) {
     return {
       if (id != null) 'id': id,
       if (activityTypeId != null) 'activity_type_id': activityTypeId,
-      if (campusLocationId != null) 'campus_location_id': campusLocationId,
       if (startTime != null) 'start_time': startTime,
       if (estimatedEndTime != null) 'estimated_end_time': estimatedEndTime,
       if (status != null) 'status': status,
       if (contactVisibleUntil != null)
         'contact_visible_until': contactVisibleUntil,
       if (createdAt != null) 'created_at': createdAt,
+      if (school != null) 'school': school,
+      if (campus != null) 'campus': campus,
+      if (activityLocationId != null)
+        'activity_location_id': activityLocationId,
     };
   }
 
@@ -164,12 +192,14 @@ class Activity implements SupadartClass<Activity> {
     return _generateMap(
       id: id,
       activityTypeId: activityTypeId,
-      campusLocationId: campusLocationId,
       startTime: startTime,
       estimatedEndTime: estimatedEndTime,
       status: status,
       contactVisibleUntil: contactVisibleUntil,
       createdAt: createdAt,
+      school: school,
+      campus: campus,
+      activityLocationId: activityLocationId,
     );
   }
 
@@ -177,21 +207,20 @@ class Activity implements SupadartClass<Activity> {
   Activity copyWith({
     Object? id = _unset,
     Object? activityTypeId = _unset,
-    Object? campusLocationId = _unset,
     Object? startTime = _unset,
     Object? estimatedEndTime = _unset,
     Object? status = _unset,
     Object? contactVisibleUntil = _unset,
     Object? createdAt = _unset,
+    Object? school = _unset,
+    Object? campus = _unset,
+    Object? activityLocationId = _unset,
   }) {
     return Activity(
       id: id == _unset ? this.id : id as String,
       activityTypeId: activityTypeId == _unset
           ? this.activityTypeId
           : activityTypeId as String,
-      campusLocationId: campusLocationId == _unset
-          ? this.campusLocationId
-          : campusLocationId as String,
       startTime: startTime == _unset ? this.startTime : startTime as DateTime,
       estimatedEndTime: estimatedEndTime == _unset
           ? this.estimatedEndTime
@@ -201,6 +230,11 @@ class Activity implements SupadartClass<Activity> {
           ? this.contactVisibleUntil
           : contactVisibleUntil as DateTime,
       createdAt: createdAt == _unset ? this.createdAt : createdAt as DateTime,
+      school: school == _unset ? this.school : school as SCHOOL,
+      campus: campus == _unset ? this.campus : campus as String,
+      activityLocationId: activityLocationId == _unset
+          ? this.activityLocationId
+          : activityLocationId as String?,
     );
   }
 }

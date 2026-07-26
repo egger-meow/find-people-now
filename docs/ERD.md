@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 實體關聯圖（16 張表）
+## 1. 實體關聯圖（18 張表）
 
 ```mermaid
 erDiagram
@@ -14,15 +14,21 @@ erDiagram
     app_user ||--o{ request_member : "參加"
     match_request ||--o{ request_member : "成員（取代 member_ids[]）"
     activity_type ||--o{ match_request : ""
-    location ||--o{ match_request : "campus_location_id"
     app_user ||--o{ activity_type : "created_by 提案"
     app_user ||--o{ location : "created_by 提案（v1.10）"
 
     activity_type ||--o{ activity : ""
-    location ||--o{ activity : ""
     activity ||--o{ activity_member : "成員（取代 final_member_ids[]）"
     app_user ||--o{ activity_member : ""
     match_request ||--o{ activity_member : "source_request_id 來源追溯"
+
+    activity ||--o{ activity_location_option : "候選地點提案（v1.11）"
+    location ||--o{ activity_location_option : "location_id"
+    app_user ||--o{ activity_location_option : "proposed_by"
+    activity ||--o{ activity_location_vote : "得票（v1.11）"
+    location ||--o{ activity_location_vote : "location_id"
+    app_user ||--o{ activity_location_vote : "user_id"
+    location ||--o{ activity : "activity_location_id（nullable，鎖定後才有，v1.11）"
 
     match_request ||--o{ downgrade_request : ""
     downgrade_request ||--o{ downgrade_consent : ""
@@ -77,6 +83,7 @@ erDiagram
     location {
         uuid id PK
         enum school "NYCU | NTHU，地點清單依校分列（v1.2）"
+        text campus "純文字，不開 enum；陽明交大橫跨新竹/台北/台南三市，school 不足以代表距離夠近（v1.11）"
         text name "固定下拉清單，不開放自由輸入；UNIQUE(school, name)"
         bool is_active
         enum status "PENDING | APPROVED | REJECTED，比照 activity_type，預設 APPROVED（v1.10）"
@@ -88,8 +95,8 @@ erDiagram
         uuid id PK
         uuid owner_id FK
         uuid activity_type_id FK
-        uuid campus_location_id FK
-        uuid_array acceptable_location_ids "v1 只填 1 個，欄位預留多選"
+        enum school "從 owner 帶入，非使用者參數（v1.11，取代 campus_location_id）"
+        text campus "Matching Scope，建立時選、不再指定精確地點（v1.11）"
         timestamptz earliest_start
         timestamptz latest_start "CHECK：<= created_at + 24h"
         int flexible_minutes "v1 固定 0，欄位預留"
@@ -114,12 +121,29 @@ erDiagram
     activity {
         uuid id PK
         uuid activity_type_id FK
-        uuid campus_location_id FK
+        enum school "Matching Scope 快照，撮合當下複製自來源 Request（v1.11，取代 campus_location_id）"
+        text campus "同上"
+        uuid activity_location_id FK "nullable；配對成立後由參與者投票決定的精確地點，見 activity_location_option/vote（v1.11）"
         timestamptz start_time
         timestamptz estimated_end_time "= start_time + default_duration"
         enum status "MATCHED | ONGOING | COMPLETED | CANCELLED"
         timestamptz contact_visible_until "= 本表 created_at + 24h，非 Request 的"
         timestamptz created_at
+    }
+
+    activity_location_option {
+        uuid id PK
+        uuid activity_id FK "UNIQUE(activity_id, location_id)"
+        uuid location_id FK "候選限定該 activity 的 (school, campus) 範圍內、status=APPROVED 的地點"
+        uuid proposed_by FK "app_user"
+        timestamptz created_at "同票時最早提案者勝出的判準（v1.11）"
+    }
+
+    activity_location_vote {
+        uuid activity_id PK, FK "複合 PK (activity_id, user_id)"
+        uuid user_id PK, FK "一人一票，改票 = update 這筆"
+        uuid location_id FK "必須是該 activity 既有的 activity_location_option"
+        timestamptz voted_at
     }
 
     activity_member {
@@ -219,7 +243,7 @@ erDiagram
 | `pending_confirmation_response` | `CONFIRMED` `DECLINED` `NO_RESPONSE` | §12.1（v1.4） |
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
-| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` | §16 開放問題 5（清單可能擴充） |
+| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） | §16 開放問題 5（清單可能擴充） |
 
 > **註記**：`request_member_status` 與 `activity_member_status` 兩個欄位 SPEC 只寫了「status」沒列值域，此處補定為最小可用集合（成員可在配對前退出 Request → `LEFT`；成員可個別取消已成立的活動 → `CANCELLED`，活動本身可能照常進行）。這是 schema 層補完，不是產品邏輯變更。
 
@@ -256,3 +280,11 @@ erDiagram
 25. **`location.status` 預設 `APPROVED`，與 `activity_type.status` 預設 `PENDING` 刻意不同（v1.10）**：兩張表復用同一個 `activity_type_status` enum，但正常寫入路徑不同——`location` 是 admin 直接維護的固定下拉清單（seed/Dashboard 直接 insert 就是 APPROVED），使用者提案（`propose_location`）只是額外開的旁支路徑，`PENDING` 只在旁支路徑出現；`activity_type` 則相反，使用者提案（`propose_activity_type`）才是常態寫入路徑，官方預設類型才是走 seed 直接 insert `APPROVED` 的旁支。兩者預設值反過來，是因為「誰是常態、誰是旁支」反過來，不是不一致。
 26. **`propose_location` 不做關鍵字黑名單預檢（v1.10）**：地點名稱要塞入色情/違法字眼的難度本來就比活動類型高；且稽核時發現 `propose_activity_type` 文件宣稱的黑名單預檢從未真正落地實作（見 `app/lib/rpc/RPC_COVERAGE.md`），與其比照一個實際上不存在的機制，不如承認 MVP 階段真正的把關就是 `pending_review` view（見下）給 admin 人工看過再核准，這對地點提案已經足夠。
 27. **`pending_review` view：MVP 唯一審核管道（v1.10）**：UNION `activity_type`/`location` 兩張表目前 `status = 'PENDING'` 的項目，讓 admin 在 Supabase Studio 查一張 view 就能看到所有排隊中的提案。刻意不對 `anon`/`authenticated` grant 任何權限，只有 `postgres`/`service_role` 能查得到；不新建任何 admin 專屬 API 或前端頁面，審核就是人工在 Studio 改對應原表的 `status` 欄位。
+28. **`location.campus` 用純文字、不開 enum、不另開 Campus 表（v1.11）**：陽明交通大學校區橫跨新竹/台北/台南三個城市，`school`（NYCU/NTHU）本身不足以代表「距離夠近」。`campus` 之所以不比照 `school` 用 enum，是因為 `school` 是「新增一間學校本來就要改 migration」的程式碼範圍（設計備註 8），但 `campus` 清單會隨你之後補的地點清單自然擴充，屬於**資料**而非**程式碼**該管的範圍，比照 `location.name`/`activity_type.name` 既有的純文字慣例。不加額外 DB 層約束（如 UNIQUE 或另開 lookup 表）防打字錯誤：`create_request`/`propose_activity_location` 已用「`exists (location where school=... and campus=... and status='APPROVED')`」做存在性檢查，使用者端打錯字會直接被拒絕；唯一剩餘風險是 admin 手動維護地點清單時自己打字不一致，這是操作紀律問題，不需要額外 schema 約束來解決。
+29. **`match_request`/`activity` 都直接存 `school` + `campus`（而非 join 查）（v1.11）**：舊設計下 Matching Engine 的 merge key 是單一 `campus_location_id`（`idx_request_queue` 只需一欄），因為「同一個地點」本來就唯一決定 school——新模型下沒有這個單一 FK 可以借力，`(school, campus)` 是撮合熱路徑（`fn_run_matching_engine`）真正需要的分組鍵，直接存兩欄位讓 `idx_request_queue`/merge 查詢維持單一索引掃描，不必每次撮合都 join `app_user`。這跟 `location.school`（地點本身的真實屬性）不是同一種存在理由，而是「撮合當下需要的快照」，比照 `activity.contact_visible_until` 以自己 `created_at` 起算、不回頭查來源 Request 的既有精神——避免熱路徑依賴外部 join。
+30. **`match_request.acceptable_location_ids[]` 直接移除，非 deprecated（v1.11）**：v1.5 起這個欄位的定位是「v1 只填 1 個精確地點，欄位預留未來多選」。新模型下 Request 建立時根本不指定精確地點（只選 `(activity_type, campus)`），這個欄位原本要表達的「使用者對精確地點的偏好」已經在**語意上不存在**，不是「還沒用到、以後可能用到」。保留一個跟現行模型直接矛盾的欄位只會誤導未來的人以為它還有作用，故直接砍除，不走一般的「保留但不用」處理方式。
+31. **Activity Location 投票（`activity_location_option`/`activity_location_vote`）RLS 刻意公開透明，跟 `pending_confirmation` 相反（v1.11）**：`pending_confirmation` 的不歸因設計（設計備註 16）是為了避免任一方知道「是不是我造成配對失敗」——那是一個雙人零和的敏感情境。Activity Location 投票則是**已經成局的一群人**在討論「去哪」，跟誰投給誰完全是良性的群體協調資訊，沒有需要隱藏的理由，公開透明（比照 `my_activity_members_select` 既有的「同活動成員互相看得到」模式）才符合「大家一起選」的直覺體驗。
+32. **得票數不落地存欄位（v1.11）**：跟 `known_member_count`（設計備註 20）、Reliability 分數（設計備註 3）同一精神——`count(*) from activity_location_vote where activity_id=... and location_id=...` 即時查即可，不另存快取欄位，避免資料跟來源事實不同步。
+33. **`activity.activity_location_id` 允許長期為 `NULL`，`fn_start_activities()` 不做 fallback 代選（v1.11）**：到 `start_time` 仍零候選時，維持 `NULL` 而不是隨便挑一個該 `(school, campus)` 下的地點頂上——地點跟活動性質可能完全不相關（例如讀書活動被系統代選到球場），代替使用者做這個決定比「沒有結果」的體驗更差。改用另一個背景任務 `fn_remind_missing_location_candidates()`（`start_time` 前 `app_config.location_reminder_lead_minutes` 分鐘仍零候選 → 發 `LOCATION_NOT_YET_PROPOSED` 通知）把問題交還給使用者自己解決，去重靠查詢既有 `notification` 表本身，不額外加欄位（同設計備註 32 的精神）。
+34. **新錯誤碼 `INVALID_CAMPUS_SCOPE`，不沿用 `SCHOOL_LOCATION_MISMATCH`（v1.11）**：兩者語意不同——`SCHOOL_LOCATION_MISMATCH`（`join_request_by_token` 沿用）是「你的學校跟這個 Request 的學校不一樣」；`INVALID_CAMPUS_SCOPE`（`create_request`/`propose_activity_location` 新用）是「學校正確，但你選的校區在 DB 裡沒有任何已核准的地點」。前者是身分層級的錯誤，後者是資料/輸入層級的錯誤，混用同一個碼會讓 client 端錯誤處理邏輯失去區分能力。
+35. **不做「候選地點依 `activity_type.category` 過濾」（v1.11）**：`location.category` 目前這個 repo 裡完全不存在（v1.10 只加了 `status`/`created_by`），這輪也刻意不補——現在沒有任何程式碼會讀它，加了只是死欄位，違反「不做過度設計」的既有原則；未來真的有 UI 分組/搜尋需求時再加，schema 不因此卡住。

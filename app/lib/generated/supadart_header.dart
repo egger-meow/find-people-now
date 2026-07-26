@@ -42,10 +42,14 @@ extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get activity => from('activity');
   SupabaseQueryBuilder get rematch_vote => from('rematch_vote');
   SupabaseQueryBuilder get completion_report => from('completion_report');
+  SupabaseQueryBuilder get activity_location_vote =>
+      from('activity_location_vote');
   SupabaseQueryBuilder get request_member => from('request_member');
   SupabaseQueryBuilder get match_history_avoidance =>
       from('match_history_avoidance');
   SupabaseQueryBuilder get activity_member => from('activity_member');
+  SupabaseQueryBuilder get activity_location_option =>
+      from('activity_location_option');
   SupabaseQueryBuilder get activity_type => from('activity_type');
   SupabaseQueryBuilder get app_config => from('app_config');
   SupabaseQueryBuilder get notification => from('notification');
@@ -80,6 +84,7 @@ enum NOTIFICATION_EVENT_TYPE {
   DOWNGRADE_RESULT,
   ACTIVITY_REMINDER,
   COMPLETE_CONFIRMATION,
+  LOCATION_NOT_YET_PROPOSED,
 }
 
 enum PENDING_CONFIRMATION_RESPONSE { CONFIRMED, DECLINED, NO_RESPONSE }

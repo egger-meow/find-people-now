@@ -12,10 +12,15 @@ enum RequestBucket { NOW, TODAY, TONIGHT, TOMORROW_AM }
 
 /// docs/API.md §3.1 — `rpc: create_request(...)`.
 /// min/max participants counts include the owner (see API.md §3.1 note ①).
+///
+/// `campus` (v1.11) replaces the old `campusLocationId` param — it's now a
+/// Matching Scope (free-text `location.campus` value within the caller's own
+/// `school`), not a precise location FK. The precise Activity Location is
+/// decided post-match via voting (see `activity_location_rpc.dart`).
 Future<MatchRequest> createRequest(
   SupabaseClient client, {
   required String activityTypeId,
-  required String campusLocationId,
+  required String campus,
   required RequestBucket bucket,
   required int minParticipants,
   int? maxParticipants,
@@ -26,7 +31,7 @@ Future<MatchRequest> createRequest(
     'create_request',
     params: {
       'p_activity_type_id': activityTypeId,
-      'p_campus_location_id': campusLocationId,
+      'p_campus': campus,
       'p_bucket': bucket.name,
       'p_min_participants': minParticipants,
       'p_max_participants': maxParticipants,

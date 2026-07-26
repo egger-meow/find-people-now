@@ -7,8 +7,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   final String id;
   final String ownerId;
   final String activityTypeId;
-  final String campusLocationId;
-  final List<String> acceptableLocationIds;
   final DateTime earliestStart;
   final DateTime latestStart;
   final int flexibleMinutes;
@@ -19,13 +17,13 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   final int? maxParticipants;
   final String? inviteToken;
   final DateTime? revokedAt;
+  final SCHOOL school;
+  final String campus;
 
   const MatchRequest({
     required this.id,
     required this.ownerId,
     required this.activityTypeId,
-    required this.campusLocationId,
-    required this.acceptableLocationIds,
     required this.earliestStart,
     required this.latestStart,
     required this.flexibleMinutes,
@@ -36,14 +34,14 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     this.maxParticipants,
     this.inviteToken,
     this.revokedAt,
+    required this.school,
+    required this.campus,
   });
 
   static String get table_name => 'match_request';
   static String get c_id => 'id';
   static String get c_ownerId => 'owner_id';
   static String get c_activityTypeId => 'activity_type_id';
-  static String get c_campusLocationId => 'campus_location_id';
-  static String get c_acceptableLocationIds => 'acceptable_location_ids';
   static String get c_earliestStart => 'earliest_start';
   static String get c_latestStart => 'latest_start';
   static String get c_flexibleMinutes => 'flexible_minutes';
@@ -54,6 +52,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   static String get c_maxParticipants => 'max_participants';
   static String get c_inviteToken => 'invite_token';
   static String get c_revokedAt => 'revoked_at';
+  static String get c_school => 'school';
+  static String get c_campus => 'campus';
 
   static List<MatchRequest> converter(List<Map<String, dynamic>> data) {
     return data.map(MatchRequest.fromJson).toList();
@@ -67,8 +67,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     String? id,
     String? ownerId,
     String? activityTypeId,
-    String? campusLocationId,
-    List<String>? acceptableLocationIds,
     DateTime? earliestStart,
     DateTime? latestStart,
     int? flexibleMinutes,
@@ -79,14 +77,13 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     int? maxParticipants,
     String? inviteToken,
     DateTime? revokedAt,
+    SCHOOL? school,
+    String? campus,
   }) {
     return {
       if (id != null) 'id': id,
       if (ownerId != null) 'owner_id': ownerId,
       if (activityTypeId != null) 'activity_type_id': activityTypeId,
-      if (campusLocationId != null) 'campus_location_id': campusLocationId,
-      if (acceptableLocationIds != null)
-        'acceptable_location_ids': acceptableLocationIds.map((e) => e).toList(),
       if (earliestStart != null)
         'earliest_start': earliestStart.toUtc().toIso8601String(),
       if (latestStart != null)
@@ -99,6 +96,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       if (maxParticipants != null) 'max_participants': maxParticipants,
       if (inviteToken != null) 'invite_token': inviteToken,
       if (revokedAt != null) 'revoked_at': revokedAt.toUtc().toIso8601String(),
+      if (school != null) 'school': school.toString().split('.').last,
+      if (campus != null) 'campus': campus,
     };
   }
 
@@ -106,8 +105,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     String? id,
     required String ownerId,
     required String activityTypeId,
-    required String campusLocationId,
-    required List<String> acceptableLocationIds,
     required DateTime earliestStart,
     required DateTime latestStart,
     int? flexibleMinutes,
@@ -118,13 +115,13 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     int? maxParticipants,
     String? inviteToken,
     DateTime? revokedAt,
+    required SCHOOL school,
+    required String campus,
   }) {
     return _generateMap(
       id: id,
       ownerId: ownerId,
       activityTypeId: activityTypeId,
-      campusLocationId: campusLocationId,
-      acceptableLocationIds: acceptableLocationIds,
       earliestStart: earliestStart,
       latestStart: latestStart,
       flexibleMinutes: flexibleMinutes,
@@ -135,6 +132,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       maxParticipants: maxParticipants,
       inviteToken: inviteToken,
       revokedAt: revokedAt,
+      school: school,
+      campus: campus,
     );
   }
 
@@ -142,8 +141,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     String? id,
     String? ownerId,
     String? activityTypeId,
-    String? campusLocationId,
-    List<String>? acceptableLocationIds,
     DateTime? earliestStart,
     DateTime? latestStart,
     int? flexibleMinutes,
@@ -154,13 +151,13 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     int? maxParticipants,
     String? inviteToken,
     DateTime? revokedAt,
+    SCHOOL? school,
+    String? campus,
   }) {
     return _generateMap(
       id: id,
       ownerId: ownerId,
       activityTypeId: activityTypeId,
-      campusLocationId: campusLocationId,
-      acceptableLocationIds: acceptableLocationIds,
       earliestStart: earliestStart,
       latestStart: latestStart,
       flexibleMinutes: flexibleMinutes,
@@ -171,6 +168,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       maxParticipants: maxParticipants,
       inviteToken: inviteToken,
       revokedAt: revokedAt,
+      school: school,
+      campus: campus,
     );
   }
 
@@ -181,14 +180,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       activityTypeId: jsonn['activity_type_id'] != null
           ? jsonn['activity_type_id'].toString()
           : '',
-      campusLocationId: jsonn['campus_location_id'] != null
-          ? jsonn['campus_location_id'].toString()
-          : '',
-      acceptableLocationIds: jsonn['acceptable_location_ids'] != null
-          ? (jsonn['acceptable_location_ids'] as List<dynamic>)
-                .map((v) => v.toString())
-                .toList()
-          : <String>[],
       earliestStart: jsonn['earliest_start'] != null
           ? DateTime.parse(jsonn['earliest_start'].toString())
           : DateTime.fromMillisecondsSinceEpoch(0),
@@ -219,6 +210,10 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       revokedAt: jsonn['revoked_at'] != null
           ? DateTime.parse(jsonn['revoked_at'].toString())
           : null,
+      school: jsonn['school'] != null
+          ? SCHOOL.values.byName(jsonn['school'].toString())
+          : SCHOOL.values.first,
+      campus: jsonn['campus'] != null ? jsonn['campus'].toString() : '',
     );
   }
 
@@ -226,8 +221,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     String? id,
     String? ownerId,
     String? activityTypeId,
-    String? campusLocationId,
-    List<String>? acceptableLocationIds,
     DateTime? earliestStart,
     DateTime? latestStart,
     int? flexibleMinutes,
@@ -238,14 +231,13 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     int? maxParticipants,
     String? inviteToken,
     DateTime? revokedAt,
+    SCHOOL? school,
+    String? campus,
   }) {
     return {
       if (id != null) 'id': id,
       if (ownerId != null) 'owner_id': ownerId,
       if (activityTypeId != null) 'activity_type_id': activityTypeId,
-      if (campusLocationId != null) 'campus_location_id': campusLocationId,
-      if (acceptableLocationIds != null)
-        'acceptable_location_ids': acceptableLocationIds,
       if (earliestStart != null) 'earliest_start': earliestStart,
       if (latestStart != null) 'latest_start': latestStart,
       if (flexibleMinutes != null) 'flexible_minutes': flexibleMinutes,
@@ -256,6 +248,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       if (maxParticipants != null) 'max_participants': maxParticipants,
       if (inviteToken != null) 'invite_token': inviteToken,
       if (revokedAt != null) 'revoked_at': revokedAt,
+      if (school != null) 'school': school,
+      if (campus != null) 'campus': campus,
     };
   }
 
@@ -264,8 +258,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       id: id,
       ownerId: ownerId,
       activityTypeId: activityTypeId,
-      campusLocationId: campusLocationId,
-      acceptableLocationIds: acceptableLocationIds,
       earliestStart: earliestStart,
       latestStart: latestStart,
       flexibleMinutes: flexibleMinutes,
@@ -276,6 +268,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       maxParticipants: maxParticipants,
       inviteToken: inviteToken,
       revokedAt: revokedAt,
+      school: school,
+      campus: campus,
     );
   }
 
@@ -284,8 +278,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     Object? id = _unset,
     Object? ownerId = _unset,
     Object? activityTypeId = _unset,
-    Object? campusLocationId = _unset,
-    Object? acceptableLocationIds = _unset,
     Object? earliestStart = _unset,
     Object? latestStart = _unset,
     Object? flexibleMinutes = _unset,
@@ -296,6 +288,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     Object? maxParticipants = _unset,
     Object? inviteToken = _unset,
     Object? revokedAt = _unset,
+    Object? school = _unset,
+    Object? campus = _unset,
   }) {
     return MatchRequest(
       id: id == _unset ? this.id : id as String,
@@ -303,12 +297,6 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       activityTypeId: activityTypeId == _unset
           ? this.activityTypeId
           : activityTypeId as String,
-      campusLocationId: campusLocationId == _unset
-          ? this.campusLocationId
-          : campusLocationId as String,
-      acceptableLocationIds: acceptableLocationIds == _unset
-          ? this.acceptableLocationIds
-          : acceptableLocationIds as List<String>,
       earliestStart: earliestStart == _unset
           ? this.earliestStart
           : earliestStart as DateTime,
@@ -333,6 +321,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
           ? this.inviteToken
           : inviteToken as String?,
       revokedAt: revokedAt == _unset ? this.revokedAt : revokedAt as DateTime?,
+      school: school == _unset ? this.school : school as SCHOOL,
+      campus: campus == _unset ? this.campus : campus as String,
     );
   }
 }

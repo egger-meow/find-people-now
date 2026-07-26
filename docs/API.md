@@ -32,8 +32,8 @@
 | 2.1 | `GET activity_type?status=eq.APPROVED`（PostgREST） | 公開類型清單。回傳包含 `default_min_participants`, `default_max_participants`, `group_size_step`（v1.5 / v1.6）、`description`（v1.10，前端「?」按鈕顯示的玩法說明，nullable）。<br>🟢 **選單計算規範（ERD 備註 22）**：前端建立 Request 選項卡時，若 `group_size_step` 非 null（如 `step=1` 或 `step=2`），從 min 到 max 按 step 算出的數值為唯一可選的離散人數選項；`group_size_step` 為 null 時才渲染為連續區間選單。 |
 | 2.2 | `rpc: search_activity_type(query)` | 新增前的模糊比對/autocomplete（SPEC §5，防「羽球 vs 羽毛球」重複稀釋配對池）。 |
 | 2.3 | `rpc: propose_activity_type(name)` | 流程：關鍵字黑名單預檢（命中即回 `NAME_BLACKLISTED`，不落庫）→ `PENDING` → admin 審核（於 Supabase Dashboard 一併設定 `default_duration_minutes`/`default_min_participants`/`default_max_participants`/`group_size_step`/`description`，v1.10 新增 `description`）。審核走 Supabase Dashboard/service role 查 `pending_review` view（v1.10，見下方審核管道說明），MVP 不做 admin API。 |
-| 2.4 | `GET location?is_active=eq.true&status=eq.APPROVED&school=eq.{我的 school}`（PostgREST) | 固定地點下拉清單，依校分列（SPEC §1）；client 只顯示自己學校、已審核通過的清單，server 端最終由 3.1 的 `SCHOOL_LOCATION_MISMATCH` 把關。`status=eq.APPROVED` 為 v1.10 新增，排除提案中/被拒的地點。 |
-| 2.5 | `rpc: propose_location(name, school)`（v1.10） | 提議新地點，流程比照 2.3：`PENDING` → admin 審核。不做關鍵字黑名單預檢——地點名稱塞入違規字眼的難度較高，且 MVP 真正的把關是 admin 人工查 `pending_review` view（ERD 備註 26/27）再核准。 |
+| 2.4 | `GET location?is_active=eq.true&status=eq.APPROVED&school=eq.{我的 school}&campus=eq.{選定 campus}`（PostgREST) | 固定地點下拉清單，依校分列（SPEC §1）；client 只顯示自己學校、已審核通過的清單，server 端最終由 3.1 的 `INVALID_CAMPUS_SCOPE` 把關。`status=eq.APPROVED` 為 v1.10 新增，排除提案中/被拒的地點；`campus=eq.{...}` 為 v1.11 新增（`location.campus`，見 ERD 備註 28），選定 Matching Scope 的 campus 後用來列出該範圍內的候選地點（供 6.4 `propose_activity_location` 用）。 |
+| 2.5 | `rpc: propose_location(name, school, campus)`（v1.10，v1.11 新增 `campus` 參數） | 提議新地點，流程比照 2.3：`PENDING` → admin 審核。不做關鍵字黑名單預檢——地點名稱塞入違規字眼的難度較高，且 MVP 真正的把關是 admin 人工查 `pending_review` view（ERD 備註 26/27）再核准。`campus` 為必填（v1.11）：核准後的地點需要 `campus` 才能參與任何撮合，不補會產生無法使用的死地點。 |
 
 錯誤碼：`NAME_BLACKLISTED`、`DUPLICATE_TYPE_NAME`、`DUPLICATE_LOCATION_NAME`（v1.10）
 
@@ -47,7 +47,7 @@
 
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
-| 3.1 | `rpc: create_request(activity_type_id, campus_location_id, bucket, min_participants, max_participants?, allow_downgrade)` | R1 | `bucket ∈ {NOW, TODAY, TONIGHT, TOMORROW_AM}` 換算成 `earliest_start/latest_start`（SPEC §4）。`min_participants >= 2`；`max_participants` 為 upper bound (null 則 fallback 至 `activity_type.default_max_participants`)。<br>🟢 **驗證規範**：① `min/max_participants` 計數**包含 owner 本人**。② 若 `group_size_step` 非 null，帶入的人數必須符合離散步階選項，否則回傳 `INVALID_GROUP_SIZE_OPTION`。③ 檢查 `campus_location_id` 屬於 owner 的 `school`，否則回 `SCHOOL_LOCATION_MISMATCH`（SPEC §6/§7 同校隔離）。④ 僅建立 owner 本人的 Request（此時 `request_member` 只有 owner 一人）；邀請朋友加入一律透過 3.7 生成邀請連結，好友透過 3.8 加入，在 Matching Engine 掃描撮合前陸續完成組隊。 |
+| 3.1 | `rpc: create_request(activity_type_id, campus, bucket, min_participants, max_participants?, allow_downgrade)` | R1 | `bucket ∈ {NOW, TODAY, TONIGHT, TOMORROW_AM}` 換算成 `earliest_start/latest_start`（SPEC §4）。`min_participants >= 2`；`max_participants` 為 upper bound (null 則 fallback 至 `activity_type.default_max_participants`)。<br>🟢 **驗證規範**：① `min/max_participants` 計數**包含 owner 本人**。② 若 `group_size_step` 非 null，帶入的人數必須符合離散步階選項，否則回傳 `INVALID_GROUP_SIZE_OPTION`。③ **（v1.11）** `campus` 不再是精確地點 FK，而是 Matching Scope 的自由文字校區值；檢查 owner 的 `school` 底下是否存在至少一筆 `status='APPROVED'` 且 `campus` 相符的地點，否則回 `INVALID_CAMPUS_SCOPE`（SPEC §6/§7 同校隔離，取代 v1.10 及之前版本的 `SCHOOL_LOCATION_MISMATCH`；`school` 本身不對——目前 create_request 已不接受 `school` 參數，不會發生——才會是 `SCHOOL_LOCATION_MISMATCH`，見 3.8）。④ 僅建立 owner 本人的 Request（此時 `request_member` 只有 owner 一人）；邀請朋友加入一律透過 3.7 生成邀請連結，好友透過 3.8 加入，在 Matching Engine 掃描撮合前陸續完成組隊。精確地點（Activity Location）改成配對成立後才由參與者投票決定，見 6.4/6.5。 |
 | 3.2 | `rpc: submit_request(request_id)` | R2 | 送出進 Queue。🟢 **驗證順序定案（deterministic，SPEC §6.3），任何未來重構都不能打亂**：① `UNAUTHORIZED`（未登入）② `USER_SUSPENDED`（停權中）③ `PROFILE_INCOMPLETE`（個人資料未完成）④ *(結構性檢查，載入 Request 本體)* `NOT_FOUND` / `REQUEST_NOT_OPEN` ⑤ **`ACTIVE_ACTIVITY_IN_PROGRESS`**（owner 名下有 `MATCHED`/`ONGOING` 的 Activity，v1.7 新增，見 SPEC §6.3——排在冷卻檢查之前，因為「活動還沒結束」是根源問題）⑥ **`REQUEST_COOLDOWN_ACTIVE`**（`app_user.next_request_allowed_at > now()`，v1.7 新增）⑦ 單一 `REQUESTING` 限制（`ALREADY_REQUESTING`）⑧ 24h 時間窗（`WINDOW_EXCEEDS_24H`）⑨ **新人低人數限制**（`min_participants ≤ 2` 且任一成員 `fn_is_new_user()` = true → `NEW_USER_LOW_HEADCOUNT`，SPEC §12.1）。 |
 | 3.3 | `rpc: cancel_request(request_id)` | R5 | 配對成立前取消，不記 Reliability 事件。owner 專用；非 owner 成員請改用 3.5 `leave_request`。 |
 | 3.5 | `rpc: leave_request(request_id)` | — | 非 owner 成員退出（`request_member.status → LEFT`）；配對成立前退出不記事件。owner 呼叫回 `FORBIDDEN`（應改用 3.3 `cancel_request`）；配對成立後（非 `DRAFT`/`REQUESTING`/`PENDING_CONFIRMATION`）回 `REQUEST_NOT_OPEN`，改走 6.3 `cancel_activity_participation`。 |
@@ -56,7 +56,7 @@
 | 3.8 | `rpc: join_request_by_token(invite_token)` | — | **透過邀請連結加入 Request (v1.5)**：已完成身份驗證的使用者帶入 `invite_token` 加入（本質為信任引導 Trust Bootstrap，不與 Friend 表綁定）。檢查：Token 未撤銷、未過期、未超過 `max_participants` 上限、通過新人低人數限制與同校隔離檢查。加入後新增 `request_member` 記錄。 |
 | 3.9 | `rpc: revoke_invite_link(request_id)` | — | **撤銷邀請連結 (v1.5)**：僅 owner 可呼叫，設定 `revoked_at = now()`，使該 Token 立即失效。 |
 
-錯誤碼：`ALREADY_REQUESTING`（單一 REQUESTING 限制）、`WINDOW_EXCEEDS_24H`、`NEW_USER_LOW_HEADCOUNT`（新人不可 ≤2 人局）、`SCHOOL_LOCATION_MISMATCH`（地點不屬於自己學校）、`INVALID_GROUP_SIZE_OPTION`（人數不符步階）、`INVITE_LINK_REVOKED`（邀請連結已撤銷）、`INVITE_LINK_EXPIRED`（邀請連結已失效）、`REQUEST_FULL`（已達人數上限）、`REQUEST_NOT_OPEN`、`USER_SUSPENDED`、`ACTIVE_ACTIVITY_IN_PROGRESS`（名下有進行中活動，v1.7）、`REQUEST_COOLDOWN_ACTIVE`（拒絕/晚取消觸發的 30 分鐘冷卻未過，v1.7）
+錯誤碼：`ALREADY_REQUESTING`（單一 REQUESTING 限制）、`WINDOW_EXCEEDS_24H`、`NEW_USER_LOW_HEADCOUNT`（新人不可 ≤2 人局）、`INVALID_CAMPUS_SCOPE`（v1.11，`campus` 在 owner 的 `school` 底下無任何已核准地點，取代 v1.10 及之前版本 3.1 用的 `SCHOOL_LOCATION_MISMATCH`）、`SCHOOL_LOCATION_MISMATCH`（v1.11 起僅用於 3.8 `join_request_by_token` 的跨校加入檢查——學校本身不對，跟 `INVALID_CAMPUS_SCOPE` 語意分開，見 ERD 備註 34）、`INVALID_GROUP_SIZE_OPTION`（人數不符步階）、`INVITE_LINK_REVOKED`（邀請連結已撤銷）、`INVITE_LINK_EXPIRED`（邀請連結已失效）、`REQUEST_FULL`（已達人數上限）、`REQUEST_NOT_OPEN`、`USER_SUSPENDED`、`ACTIVE_ACTIVITY_IN_PROGRESS`（名下有進行中活動，v1.7）、`REQUEST_COOLDOWN_ACTIVE`（拒絕/晚取消觸發的 30 分鐘冷卻未過，v1.7）
 
 ---
 
@@ -89,8 +89,10 @@
 | 6.1 | `GET activity` + `GET activity_member`（PostgREST，RLS：成員） | — | 我的活動、成員名單、`source_request_id` 來源。 |
 | 6.2 | `rpc: get_activity_contacts(activity_id)` | — | **聯絡方式唯一出口**（不走 RLS 直讀 `app_user.contact_*`）。規則（SPEC §11）：呼叫者是該活動成員，且（`now() < contact_visible_until`【以 Activity 的 `created_at` 起算 +24h，SPEC v1.1 變更 5】**或** 與對方互按過再約）。回各成員自選公開的聯絡方式。 |
 | 6.3 | `rpc: cancel_activity_participation(activity_id)` | A5/A6 | 個別取消。server 依時點記事件：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h 或已開始 → `LATE_CANCEL`（SPEC §10 處罰分級，**同時寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`，v1.7 冷卻機制，SPEC §6.3；`EARLY_CANCEL` 不觸發**）。 |
+| 6.4 | `rpc: propose_activity_location(activity_id, location_id)`（v1.11） | — | **提案 Activity Location 候選（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須屬於該活動的 `(school, campus)` 範圍內、`status='APPROVED'` 的地點。提案動作同時視為投給該候選一票；若該地點已是既有候選（他人先提過），本次呼叫退化成投票，不視為錯誤。 |
+| 6.5 | `rpc: vote_activity_location(activity_id, location_id)`（v1.11） | — | **對既有候選投票（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須已是該活動的既有候選（先前透過 6.4 建立），否則回 `NOT_FOUND`。一人一票，可改票（重複呼叫覆寫先前的投票）。得票最高者於 `start_time` 由背景任務 `fn_start_activities()` 鎖定；同票取最早提案者勝出（見 SPEC §9.1、ERD 設計備註 31/32）。 |
 
-錯誤碼：`NOT_ACTIVITY_MEMBER`、`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED`
+錯誤碼：`NOT_ACTIVITY_MEMBER`、`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）
 
 ---
 
@@ -123,7 +125,8 @@
 | PENDING_CONFIRMATION 超時與拒絕清理 | 每分鐘 | PC2 | 掃描 `confirm_window_expire_at < now()` 且為 `PENDING`、或已標記 `DECLINED` 的記錄：<br>① 將 `pending_confirmation.status` 設定為 `TIMEOUT` / `DECLINED`。<br>② 寫入 `match_history_avoidance` 降權記錄（正規化 `user_a_id < user_b_id`，避開 7 天）。<br>③ **雙方 Request 無差別退回 Queue (`REQUESTING`)** 重新進池（若 `latest_start` 已過期則自然轉為 `EXPIRED`）。<br>④ 向雙方發送無差別「配對未成立」通知（不暴露對方回應與超時原因）。 |
 | Request 過期 | 每分鐘 | R4、Downgrade | `latest_start` 已過且未成團 → `EXPIRED`；期限前未滿員且 `allow_downgrade` 且餘 ≥10 分鐘 → 建立 `downgrade_request`。 |
 | Downgrade 超時 | 每分鐘 | — | `expire_at` 已過 → `TIMEOUT`，Request 以原門檻留在 Queue 中。 |
-| Activity 開始 | 每分鐘 | A2 | `start_time` 已到 → `ONGOING`；發送 `ACTIVITY_REMINDER` 通知。 |
+| Activity 開始 | 每分鐘 | A2 | 🟢 **v1.11 起第一次真正落地成 SQL**（`fn_start_activities()`；先前只有本表格描述，沒有對應函式，見 `app/lib/rpc/RPC_COVERAGE.md`）：`start_time` 已到 →（若 `activity_location_id` 仍為 `NULL`）先依得票數鎖定 Activity Location（同票取最早提案者，零候選則維持 `NULL`，見 SPEC §9.1）→ `ONGOING`；發送 `ACTIVITY_REMINDER` 通知。 |
+| Activity Location 零候選提醒（v1.11） | 每分鐘 | — | `fn_remind_missing_location_candidates()`：`status='MATCHED'` 且 `start_time` 在 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）內、仍無任何 `activity_location_option` → 向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知；去重靠查詢 `notification` 表本身是否已發過同一活動同一事件，不另存欄位。 |
 | Activity 超時完成 | 每小時 | A4 | `start_time + 24h` 未達回報門檻 → `COMPLETED`，不做 No-show 判定。 |
 | 結束提醒 | 每 15 分鐘 | — | `estimated_end_time` 已過 → 發送 `COMPLETE_CONFIRMATION` 通知。 |
 
@@ -151,3 +154,6 @@
 | §6.3 活動進行中鎖定 Request (v1.7) | 3.2 的 `ACTIVE_ACTIVITY_IN_PROGRESS` |
 | §6.3 拒絕/晚取消 30 分鐘冷卻 (v1.7) | 3.2 的 `REQUEST_COOLDOWN_ACTIVE` + 4.2 `confirm=false` 分支 + 6.3 `LATE_CANCEL` 分支寫入 `next_request_allowed_at` |
 | §6.3 `submit_request` 驗證順序定案 (v1.7) | 3.2 全文 |
+| §6/§7 Matching Scope 改成 (school, campus) 範圍匹配 (v1.11) | 3.1 的 `INVALID_CAMPUS_SCOPE` + `fn_run_matching_engine` merge 條件 |
+| §9.1 Activity Location 投票機制 (v1.11) | 6.4 / 6.5 + §9 背景任務「Activity 開始」`fn_start_activities()` |
+| §9.1 零候選地點不代選、改發提醒 (v1.11) | §9 背景任務「Activity Location 零候選提醒」`fn_remind_missing_location_candidates()` |

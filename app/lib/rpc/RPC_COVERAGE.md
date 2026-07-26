@@ -100,14 +100,89 @@ Three more things added after v1.9, same day:
 4. `docs/API.md` §2.4's `GET location` query gained a `status=eq.APPROVED`
    filter alongside the existing `is_active=eq.true`.
 
+## v1.11 update: Matching Engine campus-scope rewrite + Activity Location voting
+
+The user's own summary of this round (see SPEC.md's v1.11 changelog) flagged
+two premise mismatches with what was actually in this repo before any code
+changed, worth recording here since they're exactly the kind of doc↔code gap
+this file exists to track:
+
+- **The "Activity 開始" background job did not exist as SQL.** The user's
+  request assumed it was "already a periodically-scanning cron" to piggyback
+  the location-lock logic onto. It wasn't — `docs/API.md` §9 only ever
+  *described* it; no migration defined a matching function (this is exactly
+  the gap the "Functions with no implementation" section below already
+  flagged for the other background jobs). `fn_start_activities()` in
+  `supabase/migrations/20260724121500_campus_scope_rpc.sql` is the actual
+  first implementation, not a modification of a pre-existing function.
+- **`location.category` did not exist.** The user's request referenced it as
+  "already decided last round" (v1.10); v1.10 only added `status`/
+  `created_by`. Not added this round either (see SPEC.md v1.11 changelog and
+  ERD note 35) — nothing reads it, adding it now would be a dead column.
+
+Schema/RPC changes, all in `supabase/migrations/20260724121400_campus_scope_schema.sql`
++ `20260724121500_campus_scope_rpc.sql`:
+
+1. **`location.campus`** (text, NOT NULL) added — `school` alone can't express
+   "close enough" (NYCU spans 新竹/台北/台南). `match_request`/`activity` both
+   dropped `campus_location_id` (precise location FK) in favor of `school` +
+   `campus` columns (Matching Scope, a range not a point).
+   `match_request.acceptable_location_ids[]` was dropped outright (not kept
+   as dead/deprecated) — its "one precise location, reserved for future
+   multi-select" premise is incompatible with a model where Request creation
+   never names a precise location at all.
+2. **`create_request`**: `p_campus_location_id` → `p_campus text`. Validates
+   `exists(location where school=caller's school and campus=p_campus and
+   status='APPROVED')`, raising the new `INVALID_CAMPUS_SCOPE` (not
+   `SCHOOL_LOCATION_MISMATCH`, which is now reserved for `join_request_by_token`'s
+   cross-school check only — see ERD note 34 for why the codes were split
+   instead of reused).
+3. **`fn_run_matching_engine`**: merge key changed from single-column
+   `campus_location_id` equality to `(school, campus)` tuple equality.
+4. **`commit_match`**: `activity.school`/`campus` copied from the winning
+   request pair at commit time; `activity.activity_location_id` starts NULL.
+5. **`propose_location(name, school)` → `propose_location(name, school, campus)`**
+   — an approved location without a `campus` couldn't satisfy step 2's
+   existence check, so it'd be permanently unusable.
+6. **Two new tables + two new RPCs** for post-match Activity Location voting:
+   `activity_location_option`/`activity_location_vote`,
+   `propose_activity_location`/`vote_activity_location` (wrapped in
+   `lib/rpc/activity_rpc.dart`). RLS is deliberately transparent to activity
+   members — the opposite of `pending_confirmation`'s deliberate opacity —
+   since a location preference split among an already-matched group isn't the
+   same kind of sensitive information as "who caused the match to fail" (see
+   ERD note 31).
+7. **`fn_start_activities()`** (new): the A2 trigger point
+   (`MATCHED → ONGOING`). Locks the highest-voted candidate (ties broken by
+   earliest `created_at`) before flipping status, if a lock hasn't happened
+   yet. **Zero-candidate activities are left with `activity_location_id =
+   NULL` — not auto-assigned a fallback location** (picking an unrelated
+   approved location in-scope would be worse than no answer). Same
+   unscheduled-callable-function treatment as `fn_run_matching_engine`/
+   `fn_cleanup_pending_confirmations` below — no `pg_cron.schedule` call.
+8. **`fn_remind_missing_location_candidates()`** (new): fires
+   `LOCATION_NOT_YET_PROPOSED` (new `notification_event_type` value) to all
+   members of a `MATCHED` activity that's within
+   `app_config.location_reminder_lead_minutes` (default 30) of `start_time`
+   and still has zero `activity_location_option` rows. De-duped by querying
+   `notification` itself for an existing row of that type+activity, not an
+   extra column.
+9. `propose_location`'s Dart wrapper (`lib/rpc/location_rpc.dart`) gained the
+   `campus` param; `create_request`'s wrapper
+   (`lib/rpc/match_request_rpc.dart`) renamed `campusLocationId` → `campus`;
+   new `proposeActivityLocation`/`voteActivityLocation` wrappers added to
+   `lib/rpc/activity_rpc.dart`; `api_exception.dart` gained
+   `invalidCampusScope`/`activityLocationLocked`.
+
 ## Functions with no implementation (documented, don't exist in the DB)
 
-`§9`'s background scheduler jobs (Matching Engine, PENDING_CONFIRMATION
-cleanup's `fn_run_matching_engine`/`fn_cleanup_pending_confirmations` exist
-as callable functions but nothing schedules them via `pg_cron`; the
-`downgrade_request`-creation half of the "Request 過期" job doesn't exist at
-all) remain unimplemented — out of scope for this pass, since none of them
-are client-callable RPCs.
+`§9`'s remaining background scheduler jobs (Matching Engine and
+PENDING_CONFIRMATION cleanup's `fn_run_matching_engine`/
+`fn_cleanup_pending_confirmations`, plus v1.11's `fn_start_activities`/
+`fn_remind_missing_location_candidates`, all exist as callable functions but
+nothing schedules any of them via `pg_cron`; the `downgrade_request`-creation
+half of the "Request 過期" job doesn't exist at all) remain unimplemented —
+out of scope for this pass, since none of them are client-callable RPCs.
 
 ## Error codes documented in API.md but never raised
 

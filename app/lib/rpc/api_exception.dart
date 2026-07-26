@@ -26,6 +26,7 @@ enum ApiErrorCode {
   invalidMaxParticipants('INVALID_MAX_PARTICIPANTS'),
   invalidGroupSizeOption('INVALID_GROUP_SIZE_OPTION'),
   schoolLocationMismatch('SCHOOL_LOCATION_MISMATCH'),
+  invalidCampusScope('INVALID_CAMPUS_SCOPE'),
   notFound('NOT_FOUND'),
   requestNotOpen('REQUEST_NOT_OPEN'),
   activeActivityInProgress('ACTIVE_ACTIVITY_IN_PROGRESS'),
@@ -41,6 +42,7 @@ enum ApiErrorCode {
   alreadyReported('ALREADY_REPORTED'),
   consentWindowClosed('CONSENT_WINDOW_CLOSED'),
   alreadyResponded('ALREADY_RESPONDED'),
+  activityLocationLocked('ACTIVITY_LOCATION_LOCKED'),
   unknown('__UNKNOWN__');
 
   final String code;

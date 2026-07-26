@@ -111,7 +111,12 @@ void main() {
       // ignore: avoid_print
       print('[search_activity_type] found 咖啡 id=${coffee.id}');
 
-      // 6. Look up the NYCU test location seeded for this run.
+      // 6. Confirm the NYCU test location seeded for this run exists (v1.11:
+      // create_request no longer takes a precise location id — it takes a
+      // Matching Scope `campus` string, validated server-side against
+      // `exists(location where school=... and campus=... and status='APPROVED')`
+      // — so this step just guards that the seed step below actually ran,
+      // it doesn't fetch an id to pass through anymore.
       //
       // HISTORICAL NOTE: `client.from('location').select()` used to 403 here
       // with "permission denied for table location" (42501) for every client
@@ -124,6 +129,7 @@ void main() {
       // instead purely because no migration seeds `location` rows (only
       // `activity_type` does), so a raw read after the raw seed insert below
       // is the simplest fixture setup, not a permissions workaround anymore.
+      const testCampus = '光復';
       final psql = await Process.run('docker', [
         'exec',
         'supabase_db_find-people-now',
@@ -135,7 +141,8 @@ void main() {
         '-t',
         '-A',
         '-c',
-        "select id from location where school='NYCU' and name='Flutter 驗證測試地點' limit 1;",
+        "select id from location where school='NYCU' and campus='$testCampus' "
+            "and name='Flutter 驗證測試地點' limit 1;",
       ]);
       expect(
         psql.exitCode,
@@ -149,14 +156,14 @@ void main() {
       final request = await createRequest(
         client,
         activityTypeId: coffee.id,
-        campusLocationId: locationId,
+        campus: testCampus,
         bucket: RequestBucket.NOW,
         minParticipants: 2,
       );
       expect(request.status, REQUEST_STATUS.DRAFT);
       expect(request.ownerId, userId);
       expect(request.activityTypeId, coffee.id);
-      expect(request.campusLocationId, locationId);
+      expect(request.campus, testCampus);
       expect(request.minParticipants, 2);
       // ignore: avoid_print
       print(

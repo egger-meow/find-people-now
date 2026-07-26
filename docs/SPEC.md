@@ -66,6 +66,17 @@
 > 2. `location` 新增審核機制，比照 `activity_type`：新增 `status`（復用既有 `activity_type_status` enum）與 `created_by`（FK to `app_user`，nullable，官方預先 seed 的地點為 null）。**`status` 預設 `APPROVED`，與 `activity_type` 預設 `PENDING` 刻意相反**——`location` 的正常寫入路徑是 admin 直接維護固定清單，`PENDING` 只在使用者提案（新增 `rpc: propose_location(name, school)`，第 2 節）這條旁支路徑出現；`activity_type` 則反過來，使用者提案才是常態路徑（ERD 設計備註 25）。§2.4 `GET location` 查詢加上 `status=eq.APPROVED` 過濾條件，確保未審核通過的地點不出現在下拉選單。**`propose_location` 不做關鍵字黑名單預檢**：地點名稱塞入違規字眼的難度本來就比活動類型高，且稽核發現 `propose_activity_type` 文件宣稱的黑名單預檢從未真正實作過（既有落差，本次不動），與其比照一個不存在的機制，MVP 真正的把關就是第 3 點的 `pending_review` view
 > 3. 新增 `pending_review` view（不是新 admin API/介面）：UNION `activity_type`/`location` 兩表目前 `status='PENDING'` 的項目（欄位：類型、名稱、`created_by`、`created_at`），admin 在 Supabase Studio 查這一張 view 就能看到所有排隊中的提案，手動改對應原表的 `status` 完成審核。刻意不對 `anon`/`authenticated` grant 任何權限——這是 MVP 階段唯一的審核渠道，不新建任何 admin 專屬 API 或前端頁面
 
+> **v1.11 變更紀錄**（Matching Engine 空間維度重構：精確地點匹配 → 校區範圍匹配 + Activity Location 投票機制）：
+> 1. 🟢 **地理事實修正（本輪前提）**：陽明交通大學校區橫跨新竹（光復/博愛/六家）、台北（陽明/北門）、台南（歸仁）三個城市，`school`（NYCU/NTHU）本身不足以代表「距離夠近」。`location` 新增 `campus`（text，不開 enum、不另開 Campus 表——校區清單隨地點清單擴充，屬於資料而非程式碼的範圍，比照 `location.name` 既有純文字慣例）。
+> 2. 🟢 **兩階段地點決策**：`match_request` 移除精確地點 `campus_location_id`，改成 `school` + `campus`（Matching Scope，建立時選、不再指定精確地點）；`fn_run_matching_engine` 的 merge 條件從「`campus_location_id` 完全相同」改成「`(school, campus)` 相同」，其餘規則（時間窗重疊、類型相同）不變。配對成立後才透過投票決定精確的 **Activity Location**（`activity.activity_location_id`，nullable，見第 9.1 節）——撮合前彼此並未預先對齊到同一精確地點，這裡是真實的偏好分歧，適合用投票解決，跟先前討論過的「集合位置投票」不是同一件事：集合位置是同一地點內部的資訊同步，Activity Location 是「去哪個地點」本身的分歧。
+> 3. 🟢 **投票機制借用既有基礎設施**：候選地點僅限該 `(school, campus)` 範圍內、`location` 表既有已核准的地點（不開放自由輸入，延續「固定清單」原則）；任何活動成員可提案新候選或對既有候選投票，可改票；截止時間直接復用 `activity.start_time`，鎖定動作與 `MATCHED → ONGOING` 轉移合併在同一個背景任務 `fn_start_activities()` 裡完成，不另開排程；得票同分時最早提案者勝出；只有一個候選時排序邏輯自然選中它，不需要特判計票。`fn_start_activities()` 是這輪第一次真正把 §13 背景任務表「Activity 開始」這一列落地成 SQL——先前只有文件描述，沒有對應函式（見 `app/lib/rpc/RPC_COVERAGE.md`）。跟其他背景任務（Matching Engine、PENDING_CONFIRMATION 清理）的既有慣例一致，這輪只做成 callable function，不掛 `pg_cron.schedule`。
+> 4. 🟢 **零候選地點不代替使用者決定**：`activity_location_id` 允許保持 `NULL`——若到 `start_time` 時仍沒有任何候選地點，`fn_start_activities()` 不會自動選一個地點頂上（避免「讀書活動最後鎖定南大門」這種荒謬結果）。新增背景任務 `fn_remind_missing_location_candidates()`：`start_time` 前 `app_config.location_reminder_lead_minutes`（預設 30 分鐘，比照 §13.1 既有「時間參數抽成可調值」慣例）仍零候選時，向全體成員發送新通知事件 `LOCATION_NOT_YET_PROPOSED` 催促提案；去重靠查詢既有 `notification` 表本身是否已發過，不額外加欄位（比照 `known_member_count`/Reliability 分數不落地存欄位的既有原則）。
+> 5. 🔴 **前瞻性設計原則（Meeting Point 尚未實作）**：即使 `activity_location_id` 為 `NULL`，未來實作「集合地點」（Meeting Point，讓成員自由文字描述實際集合點，如「光復北大門」）這類協調工具時，必須設計成**獨立於 `activity_location_id` 是否鎖定**，不能讓「正式候選地點沒投出結果」變成「系統內沒有任何協調工具可用，只能靠外部私訊」。這是這輪 `activity_location_id` 可為 `NULL` 設計下必須配套的前瞻原則，先寫進文件，供未來正式設計 Meeting Point 時遵守；本輪不新增任何 Meeting Point 相關 schema。
+> 6. 🟢 **移除 `match_request.acceptable_location_ids[]`**：v1.5 起這個欄位的定位是「v1 只填 1 個精確地點，欄位預留未來多選」，但新模型下 Request 建立時根本不指定精確地點，這個欄位的語意已經跟新模型直接衝突——是**語意不存在**而不是「deprecated 保留」，故直接移除，不留欄位造成誤導。
+> 7. 🟢 **新錯誤碼 `INVALID_CAMPUS_SCOPE`**：語意是「學校正確，但該校區在 DB 裡沒有任何已核准的地點」，跟既有 `SCHOOL_LOCATION_MISMATCH`（學校本身不對，用於 `join_request_by_token` 的跨校加入檢查）刻意分開，不沿用舊碼。`campus` 打字錯誤風險不加額外 DB 層約束（UNIQUE/lookup 表）：`create_request` 的存在性檢查已經能擋掉使用者端輸入錯誤，剩餘的「admin 手動維護地點清單打字不一致」風險屬於操作紀律問題，不是 schema 該解決的問題。
+> 8. `propose_location` 加 `p_campus` 參數：核准後的地點需要 `campus`（現在是 `NOT NULL`）才能參與任何撮合，不補這個參數會產生無法使用的死地點。
+> 9. 實際地點清單內容（含每筆地點的 `campus` 標注）仍是 SPEC §16 開放問題 4 的一部分，本輪只完成 schema 與 RPC 改動，清單本身另外補 insert。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
@@ -178,8 +189,8 @@ MatchRequest
 - id
 - owner_id
 - activity_type_id
-- campus_location_id
-- acceptable_location_ids[]  # v1 只填 1 個，欄位預留未來多選
+- school                      # 從 owner 帶入，非使用者參數（v1.11）
+- campus                      # Matching Scope，建立時選、不再指定精確地點（v1.11，取代 campus_location_id）
 - earliest_start, latest_start   # 硬約束：≤ created_at + 24h，UI 層擋掉超範圍輸入
 - flexible_minutes           # v1 固定 0，欄位預留
 - min_participants            # 含 owner 本人的活動總人數下限，CHECK >= 2
@@ -206,7 +217,7 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 **限制**：
 - 同一使用者同時只能有一個 `REQUESTING` 狀態的 Request（以 `owner_id` 判定）
 - 🟢 **（v1.7 推翻）同一使用者名下若有任何 `MATCHED`/`ONGOING` 狀態的 Activity，在該 Activity 轉為 `COMPLETED`/`CANCELLED` 之前，不能建立或送出新的 Request**——v1.6 及之前版本認為「`MATCHED` 之後不受此限制（已非等待中的資源）」，v1.7 起推翻此結論，細節與理由見第 6.3 節
-- `campus_location_id` 必須屬於 owner 的 `school`——這是配對池同校隔離（第 7 節）的落地點
+- 🟢 **（v1.11）`campus` 必須屬於 owner 的 `school` 底下至少一筆已核准的地點**——這是配對池同校隔離（第 7 節）的落地點，取代 v1.10 及之前版本「`campus_location_id` 必須屬於 owner 的 `school`」的精確地點檢查；不合法時回 `INVALID_CAMPUS_SCOPE`
 
 ### 6.1 Invite Link（邀請連結）
 
@@ -270,9 +281,9 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 | 規則 | 說明 |
 |---|---|
 | 時間窗重疊 | 兩個 Request 的 `[earliest_start, latest_start]` 有交集即可 merge |
-| 地點 | 必須 `campus_location_id` 完全相同 |
+| 地點 | 🟢 **（v1.11）必須 `(school, campus)` 相同**——不再要求精確地點完全相同，取代 v1.10 及之前版本的「`campus_location_id` 完全相同」；精確地點（Activity Location）改成配對成立後才由參與者投票決定，見第 9.1 節 |
 | 類型 | 必須相同 `activity_type_id` |
-| 學校 | 🟢 MVP 配對池以 `school` 隔離，僅同校可 merge；由「地點必屬 owner 的 school」+「地點必須完全相同」兩條規則天然保證，引擎不需額外判斷 |
+| 學校 | 🟢 MVP 配對池以 `school` 隔離，僅同校可 merge；由「`campus` 必屬 owner 的 `school`」+「`(school, campus)` 必須相同」兩條規則天然保證，引擎不需額外判斷 |
 | 成局時機 | 🟢 **貪婪策略：候選池一旦達到 `min_participants` 立即成局生成 Activity，不等待湊到 `max_participants`**；超過 `min_participants` 但尚未到 `max_participants` 的候選不會被刻意保留等待 |
 | 人數超額 | 若候選組合超過 `max_participants`，只取前 `max_participants` 人成局；多出的人保留原 Request，繼續進入下一輪撮合 |
 | 未湊滿 | 到 `latest_start` 仍未達 `min_participants` → 若 `allow_downgrade=true` 觸發降門檻流程（見第 8 節）；否則 → `EXPIRED` |
@@ -314,7 +325,12 @@ DowngradeConsent
 
 ```
 Activity  （僅 merge 成功時產生）
-- id, activity_type_id, campus_location_id, start_time,
+- id, activity_type_id,
+  school, campus (Matching Scope 快照，撮合當下就有，取代 v1.10 及之前版本的
+                  campus_location_id，v1.11),
+  activity_location_id (nullable；配對成立後才由參與者投票決定的精確地點，
+                         見第 9.1 節，v1.11),
+  start_time,
   estimated_end_time (= start_time + activity_type.default_duration),
   status(MATCHED/ONGOING/COMPLETED/CANCELLED),
   contact_visible_until (= 【本 Activity 的】created_at + 24h),
@@ -330,6 +346,29 @@ ActivityMember              # 取代 matched_request_ids[] / final_member_ids[]
 🟢 **`contact_visible_until` 修正**：起算點是 **Activity 自己的** `created_at`，不是來源 `MatchRequest` 的 `created_at`。Activity 是 match 成功後才產生的，如果誤用 Request 的 `created_at`，一個放了 20 小時才配對成功的 Request，聯絡方式就只剩 4 小時可見，不符合「配對成立後聯絡方式完整可見 24 小時」的產品意圖。
 
 🟢 **`known_member_count`：不新增儲存欄位，查詢即時算出**——對 Activity 內的某位使用者，其值 = 同一 `activity_id` 下與該使用者 `source_request_id` 相同的其他 `ActivityMember` 人數。用途是讓使用者在人數較多、由多個 Request merge 而成的 Activity 裡，知道「有幾個人是跟我同一個 Request 進來的」（含透過邀請連結加入者），區分於 Matching Engine 額外併入的陌生 Request 成員。不存欄位的理由與 Reliability 等級（第 12 節）相同：避免資料跟來源事實不同步。
+
+### 9.1 Activity Location（配對成立後的地點決策，v1.11）
+
+配對成立時（第 7 節），Request 只對齊到 `(school, campus)` 範圍，尚未對齊到同一個精確地點——這是真實的偏好分歧，用投票解決：
+
+- **候選範圍**：僅限該 Activity 的 `(school, campus)` 內、`location` 表既有 `status='APPROVED'` 的地點，不開放自由輸入，延續「固定清單」原則。這輪明確**不**做「候選地點依 `activity_type` 的 `category` 過濾」——`location.category` 目前不存在（跟 v1.10 討論中一度誤以為已定案不同，這輪確認未新增），日後若補上也僅供 UI 分組/搜尋用，不做為規則限制，避免過度設計。
+- **提案與投票**：任何活動成員可提案新候選（等同於自動投給自己提的候選）或對既有候選投票，可改票（一人一票，upsert）。
+- **截止時間**：直接復用 `activity.start_time`，不新增獨立的投票倒數欄位。鎖定候選地點的動作與 `MATCHED → ONGOING` 轉移（見 State Machine A2）合併在同一個背景任務裡完成，不另開排程。
+- **計票規則**：得票最高者勝出；同票取最早提案（`created_at`）者勝出，沿用「先到先得」而非再次投票的精簡原則；只有一個候選時，這條排序邏輯自然選中它，不需要為此特判計票邏輯。
+- 🟢 **零候選地點不代替使用者決定**：若到 `start_time` 時仍沒有任何候選地點，`activity_location_id` 維持 `NULL`，系統不自動選一個地點頂上（避免像「讀書活動最後鎖定南大門」這種跟活動性質無關的荒謬結果）。改成另開一個提醒任務：`start_time` 前 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）仍零候選時，向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知催促提案。
+- 🔴 **前瞻性設計原則（Meeting Point 尚未實作）**：即使 `activity_location_id` 為 `NULL`，未來實作「集合地點」（Meeting Point，成員自由文字描述實際集合點，例如「光復北大門」）這類協調工具時，必須設計成**獨立於 `activity_location_id` 是否鎖定**才能使用——不能讓「正式候選地點沒投出結果」等於「系統內沒有任何協調工具可用，只能靠外部私訊」。這條原則先寫進文件供未來遵守，本輪不新增任何 Meeting Point 相關 schema。
+
+```
+ActivityLocationOption
+- id, activity_id, location_id, proposed_by, created_at
+# unique(activity_id, location_id)：同一地點只能被提案一次
+
+ActivityLocationVote
+- activity_id, user_id, location_id, voted_at
+# 複合 PK (activity_id, user_id)：一人一票，改票 = update 這筆
+```
+
+得票數不落地存欄位，查詢 `ActivityLocationVote` 即時算出，理由與 `known_member_count`/Reliability 分數相同：避免資料跟來源事實不同步。RLS 上，候選與得票對該 Activity 全體成員公開透明——跟 `PENDING_CONFIRMATION` 的刻意不歸因設計相反：地點偏好分歧是真實分歧，不是需要隱藏的個人選擇，公開透明才符合「大家一起選」的精神。
 
 ### State Machine
 
@@ -367,7 +406,7 @@ stateDiagram-v2
 兩者的銜接：`MatchRequest.REQUESTING` 配對成功時，`MatchRequest.status` 定格在 `MATCHED`（找人流程結束），同時建立一筆 `Activity`（狀態從 `MATCHED` 開始跑自己的生命週期）。配對成立後的取消/進行中/結束，都是 `Activity` 的狀態變化，不再回頭改 `MatchRequest`。
 
 **轉移觸發條件**：
-- `MATCHED → ONGOING`：時間觸發，`current_time ≥ start_time`，不用人工按開始
+- `MATCHED → ONGOING`：時間觸發，`current_time ≥ start_time`，不用人工按開始；同一次觸發（`fn_start_activities()`，v1.11 第一次落地成 SQL）**先**鎖定 Activity Location（見第 9.1 節），**再**轉 `ONGOING`
 - `ONGOING → COMPLETED`：完成確認回報達 ≥50% 參與者（法定人數門檻）即轉；若一直沒人回報，`start_time + 24h` 自動轉 COMPLETED 且不做任何 No-show 判定
 
 ---
@@ -481,6 +520,8 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 
 🟢 **背景排程機制**：spec 中至少三處狀態轉移依賴「時間到了自動觸發」——`REQUESTING → EXPIRED`（第 9 節，到 `latest_start`）、`ONGOING → COMPLETED`（第 9 節，`start_time + 24h` fallback）、`PENDING_CONFIRMATION → REQUESTING`（第 12.1.2 節，`CONFIRM_WINDOW` 超時）。這類轉移統一用 **Supabase pg_cron** 定期（例如每分鐘）掃描相關資料表、觸發對應轉移邏輯。這是**邏輯層**的排程任務，不需要在 ERD 新增資料表——ERD 裡各個已有 timeout 欄位的表（`match_request.latest_start`、`downgrade_request.expire_at`、`pending_confirmation.confirm_window_expire_at`）本身已足夠支撐 pg_cron 查詢「哪些記錄已經超時該轉移」。
 
+🟢 **v1.11 新增兩個背景任務**（第 9.1 節）：`fn_start_activities()`（`MATCHED → ONGOING` 觸發點，同時鎖定 Activity Location）與 `fn_remind_missing_location_candidates()`（`start_time` 前零候選提醒）。跟既有背景任務一致，這輪只做成 callable function，不掛 `pg_cron.schedule`——排程本身的落地是另一個獨立、目前刻意擱置的任務（見 `app/lib/rpc/RPC_COVERAGE.md`）。
+
 ### 13.1 系統可調運營參數（`app_config`，v1.8）
 
 部分時間參數（冷卻時間、確認窗口）原本寫死在 RPC function 內，v1.8 起改為讀取 `app_config`（`key`/`value`/`description`/`updated_at`）設定表，冷啟動階段與系統穩定後可用不同數值，不需重新部署即可調整。
@@ -516,8 +557,8 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 1. 新增活動類型的審核 SOP 細節（黑名單詞庫、admin 角色分工）
 2. Realtime 並發上限與成本——需實測，非討論可定
 3. 冷啟動種子使用者渠道（社團/系學會/校內二手拍平台合作）
-4. 實際地點清單內容，依校分列（NYCU：光復籃球場／工程館／浩然／女二／竹湖…；NTHU：風雲球場…）
-5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION，細節待補）
+4. 實際地點清單內容，依校分列且需標注 `campus`（v1.11 起地點的 school 已不足以判斷距離，見 SPEC v1.11 變更紀錄第 1 點；NYCU：光復籃球場／工程館／浩然／女二／竹湖…；NTHU：風雲球場…）
+5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION／LOCATION_NOT_YET_PROPOSED（v1.11），細節待補）
 6. 隱私權政策文件（收集資料種類、聯絡方式用途、刪除帳號流程、第三方服務 Supabase 揭露）—— 上架前必須補齊
 7. 新人配對資格限制的 `min_participants ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
 8. 貪婪成局策略下，連續模式（`group_size_step` 為 null）的選項只要 `min_participants < max_participants`，達到 `min_participants` 就會立即成局、不等待湊到 `max_participants`——v1.5 版本「不限，人多熱鬧」的固定選項在 v1.6 UI 重構後已不存在，但此行為特性對任何連續模式選項依然成立，是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 6.2、7 節）
@@ -530,7 +571,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 ## 17. Roadmap / 下一步
 
 1. ✅ Spec 定案（本文件）
-2. ✅ ERD，共 15 張表：User / ActivityType / Location / MatchRequest / RequestMember / Activity / ActivityMember / DowngradeRequest / DowngradeConsent / CompletionReport / UserReliabilityEvent / RematchVote / Notification / PendingConfirmation / MatchHistoryAvoidance → [ERD.md](ERD.md)
+2. ✅ ERD，共 18 張表：User / ActivityType / Location / MatchRequest / RequestMember / Activity / ActivityMember / DowngradeRequest / DowngradeConsent / CompletionReport / UserReliabilityEvent / RematchVote / Notification / PendingConfirmation / MatchHistoryAvoidance / ActivityLocationOption / ActivityLocationVote（v1.11，第 9.1 節）→ [ERD.md](ERD.md)
 3. ✅ State Machine diagram（第 9 節核心版本 + 完整轉移觸發條件表）→ [STATE_MACHINE.md](STATE_MACHINE.md)
 4. ✅ Supabase migration（enum 來自 State Machine 定案值域）→ [migrations/](migrations/)
 5. ✅ API endpoint spec（建立在 ERD 定案之上）→ [API.md](API.md)

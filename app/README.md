@@ -8,9 +8,9 @@ what's found-but-not-implemented in the backend.
 ## Layout
 
 - `lib/generated/` — [supadart](https://pub.dev/packages/supadart)-generated
-  Dart classes for all 16 `public.*` tables (config: `supadart.yaml`). Never
+  Dart classes for all 18 `public.*` tables (config: `supadart.yaml`). Never
   hand-edit; regenerate (see below).
-- `lib/rpc/` — hand-written typed wrappers for the 19 client-facing RPCs
+- `lib/rpc/` — hand-written typed wrappers for the 21 client-facing RPCs
   (Postgres functions). No Dart codegen tool generates RPC parameter/return
   types (neither `supadart` nor `supabase_codegen_flutter` reads PostgREST's
   `/rpc/*` OpenAPI paths) — see `lib/rpc/RPC_COVERAGE.md` for the full
@@ -53,7 +53,7 @@ GRANTs that endpoint needed were missing until v1.9, now fixed):
 
 ```bash
 docker exec supabase_db_find-people-now psql -U postgres -d postgres -c \
-  "insert into location (school, name, is_active) values ('NYCU', 'Flutter 驗證測試地點', true) on conflict (school, name) do update set is_active = true;"
+  "insert into location (school, campus, name, is_active) values ('NYCU', '光復', 'Flutter 驗證測試地點', true) on conflict (school, name) do update set is_active = true;"
 
 flutter test test/rpc_smoke_test.dart
 ```

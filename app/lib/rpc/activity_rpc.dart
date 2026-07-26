@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../generated/activity_location_option.dart';
+import '../generated/activity_location_vote.dart';
 import '../generated/supadart_header.dart' show RELIABILITY_EVENT_TYPE;
 import 'rpc_client.dart';
 
@@ -122,5 +124,40 @@ Future<CancelActivityParticipationResult> cancelActivityParticipation(
         ),
       );
     },
+  );
+}
+
+/// docs/API.md §6.4 — `rpc: propose_activity_location(activity_id, location_id)`
+/// (v1.11). Proposing also casts the caller's own vote for it — a second
+/// call for a location someone else already proposed just re-votes, it's not
+/// an error (see the migration's `on conflict ... do nothing` handling).
+Future<ActivityLocationOption> proposeActivityLocation(
+  SupabaseClient client, {
+  required String activityId,
+  required String locationId,
+}) {
+  return callRpc<ActivityLocationOption>(
+    client,
+    'propose_activity_location',
+    params: {'p_activity_id': activityId, 'p_location_id': locationId},
+    decode: (data) =>
+        ActivityLocationOption.fromJson(data as Map<String, dynamic>),
+  );
+}
+
+/// docs/API.md §6.5 — `rpc: vote_activity_location(activity_id, location_id)`
+/// (v1.11). One vote per user per activity; calling again with a different
+/// `locationId` changes the vote (upsert on `(activity_id, user_id)`).
+Future<ActivityLocationVote> voteActivityLocation(
+  SupabaseClient client, {
+  required String activityId,
+  required String locationId,
+}) {
+  return callRpc<ActivityLocationVote>(
+    client,
+    'vote_activity_location',
+    params: {'p_activity_id': activityId, 'p_location_id': locationId},
+    decode: (data) =>
+        ActivityLocationVote.fromJson(data as Map<String, dynamic>),
   );
 }

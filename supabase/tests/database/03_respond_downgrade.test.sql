@@ -29,7 +29,7 @@ create temp table fixtures (
   user_f_id  uuid,  -- dg3 (過期窗口)
   user_g_id  uuid,  -- dg4 (target_size 防呆)
   act_type_id uuid,
-  loc_id      uuid,
+  campus      text,
   req1_id     uuid,
   req2_id     uuid,
   req3_id     uuid,
@@ -51,7 +51,7 @@ declare
   v_user_f uuid := gen_random_uuid();
   v_user_g uuid := gen_random_uuid();
   v_act_type_id uuid;
-  v_loc_id      uuid;
+  v_campus      text := '光復';
   v_req1 match_request;
   v_req2 match_request;
   v_req3 match_request;
@@ -76,13 +76,12 @@ begin
     (v_user_g, 'dg_g@nycu.edu.tw', 'NYCU', 'Dg G', 'https://avatar.dg_g', 'MASTER', 'dg_g_line');
 
   select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
-  insert into location (school, name, is_active) values ('NYCU', '學生活動中心', true)
-    on conflict (school, name) do update set is_active = true;
-  select id into v_loc_id from location where school = 'NYCU' and name = '學生活動中心';
+  insert into location (school, campus, name, is_active) values ('NYCU', v_campus, '學生活動中心', true)
+    on conflict (school, name) do update set is_active = true, campus = excluded.campus;
 
   -- req1: min_participants=4，僅 user_a/user_b 兩人（模擬人數不足、發起 downgrade）
-  insert into match_request (owner_id, activity_type_id, campus_location_id, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_user_a, v_act_type_id, v_loc_id, now(), now() + interval '2 hours', 4, 4, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_user_a, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 4, 4, 'REQUESTING')
   returning * into v_req1;
   insert into request_member (request_id, user_id, role, status) values
     (v_req1.id, v_user_a, 'OWNER', 'JOINED'), (v_req1.id, v_user_b, 'MEMBER', 'JOINED');
@@ -93,8 +92,8 @@ begin
   insert into downgrade_consent (downgrade_request_id, user_id) values (v_dg1, v_user_a), (v_dg1, v_user_b);
 
   -- req2: min_participants=4，user_d/user_e 兩人（用來測 DISAGREE 立即 REJECTED）
-  insert into match_request (owner_id, activity_type_id, campus_location_id, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_user_d, v_act_type_id, v_loc_id, now(), now() + interval '2 hours', 4, 4, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_user_d, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 4, 4, 'REQUESTING')
   returning * into v_req2;
   insert into request_member (request_id, user_id, role, status) values
     (v_req2.id, v_user_d, 'OWNER', 'JOINED'), (v_req2.id, v_user_e, 'MEMBER', 'JOINED');
@@ -105,8 +104,8 @@ begin
   insert into downgrade_consent (downgrade_request_id, user_id) values (v_dg2, v_user_d), (v_dg2, v_user_e);
 
   -- req3: 過期窗口 (CONSENT_WINDOW_CLOSED)
-  insert into match_request (owner_id, activity_type_id, campus_location_id, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_user_f, v_act_type_id, v_loc_id, now(), now() + interval '2 hours', 4, 4, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_user_f, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 4, 4, 'REQUESTING')
   returning * into v_req3;
   insert into request_member (request_id, user_id, role, status) values (v_req3.id, v_user_f, 'OWNER', 'JOINED');
 
@@ -116,8 +115,8 @@ begin
   insert into downgrade_consent (downgrade_request_id, user_id) values (v_dg3, v_user_f);
 
   -- req4: target_size (3) 不低於 min_participants (3) —— ERD 備註 21 防呆用的壞資料
-  insert into match_request (owner_id, activity_type_id, campus_location_id, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_user_g, v_act_type_id, v_loc_id, now(), now() + interval '2 hours', 3, 3, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_user_g, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 3, 3, 'REQUESTING')
   returning * into v_req4;
   insert into request_member (request_id, user_id, role, status) values (v_req4.id, v_user_g, 'OWNER', 'JOINED');
 
@@ -129,7 +128,7 @@ begin
   update fixtures set
     user_a_id = v_user_a, user_b_id = v_user_b, user_c_id = v_user_c,
     user_d_id = v_user_d, user_e_id = v_user_e, user_f_id = v_user_f, user_g_id = v_user_g,
-    act_type_id = v_act_type_id, loc_id = v_loc_id,
+    act_type_id = v_act_type_id, campus = v_campus,
     req1_id = v_req1.id, req2_id = v_req2.id, req3_id = v_req3.id, req4_id = v_req4.id,
     dg1_id = v_dg1, dg2_id = v_dg2, dg3_id = v_dg3, dg4_id = v_dg4;
 end;
