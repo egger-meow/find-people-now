@@ -37,6 +37,7 @@ abstract class SupadartClass<T> {
 extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get downgrade_request => from('downgrade_request');
   SupabaseQueryBuilder get downgrade_consent => from('downgrade_consent');
+  SupabaseQueryBuilder get pending_review => from('pending_review');
   SupabaseQueryBuilder get location => from('location');
   SupabaseQueryBuilder get activity => from('activity');
   SupabaseQueryBuilder get rematch_vote => from('rematch_vote');

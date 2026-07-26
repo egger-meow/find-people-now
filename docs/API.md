@@ -29,12 +29,15 @@
 
 | # | Endpoint | 說明 |
 |---|---|---|
-| 2.1 | `GET activity_type?status=eq.APPROVED`（PostgREST） | 公開類型清單。回傳包含 `default_min_participants`, `default_max_participants`, `group_size_step`（v1.5 / v1.6）。<br>🟢 **選單計算規範（ERD 備註 22）**：前端建立 Request 選項卡時，若 `group_size_step` 非 null（如 `step=1` 或 `step=2`），從 min 到 max 按 step 算出的數值為唯一可選的離散人數選項；`group_size_step` 為 null 時才渲染為連續區間選單。 |
+| 2.1 | `GET activity_type?status=eq.APPROVED`（PostgREST） | 公開類型清單。回傳包含 `default_min_participants`, `default_max_participants`, `group_size_step`（v1.5 / v1.6）、`description`（v1.10，前端「?」按鈕顯示的玩法說明，nullable）。<br>🟢 **選單計算規範（ERD 備註 22）**：前端建立 Request 選項卡時，若 `group_size_step` 非 null（如 `step=1` 或 `step=2`），從 min 到 max 按 step 算出的數值為唯一可選的離散人數選項；`group_size_step` 為 null 時才渲染為連續區間選單。 |
 | 2.2 | `rpc: search_activity_type(query)` | 新增前的模糊比對/autocomplete（SPEC §5，防「羽球 vs 羽毛球」重複稀釋配對池）。 |
-| 2.3 | `rpc: propose_activity_type(name)` | 流程：關鍵字黑名單預檢（命中即回 `NAME_BLACKLISTED`，不落庫）→ `PENDING` → admin 審核。審核走 Supabase Dashboard/service role，MVP 不做 admin API。 |
-| 2.4 | `GET location?is_active=eq.true&school=eq.{我的 school}`（PostgREST) | 固定地點下拉清單，依校分列（SPEC §1）；client 只顯示自己學校的清單，server 端最終由 3.1 的 `SCHOOL_LOCATION_MISMATCH` 把關。 |
+| 2.3 | `rpc: propose_activity_type(name)` | 流程：關鍵字黑名單預檢（命中即回 `NAME_BLACKLISTED`，不落庫）→ `PENDING` → admin 審核（於 Supabase Dashboard 一併設定 `default_duration_minutes`/`default_min_participants`/`default_max_participants`/`group_size_step`/`description`，v1.10 新增 `description`）。審核走 Supabase Dashboard/service role 查 `pending_review` view（v1.10，見下方審核管道說明），MVP 不做 admin API。 |
+| 2.4 | `GET location?is_active=eq.true&status=eq.APPROVED&school=eq.{我的 school}`（PostgREST) | 固定地點下拉清單，依校分列（SPEC §1）；client 只顯示自己學校、已審核通過的清單，server 端最終由 3.1 的 `SCHOOL_LOCATION_MISMATCH` 把關。`status=eq.APPROVED` 為 v1.10 新增，排除提案中/被拒的地點。 |
+| 2.5 | `rpc: propose_location(name, school)`（v1.10） | 提議新地點，流程比照 2.3：`PENDING` → admin 審核。不做關鍵字黑名單預檢——地點名稱塞入違規字眼的難度較高，且 MVP 真正的把關是 admin 人工查 `pending_review` view（ERD 備註 26/27）再核准。 |
 
-錯誤碼：`NAME_BLACKLISTED`、`DUPLICATE_TYPE_NAME`
+錯誤碼：`NAME_BLACKLISTED`、`DUPLICATE_TYPE_NAME`、`DUPLICATE_LOCATION_NAME`（v1.10）
+
+> 🟢 **審核管道（v1.10）**：`activity_type`/`location` 的 `PENDING` 審核共用同一張 `pending_review` view（UNION 兩表 `status = 'PENDING'` 的項目），admin 直接在 Supabase Studio 查詢並修改對應原表的 `status` 欄位，不新建任何 admin 專屬 API 或前端頁面（ERD 備註 27）。
 
 ---
 

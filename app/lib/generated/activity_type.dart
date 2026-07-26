@@ -13,6 +13,7 @@ class ActivityType implements SupadartClass<ActivityType> {
   final int? defaultMinParticipants;
   final int? defaultMaxParticipants;
   final int? groupSizeStep;
+  final String? description;
 
   const ActivityType({
     required this.id,
@@ -24,6 +25,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     this.defaultMinParticipants,
     this.defaultMaxParticipants,
     this.groupSizeStep,
+    this.description,
   });
 
   static String get table_name => 'activity_type';
@@ -36,6 +38,7 @@ class ActivityType implements SupadartClass<ActivityType> {
   static String get c_defaultMinParticipants => 'default_min_participants';
   static String get c_defaultMaxParticipants => 'default_max_participants';
   static String get c_groupSizeStep => 'group_size_step';
+  static String get c_description => 'description';
 
   static List<ActivityType> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityType.fromJson).toList();
@@ -55,6 +58,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMinParticipants,
     int? defaultMaxParticipants,
     int? groupSizeStep,
+    String? description,
   }) {
     return {
       if (id != null) 'id': id,
@@ -69,6 +73,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       if (defaultMaxParticipants != null)
         'default_max_participants': defaultMaxParticipants,
       if (groupSizeStep != null) 'group_size_step': groupSizeStep,
+      if (description != null) 'description': description,
     };
   }
 
@@ -82,6 +87,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMinParticipants,
     int? defaultMaxParticipants,
     int? groupSizeStep,
+    String? description,
   }) {
     return _generateMap(
       id: id,
@@ -93,6 +99,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       defaultMinParticipants: defaultMinParticipants,
       defaultMaxParticipants: defaultMaxParticipants,
       groupSizeStep: groupSizeStep,
+      description: description,
     );
   }
 
@@ -106,6 +113,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMinParticipants,
     int? defaultMaxParticipants,
     int? groupSizeStep,
+    String? description,
   }) {
     return _generateMap(
       id: id,
@@ -117,6 +125,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       defaultMinParticipants: defaultMinParticipants,
       defaultMaxParticipants: defaultMaxParticipants,
       groupSizeStep: groupSizeStep,
+      description: description,
     );
   }
 
@@ -145,6 +154,9 @@ class ActivityType implements SupadartClass<ActivityType> {
       groupSizeStep: jsonn['group_size_step'] != null
           ? int.parse(jsonn['group_size_step'].toString())
           : null,
+      description: jsonn['description'] != null
+          ? jsonn['description'].toString()
+          : null,
     );
   }
 
@@ -158,6 +170,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMinParticipants,
     int? defaultMaxParticipants,
     int? groupSizeStep,
+    String? description,
   }) {
     return {
       if (id != null) 'id': id,
@@ -172,6 +185,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       if (defaultMaxParticipants != null)
         'default_max_participants': defaultMaxParticipants,
       if (groupSizeStep != null) 'group_size_step': groupSizeStep,
+      if (description != null) 'description': description,
     };
   }
 
@@ -186,6 +200,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       defaultMinParticipants: defaultMinParticipants,
       defaultMaxParticipants: defaultMaxParticipants,
       groupSizeStep: groupSizeStep,
+      description: description,
     );
   }
 
@@ -200,6 +215,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     Object? defaultMinParticipants = _unset,
     Object? defaultMaxParticipants = _unset,
     Object? groupSizeStep = _unset,
+    Object? description = _unset,
   }) {
     return ActivityType(
       id: id == _unset ? this.id : id as String,
@@ -219,6 +235,9 @@ class ActivityType implements SupadartClass<ActivityType> {
       groupSizeStep: groupSizeStep == _unset
           ? this.groupSizeStep
           : groupSizeStep as int?,
+      description: description == _unset
+          ? this.description
+          : description as String?,
     );
   }
 }

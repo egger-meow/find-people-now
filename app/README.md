@@ -10,7 +10,7 @@ what's found-but-not-implemented in the backend.
 - `lib/generated/` — [supadart](https://pub.dev/packages/supadart)-generated
   Dart classes for all 16 `public.*` tables (config: `supadart.yaml`). Never
   hand-edit; regenerate (see below).
-- `lib/rpc/` — hand-written typed wrappers for the 17 client-facing RPCs
+- `lib/rpc/` — hand-written typed wrappers for the 19 client-facing RPCs
   (Postgres functions). No Dart codegen tool generates RPC parameter/return
   types (neither `supadart` nor `supabase_codegen_flutter` reads PostgREST's
   `/rpc/*` OpenAPI paths) — see `lib/rpc/RPC_COVERAGE.md` for the full

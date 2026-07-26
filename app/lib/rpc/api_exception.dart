@@ -20,6 +20,7 @@ enum ApiErrorCode {
   noContactMethod('NO_CONTACT_METHOD'),
   invalidEmailDomain('INVALID_EMAIL_DOMAIN'),
   duplicateTypeName('DUPLICATE_TYPE_NAME'),
+  duplicateLocationName('DUPLICATE_LOCATION_NAME'),
   invalidInput('INVALID_INPUT'),
   invalidMinParticipants('INVALID_MIN_PARTICIPANTS'),
   invalidMaxParticipants('INVALID_MAX_PARTICIPANTS'),

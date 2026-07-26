@@ -16,6 +16,7 @@ erDiagram
     activity_type ||--o{ match_request : ""
     location ||--o{ match_request : "campus_location_id"
     app_user ||--o{ activity_type : "created_by 提案"
+    app_user ||--o{ location : "created_by 提案（v1.10）"
 
     activity_type ||--o{ activity : ""
     location ||--o{ activity : ""
@@ -67,6 +68,7 @@ erDiagram
         int default_min_participants "nullable，null 時 fallback 2（v1.5）"
         int default_max_participants "nullable，null 時 fallback 6（v1.5）"
         int group_size_step "nullable，非 null 時離散化人數選項間隔；null = 連續區間（v1.6）"
+        text description "nullable，前端「?」按鈕顯示的玩法說明；審核時由 admin 一併設定（v1.10）"
         enum status "PENDING | APPROVED | REJECTED"
         uuid created_by FK
         timestamptz created_at
@@ -77,6 +79,8 @@ erDiagram
         enum school "NYCU | NTHU，地點清單依校分列（v1.2）"
         text name "固定下拉清單，不開放自由輸入；UNIQUE(school, name)"
         bool is_active
+        enum status "PENDING | APPROVED | REJECTED，比照 activity_type，預設 APPROVED（v1.10）"
+        uuid created_by FK "nullable，官方預先 seed 的地點為 null（v1.10）"
         timestamptz created_at
     }
 
@@ -249,3 +253,6 @@ erDiagram
 22. **`activity_type` 新增 `group_size_step`（nullable int，v1.6）**：不做成 `allowed_group_sizes[]` 陣列——若用陣列，admin 審核連續模式類型時要手動列舉每個可選人數，徒增管理負擔；用 `group_size_step` + `default_min_participants`/`default_max_participants` 三者，由前端動態算出離散選項即可，admin 只需設定三個數字。🟢 **`group_size_step` 只要被設定為非 null 值（包含 1），前端一律按離散選項渲染；null 才代表連續區間。不存在「連續區間但同時設了 step」的中間狀態，避免 `step=1` 這類邊界值造成解讀歧義。** 明確不新增 `group_size_mode` 欄位——`group_size_step` 的 nullability 已完整表達離散/連續兩種模式，另開欄位會造成兩欄位需彼此保持一致的重複真相問題，與第 18 點 `invite_token` 不另存 `expire_at`、第 20 點 `known_member_count` 不額外儲存同一精神。
 23. **`app_user.next_request_allowed_at`（nullable timestamptz，v1.7）**：拒絕候選配對／`LATE_CANCEL` 觸發的 30 分鐘冷卻期落地欄位（SPEC §6.3）。放在 `app_user` 而非另開一張冷卻記錄表，理由與第 6 點 `suspended_until` 相同：一人同時只需要一個生效中的「解鎖時間點」，不需要保留歷史紀錄，用單一欄位覆寫即可；若未來需要追蹤冷卻觸發的歷史（例如統計濫用行為），應另開 per-event 日誌表，v1.7 不做。
 24. **「活動進行中鎖定」不新增欄位（v1.7）**：`submit_request` 檢查「呼叫者名下是否有 `MATCHED`/`ONGOING` 的 Activity」直接查詢 `activity_member` join `activity` 即可，不需要在 `app_user` 或其他表存一個快取旗標——這類「當下狀態」的判定與第 3、20 點 Reliability 分數、`known_member_count` 不落地存欄位同一精神：查詢即時算出，避免資料跟來源事實不同步。
+25. **`location.status` 預設 `APPROVED`，與 `activity_type.status` 預設 `PENDING` 刻意不同（v1.10）**：兩張表復用同一個 `activity_type_status` enum，但正常寫入路徑不同——`location` 是 admin 直接維護的固定下拉清單（seed/Dashboard 直接 insert 就是 APPROVED），使用者提案（`propose_location`）只是額外開的旁支路徑，`PENDING` 只在旁支路徑出現；`activity_type` 則相反，使用者提案（`propose_activity_type`）才是常態寫入路徑，官方預設類型才是走 seed 直接 insert `APPROVED` 的旁支。兩者預設值反過來，是因為「誰是常態、誰是旁支」反過來，不是不一致。
+26. **`propose_location` 不做關鍵字黑名單預檢（v1.10）**：地點名稱要塞入色情/違法字眼的難度本來就比活動類型高；且稽核時發現 `propose_activity_type` 文件宣稱的黑名單預檢從未真正落地實作（見 `app/lib/rpc/RPC_COVERAGE.md`），與其比照一個實際上不存在的機制，不如承認 MVP 階段真正的把關就是 `pending_review` view（見下）給 admin 人工看過再核准，這對地點提案已經足夠。
+27. **`pending_review` view：MVP 唯一審核管道（v1.10）**：UNION `activity_type`/`location` 兩張表目前 `status = 'PENDING'` 的項目，讓 admin 在 Supabase Studio 查一張 view 就能看到所有排隊中的提案。刻意不對 `anon`/`authenticated` grant 任何權限，只有 `postgres`/`service_role` 能查得到；不新建任何 admin 專屬 API 或前端頁面，審核就是人工在 Studio 改對應原表的 `status` 欄位。

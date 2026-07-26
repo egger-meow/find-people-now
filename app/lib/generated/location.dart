@@ -9,6 +9,8 @@ class Location implements SupadartClass<Location> {
   final String name;
   final bool isActive;
   final DateTime createdAt;
+  final ACTIVITY_TYPE_STATUS status;
+  final String? createdBy;
 
   const Location({
     required this.id,
@@ -16,6 +18,8 @@ class Location implements SupadartClass<Location> {
     required this.name,
     required this.isActive,
     required this.createdAt,
+    required this.status,
+    this.createdBy,
   });
 
   static String get table_name => 'location';
@@ -24,6 +28,8 @@ class Location implements SupadartClass<Location> {
   static String get c_name => 'name';
   static String get c_isActive => 'is_active';
   static String get c_createdAt => 'created_at';
+  static String get c_status => 'status';
+  static String get c_createdBy => 'created_by';
 
   static List<Location> converter(List<Map<String, dynamic>> data) {
     return data.map(Location.fromJson).toList();
@@ -39,6 +45,8 @@ class Location implements SupadartClass<Location> {
     String? name,
     bool? isActive,
     DateTime? createdAt,
+    ACTIVITY_TYPE_STATUS? status,
+    String? createdBy,
   }) {
     return {
       if (id != null) 'id': id,
@@ -46,6 +54,8 @@ class Location implements SupadartClass<Location> {
       if (name != null) 'name': name,
       if (isActive != null) 'is_active': isActive,
       if (createdAt != null) 'created_at': createdAt.toUtc().toIso8601String(),
+      if (status != null) 'status': status.toString().split('.').last,
+      if (createdBy != null) 'created_by': createdBy,
     };
   }
 
@@ -55,6 +65,8 @@ class Location implements SupadartClass<Location> {
     required String name,
     bool? isActive,
     DateTime? createdAt,
+    ACTIVITY_TYPE_STATUS? status,
+    String? createdBy,
   }) {
     return _generateMap(
       id: id,
@@ -62,6 +74,8 @@ class Location implements SupadartClass<Location> {
       name: name,
       isActive: isActive,
       createdAt: createdAt,
+      status: status,
+      createdBy: createdBy,
     );
   }
 
@@ -71,6 +85,8 @@ class Location implements SupadartClass<Location> {
     String? name,
     bool? isActive,
     DateTime? createdAt,
+    ACTIVITY_TYPE_STATUS? status,
+    String? createdBy,
   }) {
     return _generateMap(
       id: id,
@@ -78,6 +94,8 @@ class Location implements SupadartClass<Location> {
       name: name,
       isActive: isActive,
       createdAt: createdAt,
+      status: status,
+      createdBy: createdBy,
     );
   }
 
@@ -92,6 +110,12 @@ class Location implements SupadartClass<Location> {
       createdAt: jsonn['created_at'] != null
           ? DateTime.parse(jsonn['created_at'].toString())
           : DateTime.fromMillisecondsSinceEpoch(0),
+      status: jsonn['status'] != null
+          ? ACTIVITY_TYPE_STATUS.values.byName(jsonn['status'].toString())
+          : ACTIVITY_TYPE_STATUS.values.first,
+      createdBy: jsonn['created_by'] != null
+          ? jsonn['created_by'].toString()
+          : null,
     );
   }
 
@@ -101,6 +125,8 @@ class Location implements SupadartClass<Location> {
     String? name,
     bool? isActive,
     DateTime? createdAt,
+    ACTIVITY_TYPE_STATUS? status,
+    String? createdBy,
   }) {
     return {
       if (id != null) 'id': id,
@@ -108,6 +134,8 @@ class Location implements SupadartClass<Location> {
       if (name != null) 'name': name,
       if (isActive != null) 'is_active': isActive,
       if (createdAt != null) 'created_at': createdAt,
+      if (status != null) 'status': status,
+      if (createdBy != null) 'created_by': createdBy,
     };
   }
 
@@ -118,6 +146,8 @@ class Location implements SupadartClass<Location> {
       name: name,
       isActive: isActive,
       createdAt: createdAt,
+      status: status,
+      createdBy: createdBy,
     );
   }
 
@@ -128,6 +158,8 @@ class Location implements SupadartClass<Location> {
     Object? name = _unset,
     Object? isActive = _unset,
     Object? createdAt = _unset,
+    Object? status = _unset,
+    Object? createdBy = _unset,
   }) {
     return Location(
       id: id == _unset ? this.id : id as String,
@@ -135,6 +167,8 @@ class Location implements SupadartClass<Location> {
       name: name == _unset ? this.name : name as String,
       isActive: isActive == _unset ? this.isActive : isActive as bool,
       createdAt: createdAt == _unset ? this.createdAt : createdAt as DateTime,
+      status: status == _unset ? this.status : status as ACTIVITY_TYPE_STATUS,
+      createdBy: createdBy == _unset ? this.createdBy : createdBy as String?,
     );
   }
 }

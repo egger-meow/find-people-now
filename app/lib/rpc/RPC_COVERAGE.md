@@ -60,6 +60,46 @@ Four things changed since the cross-check below was first written (still
    parameter — not a missing implementation. See SPEC.md's v1.9 changelog
    entry #4 and API.md §3's new removal note (row number not backfilled).
 
+## v1.10 update: activity_type.description + location review + pending_review view
+
+Three more things added after v1.9, same day:
+
+1. **`activity_type.description`** (nullable text) added in
+   `supabase/migrations/20260724121100_activity_type_description_and_seed.sql`,
+   plus a seeded official type "先聚聚看" (`status='APPROVED'`, not routed
+   through `propose_activity_type` — same pattern as the other 7 seeded
+   types). `description` is admin-set at Dashboard review time alongside
+   `default_duration_minutes` etc., not a `propose_activity_type` parameter,
+   so no RPC signature changed.
+2. **`location` review mechanism added**, mirroring `activity_type`:
+   `supabase/migrations/20260724121200_location_review.sql` adds
+   `status` (reuses the existing `activity_type_status` enum — not a new
+   type) and `created_by` to `location`, updates `active_locations_select`
+   RLS to `(is_active and status = 'APPROVED') or created_by = auth.uid()`
+   (exact mirror of `activity_type`'s `approved_types_select`), and adds
+   `propose_location(name, school)`. **`status` defaults to `'APPROVED'`**
+   — opposite of `activity_type`'s `'PENDING'` default — because the normal
+   write path for `location` is admin-maintained seed/Dashboard inserts;
+   user proposals are the side path, not the main one (see ERD note 25).
+   Wrapped as `proposeLocation()` in `lib/rpc/location_rpc.dart`, covered by
+   `supabase/tests/database/05_propose_location.test.sql`.
+   **Deliberately no keyword-blacklist precheck** — harder to smuggle
+   profanity into a place name than an activity-type name, and (found while
+   scoping this) `propose_activity_type`'s documented blacklist precheck was
+   never actually implemented either (see the never-raised-codes table
+   below) — copying a check that doesn't exist for the sibling endpoint
+   wasn't worth doing. Left `propose_activity_type` itself untouched this
+   pass (out of scope, user explicitly deferred that decision).
+3. **`pending_review` view added**
+   (`supabase/migrations/20260724121300_pending_review_view.sql`): UNION of
+   `activity_type`/`location` rows where `status = 'PENDING'`. Deliberately
+   NOT granted to `anon`/`authenticated` (`20260724120800_grants.sql` is
+   untouched) — only `postgres`/`service_role` can query it, so it's
+   invisible to PostgREST entirely. This is the MVP's only review channel;
+   no admin API or frontend page was added.
+4. `docs/API.md` §2.4's `GET location` query gained a `status=eq.APPROVED`
+   filter alongside the existing `is_active=eq.true`.
+
 ## Functions with no implementation (documented, don't exist in the DB)
 
 `§9`'s background scheduler jobs (Matching Engine, PENDING_CONFIRMATION
@@ -86,7 +126,7 @@ are client-callable RPCs.
 
 | Code | Raised by | Detail |
 |---|---|---|
-| `INVALID_INPUT` | `create_request`, `propose_activity_type`, `rematch_vote` | Generic catch-all for malformed input (empty name, bad time bucket, unknown activity type, voting for yourself). Always carries a `detail` distinguishing the case. |
+| `INVALID_INPUT` | `create_request`, `propose_activity_type`, `propose_location` (v1.10), `rematch_vote` | Generic catch-all for malformed input (empty name, bad time bucket, unknown activity type, voting for yourself). Always carries a `detail` distinguishing the case. |
 | `INVALID_MIN_PARTICIPANTS` / `INVALID_MAX_PARTICIPANTS` | `create_request` | `min_participants < 2`, or `max_participants < min_participants`. |
 | `FORBIDDEN` (detail `NOT_PARTY_TO_CONFIRMATION`) | `respond_pending_confirmation` | Caller is neither request_a's nor request_b's owner. |
 
@@ -114,6 +154,17 @@ documents for §1.4.
   the app must still go through the controlled RPCs (§4.1, etc.) rather than
   `client.from('pending_confirmation')...`, which will return zero rows
   under the anon/authenticated role at runtime.
+- **v1.10**: supadart also generated `PendingReview` for the new
+  `pending_review` **view** (`lib/generated/pending_review.dart`) — PostgREST
+  exposes every object in the `public` schema by default, views included,
+  regardless of grants, so the type exists the same way the two RLS-locked
+  tables above do. This one is locked down harder than those two: no `grant`
+  at all was given to `anon`/`authenticated` (not even a table-privilege
+  grant, let alone an RLS policy), so `client.from('pending_review')...`
+  403s outright for both roles. The generated type is dead code from the
+  app's perspective — it exists only because supadart can't distinguish
+  "admin-only Studio view" from "client-facing view" — do not wire it into
+  any screen; admin review happens in Supabase Studio, not the app.
 - `notification.payload` (jsonb, NOT NULL) generated as `Map<String, dynamic>`
   — not `dynamic`.
 - `match_request.acceptable_location_ids` and `completion_report.absent_user_ids`

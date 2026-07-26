@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.9 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.10 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -60,6 +60,11 @@
 > 2. 新增 `rpc: respond_downgrade(downgrade_request_id, agree)`（第 8 節）：第 8 節與 ERD 設計備註 21 定案已久，但這個使用者回應 endpoint 從未真正實作過，功能對使用者來說形同不存在。行為依 STATE_MACHINE.md「Downgrade 子流程」：任一人 `DISAGREE` 立即 `REJECTED`，全員 `AGREE` 才 `APPROVED`；重複回應回 `ALREADY_RESPONDED`（此碼在第 5 節 error table 從未被移除，跟第 4 節 `respond_pending_confirmation` 的「允許反悔」是不同的既有設計）。**範圍限定**：只補使用者回應這一半，`downgrade_request` 的建立仍是背景任務（第 9 節「Request 過期」排程）的職責，尚未實作
 > 3. 新增 `rpc: leave_request(request_id)`（第 6 節）：透過邀請連結（6.1 節）加入別人 Request 的非 owner 成員，先前完全沒有任何方式可以退出——`cancel_request` 嚴格限定 owner_id，非 owner 成員呼叫只會得到 `NOT_FOUND`。owner 呼叫 `leave_request` 回 `FORBIDDEN`（應改用 `cancel_request`，語意上「換 owner」不在本次範圍內）；配對成立後不可再用此 endpoint 退出（改走第 9 節 `cancel_activity_participation`，維持兩張狀態圖分界）
 > 4. 🔴 **移除設計遺留的 `join_request(request_id)`**（非邀請連結版本的直接加入）：產品自 v1.5 邀請連結機制上線後，就沒有任何「瀏覽/挑選他人 Request」的 UI 路徑（v1.5 變更紀錄第 1 條：「v1 沒有 Friend entity、不存任何朋友關係資料」），加入他人 Request 的唯一合法方式是 `join_request_by_token`（6.1 節）。這條端點是 v1.5 之前的設計遺留、從未有對應 UI 路徑會呼叫它，不是遺漏的實作——與更早移除 `create_request` 的 `invited_user_ids` 參數是同一個理由。API.md 第 3 節編號不遞補（3.4 空缺、3.5 起維持原編號），避免牽動其他文件的既有交叉引用
+
+> **v1.10 變更紀錄**（`activity_type.description` + `location` 審核機制 + `pending_review` view）：
+> 1. `activity_type` 新增 `description`（nullable text）：前端「?」按鈕顯示的玩法說明文字，審核新增類型時由 admin 在 Supabase Dashboard 跟 `default_duration_minutes`/`default_min_participants`/`default_max_participants`/`group_size_step` 一併設定，不進 `propose_activity_type` 的參數。順帶 seed 一筆官方預設類型「先聚聚看」（`status='APPROVED'`，不走使用者提案審核）：`default_duration_minutes=90`、`default_min_participants=2`、`default_max_participants=6`、`group_size_step=null`——依「沒有固定活動形式」的性質評估，時長取中等、人數用連續區間不設步階
+> 2. `location` 新增審核機制，比照 `activity_type`：新增 `status`（復用既有 `activity_type_status` enum）與 `created_by`（FK to `app_user`，nullable，官方預先 seed 的地點為 null）。**`status` 預設 `APPROVED`，與 `activity_type` 預設 `PENDING` 刻意相反**——`location` 的正常寫入路徑是 admin 直接維護固定清單，`PENDING` 只在使用者提案（新增 `rpc: propose_location(name, school)`，第 2 節）這條旁支路徑出現；`activity_type` 則反過來，使用者提案才是常態路徑（ERD 設計備註 25）。§2.4 `GET location` 查詢加上 `status=eq.APPROVED` 過濾條件，確保未審核通過的地點不出現在下拉選單。**`propose_location` 不做關鍵字黑名單預檢**：地點名稱塞入違規字眼的難度本來就比活動類型高，且稽核發現 `propose_activity_type` 文件宣稱的黑名單預檢從未真正實作過（既有落差，本次不動），與其比照一個不存在的機制，MVP 真正的把關就是第 3 點的 `pending_review` view
+> 3. 新增 `pending_review` view（不是新 admin API/介面）：UNION `activity_type`/`location` 兩表目前 `status='PENDING'` 的項目（欄位：類型、名稱、`created_by`、`created_at`），admin 在 Supabase Studio 查這一張 view 就能看到所有排隊中的提案，手動改對應原表的 `status` 完成審核。刻意不對 `anon`/`authenticated` grant 任何權限——這是 MVP 階段唯一的審核渠道，不新建任何 admin 專屬 API 或前端頁面
 
 ---
 
