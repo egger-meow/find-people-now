@@ -14,7 +14,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(7);
+select plan(9);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -188,6 +188,16 @@ select is(
   '全員 AGREE 後 downgrade_request 應轉為 APPROVED'
 );
 
+select is(
+  (select count(*)::int from notification
+    where event_type = 'DOWNGRADE_RESULT'
+      and user_id in ((select user_a_id from fixtures), (select user_b_id from fixtures))
+      and (payload->>'downgrade_request_id')::uuid = (select dg1_id from fixtures)
+      and payload->>'status' = 'APPROVED'),
+  2,
+  '全員同意的那一刻應向雙方各發一則 DOWNGRADE_RESULT(status=APPROVED) 通知，部分同意時不應提前發'
+);
+
 -- -----------------------------------------------------------------------------
 -- 5. 任一人 DISAGREE — dg2 應立即 REJECTED，不必等 user_e 回應
 -- -----------------------------------------------------------------------------
@@ -201,6 +211,16 @@ select is(
   (select status::text from downgrade_request where id = (select dg2_id from fixtures)),
   'REJECTED',
   '任一人 DISAGREE 應立即轉為 REJECTED，不必等其他成員回應'
+);
+
+select is(
+  (select count(*)::int from notification
+    where event_type = 'DOWNGRADE_RESULT'
+      and user_id in ((select user_d_id from fixtures), (select user_e_id from fixtures))
+      and (payload->>'downgrade_request_id')::uuid = (select dg2_id from fixtures)
+      and payload->>'status' = 'REJECTED'),
+  2,
+  '任一人 DISAGREE 立即 REJECTED 時，應向雙方（含尚未回應的 user_e）各發一則 DOWNGRADE_RESULT(status=REJECTED) 通知'
 );
 
 -- -----------------------------------------------------------------------------

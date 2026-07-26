@@ -1,4 +1,4 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.11.1）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.12）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.7 與 [STATE_MACHINE.md](STATE_MACHINE.md) 定案之上。若與 SPEC 衝突，先改 SPEC。
 
@@ -75,7 +75,7 @@
 
 | # | Endpoint | 說明 |
 |---|---|---|
-| 5.1 | `rpc: respond_downgrade(downgrade_request_id, agree: bool)` | 10 分鐘 `CONSENT_WINDOW` 內回應；過期回 `CONSENT_WINDOW_CLOSED`（超時=拒絕，Request 以原門檻回池，SPEC §8）。發起端是系統（Matching Engine），沒有使用者發起的 endpoint。<br>🟢 **驗證規範（ERD 備註 21）**：`target_size` 必須低於原 `min_participants`，由系統發起與回應 RPC 進行應用層比對。 |
+| 5.1 | `rpc: respond_downgrade(downgrade_request_id, agree: bool)` | 10 分鐘 `CONSENT_WINDOW` 內回應；過期回 `CONSENT_WINDOW_CLOSED`（超時=拒絕，Request 以原門檻回池，SPEC §8）。發起端是系統（背景任務 `fn_expire_requests()`，v1.12 起真正落地，見 §9），沒有使用者發起的 endpoint。<br>🟢 **驗證規範（ERD 備註 21）**：`target_size` 必須低於原 `min_participants`，由系統發起與回應 RPC 進行應用層比對。<br>🟢 **v1.12 起補上此前完全沒發過的 `DOWNGRADE_RESULT` 通知**：任一人 `DISAGREE` 立即向全體 `downgrade_consent` 成員發送（`status=REJECTED`）；全員 `AGREE` 的那一刻才發（`status=APPROVED`），部分同意時不提前發，比照 4.2 只在最終 PC1/PC2 轉移時才通知的既有模式。 |
 | 5.2 | `GET downgrade_request`（PostgREST，RLS：被詢問成員） | 查進行中的降門檻詢問。 |
 
 錯誤碼：`CONSENT_WINDOW_CLOSED`、`ALREADY_RESPONDED`
@@ -124,13 +124,13 @@
 | 任務 | 頻率 | 對應轉移 | 說明 |
 |---|---|---|---|
 | Matching Engine | 每分鐘 | R3a / R3b | 掃描 Queue 中時間窗重疊 + 地點相同的 Request 組合，達到 `min_participants` 貪婪成局：<br>① **若本次實際撮合人數 > 2**：直接建立 `Activity` (R3a)。<br>② **若本次實際撮合人數 ≤ 2**：建立 `pending_confirmation` 記錄，並將對應的 `match_request.status` 標記為 `PENDING_CONFIRMATION` (R3b)。 |
-| PENDING_CONFIRMATION 超時與拒絕清理 | 每分鐘 | PC2 | 掃描 `confirm_window_expire_at < now()` 且為 `PENDING`、或已標記 `DECLINED` 的記錄：<br>① 將 `pending_confirmation.status` 設定為 `TIMEOUT` / `DECLINED`。<br>② 寫入 `match_history_avoidance` 降權記錄（正規化 `user_a_id < user_b_id`，避開 7 天）。<br>③ **雙方 Request 無差別退回 Queue (`REQUESTING`)** 重新進池（若 `latest_start` 已過期則自然轉為 `EXPIRED`）。<br>④ 向雙方發送無差別「配對未成立」通知（不暴露對方回應與超時原因）。 |
-| Request 過期 | 每分鐘 | R4、Downgrade | `latest_start` 已過且未成團 → `EXPIRED`；期限前未滿員且 `allow_downgrade` 且餘 ≥10 分鐘 → 建立 `downgrade_request`。 |
-| Downgrade 超時 | 每分鐘 | — | `expire_at` 已過 → `TIMEOUT`，Request 以原門檻留在 Queue 中。 |
+| PENDING_CONFIRMATION 超時與拒絕清理 | 每分鐘 | PC2 | 掃描 `confirm_window_expire_at < now()` 且為 `PENDING`、或已標記 `DECLINED` 的記錄：<br>① 將 `pending_confirmation.status` 設定為 `TIMEOUT` / `DECLINED`。<br>② 寫入 `match_history_avoidance` 降權記錄（正規化 `user_a_id < user_b_id`，避開 7 天）。<br>③ **雙方 Request 無差別退回 Queue (`REQUESTING`)** 重新進池（若 `latest_start` 已過期則自然轉為 `EXPIRED`）。<br>④ 🟢 **v1.12 起真正發送**：向雙方發送無差別 `MATCH_NOT_FORMED` 通知（不暴露對方回應與超時原因，payload 只帶收件者自己的 `request_id`）——此前這條規則只有本表格描述，`fn_cleanup_pending_confirmations()` 從未真的發過。 |
+| Request 過期 | 每分鐘 | R4、Downgrade | 🟢 **v1.12 起第一次真正落地成 SQL**（`fn_expire_requests()`；先前完全沒有對應函式）：掃描 `status='REQUESTING'` 且 `latest_start < now()` 的 Request。①若這個 Request 自己的實際 JOINED 人數已達 `min_participants`（Matching Engine 一直沒找到可合併對象的邊緣情況），這輪不處理。②若曾經建立過 `downgrade_request`：仍在 `PENDING`/`APPROVED` → 不重複處理；已 `REJECTED`/`TIMEOUT`（問過一次沒談成）→ 不再問第二次，直接 `EXPIRED`。③從未問過，且 `allow_downgrade=true`、算出的 `target_size = greatest(2, 實際 JOINED 人數)` 有效、且 `latest_start` 過期還在 `app_config.downgrade_consent_window_minutes` 的寬限期內 → 建立 `downgrade_request` + 展開 `downgrade_consent`，向全體 `JOINED` 成員發送 `DOWNGRADE_REQUEST` 通知。④其餘情況 → `EXPIRED`，**不發通知**（EXPIRED 是被動的「什麼都沒發生」結果，不是需要打斷使用者的失敗事件；本輪也沒有為此新增 `notification_event_type` 值的預算，見 SPEC.md §9 State Machine 一節）。 |
+| Downgrade 超時 | 每分鐘 | — | 🟢 **v1.12 起第一次真正落地成 SQL**（`fn_expire_downgrades()`；先前完全沒有對應函式）：`downgrade_request.status='PENDING'` 且 `expire_at` 已過 → `TIMEOUT`（超時視為拒絕，SPEC §8）。`match_request` 全程沒離開過 `REQUESTING`（STATE_MACHINE.md「Downgrade 子流程」），這裡不動它的狀態或門檻。向全體 `downgrade_consent` 成員發送 `DOWNGRADE_RESULT`（`status=TIMEOUT`）通知。 |
 | Activity 開始 | 每分鐘 | A2 | 🟢 **v1.11 起第一次真正落地成 SQL**（`fn_start_activities()`；先前只有本表格描述，沒有對應函式，見 `app/lib/rpc/RPC_COVERAGE.md`）：`start_time` 已到 →（若 `activity_location_id` 仍為 `NULL`）先依得票數鎖定 Activity Location（同票取最早提案者，零候選則維持 `NULL`，見 SPEC §9.1）→ `ONGOING`；發送 `ACTIVITY_REMINDER` 通知。 |
 | Activity Location 零候選提醒（v1.11） | 每分鐘 | — | `fn_remind_missing_location_candidates()`：`status='MATCHED'` 且 `start_time` 在 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）內、仍無任何 `activity_location_option` → 向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知；去重靠查詢 `notification` 表本身是否已發過同一活動同一事件，不另存欄位。 |
-| Activity 超時完成 | 每小時 | A4 | `start_time + 24h` 未達回報門檻 → `COMPLETED`，不做 No-show 判定。 |
-| 結束提醒 | 每 15 分鐘 | — | `estimated_end_time` 已過 → 發送 `COMPLETE_CONFIRMATION` 通知。 |
+| Activity 超時完成 | 每小時 | A4 | 🟢 **v1.12 起第一次真正落地成 SQL**（`fn_complete_activities()`；先前完全沒有對應函式）：`status='ONGOING'` 且 `start_time + 24h` 已過 → 強制 `COMPLETED`，不做 No-show 判定、不記任何事件、不發通知（靜默 fallback）。不需要重新計算完成確認法定人數門檻——`submit_completion_report` 一旦達標當下就已經同步轉移為 `COMPLETED`（見 7.1），兩條路徑天然互斥，不會重複處理。 |
+| 結束提醒 | 每 15 分鐘 | — | 🟢 **v1.12 起第一次真正落地成 SQL**（`fn_remind_completions()`；先前完全沒有對應函式）：`status='ONGOING'` 且 `estimated_end_time` 已過、且尚未發過 `COMPLETE_CONFIRMATION` → 向全體 `JOINED` 成員發送 `COMPLETE_CONFIRMATION`；去重靠查詢 `notification` 表本身，同 Activity Location 零候選提醒的既有模式。 |
 
 ---
 
@@ -160,3 +160,4 @@
 | §9.1 Activity Location 投票機制 (v1.11) | 6.4 / 6.5 + §9 背景任務「Activity 開始」`fn_start_activities()` |
 | §9.1 零候選地點不代選、改發提醒 (v1.11) | §9 背景任務「Activity Location 零候選提醒」`fn_remind_missing_location_candidates()` |
 | §9.2 Meeting Point / Meeting Hint，獨立於 activity_location_id 是否鎖定 (v1.11.1) | 6.6 / 6.7 |
+| §9 八個背景任務全數首次落地成 SQL (v1.12) | §9「Request 過期」`fn_expire_requests()` / 「Downgrade 超時」`fn_expire_downgrades()` / 「Activity 超時完成」`fn_complete_activities()` / 「結束提醒」`fn_remind_completions()`；並補齊 5.1 `respond_downgrade` 的 `DOWNGRADE_RESULT` 與「PENDING_CONFIRMATION 超時與拒絕清理」的 `MATCH_NOT_FORMED` 兩處此前缺漏的通知觸發點 |

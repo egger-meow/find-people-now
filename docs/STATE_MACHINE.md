@@ -1,4 +1,4 @@
-# State Machine — 校園活動配對 App（派生自 SPEC v1.11.1）
+# State Machine — 校園活動配對 App（派生自 SPEC v1.12）
 
 > 本文件由 [SPEC.md](SPEC.md) §6.2、§7、§8、§9、§12.1 推導。**狀態值域已在 [ERD.md](ERD.md) 定案**（`request_status`、`activity_status`），本文件不新增狀態，價值在於補齊每條轉移的**觸發條件**：誰觸發（使用者／Matching Engine／排程）、什麼條件下觸發、伴隨哪些副作用。
 
@@ -33,21 +33,23 @@ stateDiagram-v2
 | R3a | `REQUESTING → MATCHED` | Matching Engine（定期掃描） | 時間窗重疊 + **（v1.11）`(school, campus)` 相同**（取代 v1.10 及之前版本「`campus_location_id` 相同」，不再要求精確地點完全相同）+ `activity_type_id` 相同的 Request 組合，候選池**達到 `min_participants` 立即成局**（貪婪策略，不等待湊到 `max_participants`，見 SPEC §7；同校隔離由 R1 的 campus 檢查 + `(school, campus)` 相同天然保證，引擎不另判 school），且**本次實際撮合人數 > 2**；或 Downgrade 核准後以 `target_size > 2` 成立 | **建立 `activity`**（狀態從 `MATCHED` 起跑，`school`/`campus` 複製自來源 Request，`activity_location_id` 留 `NULL`）+ 全體成員的 `activity_member(source_request_id=本 Request)` + 發 `MATCH_SUCCESS` 通知；超過 `max_participants` 時多出的人保留原 Request 繼續下一輪 |
 | R3b | `REQUESTING → PENDING_CONFIRMATION` | Matching Engine（定期掃描） | 同 R3a 的配對條件（候選池達到 `min_participants` 立即成局），但**本次實際撮合人數 ≤ 2**（或 Downgrade 核准後 `target_size ≤ 2`）；雙方皆非 🔴 New 等級已於 R2 檢查過，此處不重複擋（SPEC §12.1.1：Downgrade 事後降到 ≤2 人不追溯剔除） | 建立 `pending_confirmation(request_a_id, request_b_id, confirm_window_expire_at = now + 10min CONFIRM_WINDOW)`；向雙方發送確認通知，展示安全資訊卡（SPEC §12.1.3）；**不**建立 Activity |
 | PC1 | `PENDING_CONFIRMATION → MATCHED` | 使用者（雙方皆確認） | `pending_confirmation.user_a_response = CONFIRMED` 且 `user_b_response = CONFIRMED` | `pending_confirmation.status → CONFIRMED`；**建立 `activity`**（同 R3a 的建立邏輯）+ 發 `MATCH_SUCCESS` 通知 |
-| PC2 | `PENDING_CONFIRMATION → REQUESTING` | 使用者（任一方拒絕）或排程（`confirm_window_expire_at` 超時） | 任一方 `response = DECLINED`，或超時仍有一方 `NO_RESPONSE` | `pending_confirmation.status → DECLINED`/`TIMEOUT`；寫入 `match_history_avoidance(user_a_id, user_b_id, expire_at = now + 7 天)`；雙方皆收到「此次配對未成立」通知，**不透露對方回應內容**（比照 SPEC §8 Downgrade 的不歸因原則）；Request 退回 `REQUESTING` 重新進池；**若是主動 `DECLINED`（非 `TIMEOUT`）：對該使用者寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`**（v1.7 冷卻機制，SPEC §6.3，`TIMEOUT` 不觸發） |
-| R4 | `REQUESTING → EXPIRED` | 排程（時間觸發） | `current_time > latest_start` 仍未達 `min_participants`，且無進行中的 Downgrade 流程 | 發通知告知未成團；不記任何 Reliability 事件 |
+| PC2 | `PENDING_CONFIRMATION → REQUESTING` | 使用者（任一方拒絕）或排程（`confirm_window_expire_at` 超時） | 任一方 `response = DECLINED`，或超時仍有一方 `NO_RESPONSE` | `pending_confirmation.status → DECLINED`/`TIMEOUT`；寫入 `match_history_avoidance(user_a_id, user_b_id, expire_at = now + 7 天)`；雙方皆收到「此次配對未成立」通知（🟢 v1.12 起真正發送，`notification_event_type = MATCH_NOT_FORMED`，`fn_cleanup_pending_confirmations()` 此前只有文件描述，從未真的發過），**不透露對方回應內容**（比照 SPEC §8 Downgrade 的不歸因原則，payload 只帶收件者自己的 `request_id`）；Request 退回 `REQUESTING` 重新進池；**若是主動 `DECLINED`（非 `TIMEOUT`）：對該使用者寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`**（v1.7 冷卻機制，SPEC §6.3，`TIMEOUT` 不觸發） |
+| R4 | `REQUESTING → EXPIRED` | 排程（時間觸發，🟢 v1.12 第一次真正落地成 SQL：`fn_expire_requests()`，先前完全沒有對應函式） | `latest_start` 已過，該 Request 實際 JOINED 人數仍未達 `min_participants`，且沒有可提供的 Downgrade 機會（`allow_downgrade=false`，或已經問過一次 `REJECTED`/`TIMEOUT` 不再問第二次，或已過期太久超過 `downgrade_consent_window_minutes` 的寬限期） | 🟢 **v1.12 決定：不發通知**（跟 v1.11 之前這裡「發通知告知未成團」的文件描述不同——那從未真正實作過；EXPIRED 是被動的「什麼都沒發生」結果，不是需要打斷使用者的失敗事件，使用者下次查詢自己的 Request 會自然看到，這輪也沒有為此新增 `notification_event_type` 值的預算，見 SPEC.md v1.12 變更紀錄）；不記任何 Reliability 事件 |
 | R5 | `REQUESTING → CANCELLED` | 使用者主動取消 | 無前置條件 | Request 移出 Queue；配對成立**前**取消不寫 `user_reliability_event`（懲罰只針對已成立的活動，見 Activity A4/A5） |
 
 ### Downgrade 子流程（掛在 REQUESTING 內部，不是獨立狀態）
 
 Downgrade（SPEC §8）不改變 `match_request.status`——整個詢問期間 Request 停留在 `REQUESTING`：
 
+🟢 **v1.12 起第一次真正落地成 SQL**：發起（下表第一列）由 `fn_expire_requests()` 負責、超時（下表第四列）由 `fn_expire_downgrades()` 負責，此前兩者完全沒有對應函式；`respond_downgrade`（全員同意 / 任一人拒絕兩列）補上此前從未發過的 `DOWNGRADE_RESULT` 通知。注意下表掃描時機的實際落地跟本節文字略有差異：`fn_expire_requests()` 的掃描條件是 `latest_start < now()`（deadline 已過），「剩餘時間」在這裡改成判斷「deadline 過去多久」而非「距離未來還剩多少」——剛過期不久（在一個 `downgrade_consent_window_minutes` 寬限期內）才提供這次機會，詳見 API.md §9「Request 過期」列與 SPEC.md v1.12 變更紀錄。
+
 | 情境 | 行為 |
 |---|---|
-| 到 `latest_start` 前仍未達 `min_participants` 且 `allow_downgrade=true` 且剩餘時間 ≥ 10 分鐘 | 建立 `downgrade_request(expire_at = now + 10min)`，向所有 `request_member` 發 `DOWNGRADE_REQUEST` 通知（`target_size` 必須低於原 `min_participants`） |
-| 全員 `AGREE`（10 分鐘內） | `downgrade_request → APPROVED`，Matching Engine 以 `target_size` 重新撮合 → 依人數走 R3a 或 R3b |
-| 任一人 `DISAGREE` | `downgrade_request → REJECTED`，Request 以原 `min_participants`/`max_participants` 留在池中繼續找人 |
-| 超時未全員回應 | `downgrade_request → TIMEOUT`，效果同 REJECTED（超時 = 視為拒絕） |
-| 剩餘時間 < 10 分鐘 | **不發起**降門檻詢問，讓 Request 自然走 R4 → `EXPIRED`（避免兩個計時器互相打架） |
+| `latest_start` 已過，該 Request 實際 JOINED 人數仍未達 `min_participants`，且 `allow_downgrade=true`、算出的 `target_size = greatest(2, 實際 JOINED 人數)` 低於原 `min_participants`、且距離 `latest_start` 過期還在一個 consent window 的寬限期內、且此前從未問過 | 建立 `downgrade_request(expire_at = now + 10min)`，展開 `downgrade_consent`，向所有 `request_member` 發 `DOWNGRADE_REQUEST` 通知 |
+| 全員 `AGREE`（10 分鐘內） | `downgrade_request → APPROVED`，向全體發送 `DOWNGRADE_RESULT`（`status=APPROVED`）通知；🔴 **Matching Engine 以 `target_size` 重新撮合 → 依人數走 R3a 或 R3b 目前尚未實作**（`target_size` 沒有任何程式碼實際消費，v1.12 讓 `APPROVED` 狀態第一次真的可能被產生出來，但沒有一併補上撮合引擎讀取 `target_size` 的邏輯，見 SPEC.md v1.12 變更紀錄第 9 條，留給未來獨立評估） |
+| 任一人 `DISAGREE` | `downgrade_request → REJECTED`，向全體發送 `DOWNGRADE_RESULT`（`status=REJECTED`）通知，Request 以原 `min_participants`/`max_participants` 留在池中繼續找人 |
+| 超時未全員回應 | `downgrade_request → TIMEOUT`（`fn_expire_downgrades()`），向全體發送 `DOWNGRADE_RESULT`（`status=TIMEOUT`）通知，效果同 REJECTED（超時 = 視為拒絕） |
+| 已過期超過寬限期才被掃到、或曾經問過一次已 `REJECTED`/`TIMEOUT` | **不（再）發起**降門檻詢問，直接走 R4 → `EXPIRED`（見上方 R4 列） |
 
 ---
 

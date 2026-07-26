@@ -318,15 +318,87 @@ its member-padding workaround entirely and now drives the real 2-person
 a live `docker exec psql` count check that only one `pending_confirmation`
 row exists for the pair after both confirm.
 
-## Functions with no implementation (documented, don't exist in the DB)
+## v1.12 update: all eight §9 background jobs now exist as callable functions
 
-`§9`'s remaining background scheduler jobs (Matching Engine and
-PENDING_CONFIRMATION cleanup's `fn_run_matching_engine`/
-`fn_cleanup_pending_confirmations`, plus v1.11's `fn_start_activities`/
-`fn_remind_missing_location_candidates`, all exist as callable functions but
-nothing schedules any of them via `pg_cron`; the `downgrade_request`-creation
-half of the "Request 過期" job doesn't exist at all) remain unimplemented —
-out of scope for this pass, since none of them are client-callable RPCs.
+First systematic audit of API.md §9's background-job table's actual
+implementation status (previously tracked piecemeal across several rounds).
+Findings before this round: `fn_run_matching_engine`/
+`fn_cleanup_pending_confirmations`/`fn_start_activities`/
+`fn_remind_missing_location_candidates` already existed; "Request 過期"
+(R4 + Downgrade creation), "Downgrade 超時", "Activity 超時完成" (A4), and
+"結束提醒" had **zero** corresponding function — only the §9 table's prose
+description. Additionally, two existing functions had a documented
+notification event type that was never actually inserted anywhere:
+`respond_downgrade` never sent `DOWNGRADE_RESULT`, and
+`fn_cleanup_pending_confirmations` never sent the "配對未成立" notification
+its own PC2 row description already promised.
+
+All fixed in `supabase/migrations/20260724122100_background_jobs_enum.sql` +
+`20260724122200_background_jobs_rpc.sql`:
+
+1. **`fn_expire_requests()`** (new) — R4 + Downgrade creation. `target_size`
+   algorithm: `greatest(2, current real JOINED headcount)`, not a fixed
+   number — asks the group to accept exactly who's actually there rather
+   than an arbitrary target; the DB's existing `target_size >= 2` CHECK and
+   the "must be below original `min_participants`" app-layer rule (ERD note
+   21) both fall out of this naturally, no extra special-casing needed. Time
+   window check reinterprets SPEC §8's "remaining time before deadline"
+   (written for a scheduler that runs *before* the deadline) as "how long
+   *since* the deadline passed" (`now() - latest_start <
+   downgrade_consent_window_minutes`), since this function's scan condition
+   is `latest_start < now()` — deadline already past. A request only ever
+   gets offered a downgrade once (gated on "does any `downgrade_request` row
+   already exist for this `request_id`", any status) — never re-offered
+   after a `REJECTED`/`TIMEOUT`. Deliberately leaves alone the edge case
+   where a solo `REQUESTING` request's real headcount already reached
+   `min_participants` (via invite-link joins) but `fn_run_matching_engine`
+   never found a second request to merge with — R4's own condition is
+   "still hasn't reached `min_participants`", so this case isn't R4 at all;
+   no code path currently turns such a row into an Activity by itself, and
+   this round doesn't add one (see ERD note 39).
+2. **`fn_expire_downgrades()`** (new) — Downgrade 超時. `PENDING` +
+   `expire_at < now()` → `TIMEOUT`; deliberately does **not** touch
+   `match_request.status` (Downgrade never leaves the request in anything
+   but `REQUESTING`, per STATE_MACHINE.md's existing "Downgrade 子流程"
+   section — this was already documented, just never had code behind it
+   until now).
+3. **`respond_downgrade`** — added the previously-missing `DOWNGRADE_RESULT`
+   notification: sent immediately on any `DISAGREE` (`status=REJECTED`),
+   and only at the moment all parties `AGREE` (`status=APPROVED`) — not on
+   each partial agreement, mirroring `respond_pending_confirmation`'s
+   existing pattern of only notifying at the final PC1/PC2 transition.
+4. **`fn_complete_activities()`** (new) — Activity 超時完成 (A4). No quorum
+   recomputation needed: `submit_completion_report` already flips `status`
+   to `COMPLETED` synchronously in the same transaction the moment it hits
+   quorum (`20260724120600_rpc_completion_and_settlement.sql`), so any row
+   still `status='ONGOING'` here is guaranteed to not have reached quorum —
+   the two paths are mutually exclusive by construction, not by an extra
+   check. Silent fallback: no No-show judgment, no reliability events, no
+   notification.
+5. **`fn_remind_completions()`** (new) — 結束提醒. Dedup mirrors
+   `fn_remind_missing_location_candidates`'s existing pattern exactly: query
+   `notification` itself for an existing `COMPLETE_CONFIRMATION` row for
+   that activity, no extra column.
+6. **`fn_cleanup_pending_confirmations`** — added the previously-missing
+   "配對未成立" notification, new event type `MATCH_NOT_FORMED`. Same
+   non-attribution principle as ERD note 16: payload carries only the
+   recipient's *own* `request_id`, nothing about the other party or why it
+   failed (declined vs. timed out).
+
+**Deliberately not addressed this round** (flagged, not fixed): once a
+`downgrade_request` reaches `APPROVED`, SPEC §8 / STATE_MACHINE.md both say
+"Matching Engine 以 `target_size` 重新撮合" — no code anywhere actually
+reads `target_size` to re-run matching at a lower threshold.
+`respond_downgrade`'s own comment already acknowledged this gap before this
+round; this round is simply the first time `APPROVED` can actually be
+produced end-to-end (since nothing created `downgrade_request` rows before),
+which makes the gap reachable for the first time rather than purely
+theoretical. Left for a future round (see ERD note 39, SPEC.md v1.12
+changelog #9).
+
+Consistent with every other background job in this file: these four new
+functions are callable functions only, not scheduled via `pg_cron` — that
+remains a separate, deliberately deferred task.
 
 ## Error codes documented in API.md but never raised
 

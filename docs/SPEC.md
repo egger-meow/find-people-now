@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.11.1 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.12 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -85,6 +85,17 @@
 > 5. 🟢 每次成功更新 Meeting Point 都通知全體成員（新增 `notification_event_type` = `MEETING_POINT_UPDATED`），沿用既有通知機制；Meeting Hint 是個人化欄位，不觸發通知。
 > 6. 🟢 RLS 公開透明給活動全體成員，比照 §9.1 的 `ActivityLocationOption`/`ActivityLocationVote`，不比照 `pending_confirmation` 的刻意不歸因設計——集合點協調是良性的群體資訊同步，不是需要隱藏的敏感情境。
 > 7. 🔴 **修正一個既有、範圍比這次功能更大的 bug（撰寫本輪 RLS 測試時發現）**：`activity_member` 的 SELECT RLS policy 從 `20260724120000_init.sql` 起就寫成自我參照（`exists (select 1 from activity_member me where ...)`），PostgreSQL 對「同一張表在自己的 policy 裡查詢自己」會直接判定為無限遞迴並報錯——不是效能問題，是直接炸掉。範圍不只影響這次新增的 Meeting Point：`activity` 的 SELECT policy 也會 join `activity_member`，間接觸發同一個遞迴，等於**任何 `authenticated` 角色對 `activity`/`activity_member` 的直接查詢，先前都會 500**。過去沒被抓到是因為所有既有 pgTAP 測試都用 postgres superuser 連線做設置/斷言（略過 RLS），前端也只透過 `SECURITY DEFINER` RPC 存取這兩張表，從未真的以 `authenticated` 角色直接 SELECT 過。修法：新增 `fn_is_activity_member(activity_id, user_id)`（`SECURITY DEFINER`，比照 `fn_get_config_interval` 的既有 helper function 慣例），把判斷邏輯包進去，內部查詢以 function owner 身份執行、不會再觸發呼叫者的 RLS policy，因此不遞迴；`activity_member` 的 SELECT policy 改呼叫這個 function。
+
+> **v1.12 變更紀錄**（§9 八個背景任務第一次系統性盤點完成度，補齊此前完全沒有對應函式的四個，外加兩處既有函式缺漏的通知觸發點）：
+> 1. 🟢 **盤點結果**：`fn_run_matching_engine`/`fn_cleanup_pending_confirmations`/`fn_start_activities`/`fn_remind_missing_location_candidates` 此前已真正落地；「Request 過期」「Downgrade 超時」「Activity 超時完成」「結束提醒」四個此前完全沒有對應函式，只有 §9 表格的文件描述；`respond_downgrade` 從未發過 `DOWNGRADE_RESULT`、`fn_cleanup_pending_confirmations` 從未發過「配對未成立」通知。這輪一次補齊全部六項，見 API.md §9 逐列更新。
+> 2. 🟢 **`fn_expire_requests()`（新，對應 R4 + Downgrade 發起）**：`target_size` 算法 = `greatest(2, 該 Request 目前實際 JOINED 人數)`，呼應第 7 節貪婪策略的精神——不發明武斷數字，直接問「現在實際到場的這幾個人，你們願不願意就這樣成局」；`downgrade_request.target_size` 本身有 DB CHECK `>= 2`，`greatest(2, ...)` 自然處理「只有 owner 一人」的邊界，若原本 `min_participants` 已經是下限 2，算出的 target 不可能低於它，自然落入不提供 downgrade 的分支，不需要額外特判第 8 節「`target_size` 必須低於原 `min_participants` 才有意義」這條規則。
+> 3. 🟢 **時間窗判斷改成「deadline 過去多久」而非「距離未來還剩多少」**：第 8 節原文語境是排程搶在 `latest_start` 之前跑（剩餘時間 < 10 分鐘就不問）；這輪掃描條件本身就是 `latest_start < now()`（deadline 已過），故改為 `now() - latest_start < app_config.downgrade_consent_window_minutes`——剛過期不久（在一個 consent window 的寬限期內）才提供這次機會，超過寬限期視為錯過時機，直接 `EXPIRED`，不再重新評估；已經問過一次（不論 `REJECTED`/`TIMEOUT`）也不再問第二次。
+> 4. 🟢 **EXPIRED 分支刻意不發通知**：EXPIRED 是「什麼都沒發生」的被動結果，不是需要打斷使用者的失敗事件，使用者下次查詢自己的 Request 狀態會自然看到；這輪也沒有為此新增 `notification_event_type` 值的預算。STATE_MACHINE.md 舊版 R4 文字「發通知告知未成團」是從未真正實作過的舊描述，這輪已同步更新，明確記錄這個決定。
+> 5. 🟢 **`fn_complete_activities()`（新，對應 A4）不需要重算法定人數門檻**：`submit_completion_report` 一旦達標，當下就已經在同一個 transaction 內把 `status` 轉成 `COMPLETED`（第 10 節），任何在這裡仍是 `status='ONGOING'` 的列，必然是「尚未達標」，兩條路徑天然互斥。轉移本身是靜默 fallback，不做 No-show 判定、不記事件、不發通知。
+> 6. 🟢 **`fn_remind_completions()`（新，對應「結束提醒」）去重比照 `fn_remind_missing_location_candidates` 的既有模式**：查 `notification` 表本身是否已對同一活動發過 `COMPLETE_CONFIRMATION`，不另存欄位。
+> 7. 🟢 **新增 `notification_event_type` 值 `MATCH_NOT_FORMED`**：`fn_cleanup_pending_confirmations()` 補上此前只有文件描述、從未真正發過的「配對未成立」無差別通知，不歸因原則比照 ERD 備註 16——payload 只帶收件者自己的 `request_id`，不透露對方是誰、拒絕還是超時。
+> 8. 🟢 **`respond_downgrade` 補上 `DOWNGRADE_RESULT` 通知**：任一人 `DISAGREE` 立即發（`status=REJECTED`）；全員 `AGREE` 的那一刻才發（`status=APPROVED`），部分同意時不提前發，比照 `respond_pending_confirmation` 只在最終 PC1/PC2 轉移時才通知的既有模式。
+> 9. 🔴 **已知、刻意不在這輪處理的既有落差**：`downgrade_request.status = 'APPROVED'` 之後「Matching Engine 以 `target_size` 重新撮合」（第 8 節、STATE_MACHINE.md）目前沒有任何程式碼實際消費 `target_size`——這是 `respond_downgrade` 原有註解就已承認的既有落差，這輪讓 `APPROVED` 狀態第一次真的可能被產生出來，但沒有一併補上撮合引擎讀取 `target_size` 的邏輯，留給未來獨立評估。
 
 ---
 
@@ -554,6 +565,8 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 
 🟢 **v1.11 新增兩個背景任務**（第 9.1 節）：`fn_start_activities()`（`MATCHED → ONGOING` 觸發點，同時鎖定 Activity Location）與 `fn_remind_missing_location_candidates()`（`start_time` 前零候選提醒）。跟既有背景任務一致，這輪只做成 callable function，不掛 `pg_cron.schedule`——排程本身的落地是另一個獨立、目前刻意擱置的任務（見 `app/lib/rpc/RPC_COVERAGE.md`）。
 
+🟢 **v1.12 補齊 API.md §9 表格裡此前完全沒有對應函式的四個背景任務**：`fn_expire_requests()`（Request 過期 R4 + Downgrade 發起）、`fn_expire_downgrades()`（Downgrade 超時）、`fn_complete_activities()`（Activity 超時完成 A4）、`fn_remind_completions()`（結束提醒）。至此 §9 表格列出的八個背景任務全數落地成 SQL callable function；同跟既有慣例一致，這輪一樣不掛 `pg_cron.schedule`。
+
 ### 13.1 系統可調運營參數（`app_config`，v1.8）
 
 部分時間參數（冷卻時間、確認窗口）原本寫死在 RPC function 內，v1.8 起改為讀取 `app_config`（`key`/`value`/`description`/`updated_at`）設定表，冷啟動階段與系統穩定後可用不同數值，不需重新部署即可調整。
@@ -562,7 +575,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 |---|---|---|
 | `cooldown_minutes` | `30 minutes` | 拒絕候選配對（`respond_pending_confirmation` 的 DECLINED 分支）或 `LATE_CANCEL`（`cancel_activity_participation`）後的請求冷卻時間（第 6.3 節） |
 | `confirm_window_minutes` | `10 minutes` | `PENDING_CONFIRMATION` 的確認窗口時長（第 12.1.2 節） |
-| `downgrade_consent_window_minutes` | `10 minutes` | Downgrade 同意窗口時長（第 8 節）；目前尚無 RPC 建立 `downgrade_request`，此值先 seed 供未來實作使用 |
+| `downgrade_consent_window_minutes` | `10 minutes` | Downgrade 同意窗口時長（第 8 節）；`fn_expire_requests()`（v1.12）建立 `downgrade_request` 時使用，也用來判斷「deadline 過去多久內仍值得提供 downgrade」的寬限期 |
 | `location_reminder_lead_minutes` | `30 minutes` | `fn_remind_missing_location_candidates()` 的提前量：`start_time` 前多久仍零候選就發送 `LOCATION_NOT_YET_PROPOSED`（第 9.1 節，v1.11，先前遺漏補列於此表） |
 | `meeting_point_update_cooldown_minutes` | `2 minutes` | `update_meeting_point` 同一使用者對同一活動連續修改的冷卻時間（第 9.2 節，v1.11.1） |
 

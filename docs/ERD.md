@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.11.1）
+# ERD — 校園活動配對 App（派生自 SPEC v1.12）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -228,7 +228,7 @@ erDiagram
     notification {
         uuid id PK
         uuid user_id FK
-        enum event_type "MATCH_SUCCESS | DOWNGRADE_REQUEST | DOWNGRADE_RESULT | ACTIVITY_REMINDER | COMPLETE_CONFIRMATION | LOCATION_NOT_YET_PROPOSED（v1.11） | MEETING_POINT_UPDATED（v1.11.1）"
+        enum event_type "MATCH_SUCCESS | DOWNGRADE_REQUEST | DOWNGRADE_RESULT | ACTIVITY_REMINDER | COMPLETE_CONFIRMATION | LOCATION_NOT_YET_PROPOSED（v1.11） | MEETING_POINT_UPDATED（v1.11.1） | MATCH_NOT_FORMED（v1.12）"
         jsonb payload
         timestamptz read_at "nullable"
         timestamptz created_at
@@ -255,7 +255,7 @@ erDiagram
 | `pending_confirmation_response` | `CONFIRMED` `DECLINED` `NO_RESPONSE` | §12.1（v1.4） |
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
-| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） | §16 開放問題 5（清單可能擴充） |
+| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） | §16 開放問題 5（清單可能擴充） |
 
 > **註記**：`request_member_status` 與 `activity_member_status` 兩個欄位 SPEC 只寫了「status」沒列值域，此處補定為最小可用集合（成員可在配對前退出 Request → `LEFT`；成員可個別取消已成立的活動 → `CANCELLED`，活動本身可能照常進行）。這是 schema 層補完，不是產品邏輯變更。
 
@@ -303,3 +303,5 @@ erDiagram
 36. **`activity_meeting_point_update` 是 append-only 記錄表、不做「只存最新一筆」設計（v1.11.1）**：跟 `activity_location_option`（設計備註 31/32 的計票不落地存欄位）同精神，但這裡連「目前值」本身都不落地存——`activity`/`activity_member` 上都沒有 `current_meeting_point` 這類欄位，「目前集合點」＝對這張表依 `created_at` 取最新一筆，歷史展示＝取最近幾筆，都是查詢而非欄位。**`created_at` 的預設值刻意用 `clock_timestamp()`，不是全庫慣用的 `now()`**：`now()` 回傳的是「目前 transaction 開始的時間」，同一個 transaction 內多次寫入會拿到完全相同的時間戳，對其他表的 `created_at`（多半只用來記錄「何時發生」，或在不同 transaction/RPC 呼叫之間比較）無所謂，但這張表的存在意義就是「依時間排序找最新」，同 transaction 內時間戳全部一樣會讓排序失去意義（撰寫 pgTAP 測試時就是被這個問題卡住才發現，見 `07_meeting_point_and_hint.test.sql`）；`clock_timestamp()` 回傳真實時鐘時間，同一 transaction 內每次呼叫都不同，才能保證這張表唯一的查詢需求（依時間取最新）永遠正確。
 37. **2 分鐘修改冷卻直接查記錄表本身，不開獨立欄位（v1.11.1）**：跟第 20/32 點同精神——`update_meeting_point` 判斷「該使用者對該活動是否還在冷卻中」，查詢 `activity_meeting_point_update where activity_id=... and updated_by=... and created_at > now() - cooldown` 即可，不需要在 `app_user` 或另一張表存一個「下次可修改時間」欄位（這點也刻意跟 `app_user.next_request_allowed_at`，設計備註 23 不同——那裡是「一人同時只有一個生效中的解鎖時間」，覆寫即可；這裡的冷卻窗口本來就要用這張表的歷史記錄回答，不需要額外欄位重複同一份事實）。
 38. **修正 `activity_member` 的 SELECT RLS policy 自我參照造成無限遞迴（v1.11.1，bug fix）**：`20260724120000_init.sql` 原始定義的 `my_activity_members_select` policy 在自己的 `USING` 子句裡查詢 `activity_member` 本身（`exists (select 1 from activity_member me where ...)`），PostgreSQL 對「一張表的 RLS policy 查詢自己」會直接判定為無限遞迴並報錯，不是效能問題。範圍比這次新增的 `activity_meeting_point_update` 更大：`activity` 的 SELECT policy 也會 join `activity_member`，等於任何 `authenticated` 角色對 `activity`/`activity_member` 的直接查詢，過去都會 500，只是從未被任何測試或前端路徑實際觸發過（前端只透過 `SECURITY DEFINER` RPC 存取，pgTAP 測試只用 postgres superuser 連線）。修法：新增 `fn_is_activity_member(activity_id, user_id)`（`SECURITY DEFINER`，比照 `fn_get_config_interval` 的既有 helper function 慣例）包住判斷邏輯，讓內部查詢以 function owner 身份執行、不再觸發呼叫者的 RLS policy。
+39. **`fn_expire_requests()` 的 `target_size` 算法沒有寫死數字，衍生自實際資料（v1.12）**：`downgrade_request.target_size` 的值取 `greatest(2, 該 Request 目前實際 JOINED 的 request_member 人數)`——呼應第 7 節貪婪策略的精神，不發明一個武斷數字，而是直接問「現在實際到場的這幾個人，你們願不願意就這樣成局」；`downgrade_request.target_size` 本身已有 DB CHECK `>= 2`（設計備註 21 的既有約束），`greatest(2, ...)` 自然處理「只有 owner 一人」的邊界，若原本 `min_participants` 已經是下限 2，算出的 target 不可能低於它，會自然落入「不提供 downgrade」分支，不需要在應用層額外特判設計備註 21 那條「必須低於原 `min_participants`」規則。這個函式同時遇到一個目前刻意不處理的邊緣情況：若某個 `REQUESTING` Request 自己的實際 JOINED 人數已經 `>= min_participants`（Matching Engine 一直沒找到可合併的另一個 Request），現行 `fn_run_matching_engine()` 的合併機制需要兩個 Request 才能成局，這種「自給自足但沒有合併對象」的列目前沒有任何路徑能讓它自己變成 Activity；`fn_expire_requests()` 對這種列選擇不動它（不強制 EXPIRED，因為 R4 的定義本身是「仍未達 `min_participants`」），但也沒有解法，留給未來獨立評估。
+40. **R4 `EXPIRED` 轉移刻意不發通知，跟 STATE_MACHINE.md 舊版文字不同（v1.12）**：STATE_MACHINE.md 在 `fn_expire_requests()` 實作之前的文字寫「發通知告知未成團」，但那從未真正落地過，是純文件描述。這輪實作時重新評估：EXPIRED 是「什麼都沒發生」的被動結果，跟 `MATCH_NOT_FORMED`（配對確實發生過、後來失敗）或 `DOWNGRADE_RESULT`（使用者被明確詢問過、有結果要告知）不是同一種等級的事件，不足以構成需要打斷使用者的推播；使用者下次查詢自己的 Request 狀態會自然看到 `EXPIRED`。這輪也沒有為此新增 `notification_event_type` 值的預算（只新增 `MATCH_NOT_FORMED` 一個），故不重用任何既有事件類型硬套上去。STATE_MACHINE.md 對應文字已同步更新為明確記錄這個決定，而非保留一句從未實作過的舊描述。

@@ -12,7 +12,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(9);
+select plan(10);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup：建立測試用 Users / Location / ActivityType 等基礎資料
@@ -179,6 +179,14 @@ select ok(
        and user_b_id = greatest((select user_a_id from fixtures), (select user_b_id from fixtures))
   ),
   '應寫入避雷降權記錄'
+);
+
+select is(
+  (select count(*)::int from notification
+    where event_type = 'MATCH_NOT_FORMED'
+      and user_id in ((select user_a_id from fixtures), (select user_b_id from fixtures))),
+  2,
+  '超時清理應向雙方各發一則 MATCH_NOT_FORMED 無差別通知（不歸因）'
 );
 
 -- -----------------------------------------------------------------------------
