@@ -400,6 +400,46 @@ Consistent with every other background job in this file: these four new
 functions are callable functions only, not scheduled via `pg_cron` — that
 remains a separate, deliberately deferred task.
 
+## v1.13 update: new "activity starting soon" reminder job, configurable multi-point lead time
+
+New migrations `20260724122300_activity_upcoming_enum.sql` +
+`20260724122400_activity_upcoming_rpc.sql`:
+
+1. **New notification event type `ACTIVITY_UPCOMING`** — deliberately kept
+   separate from the existing `ACTIVITY_REMINDER` (activity has *already*
+   started, sent by `fn_start_activities()` at the A2 transition). Same
+   underlying signal (an activity's `start_time` matters) but opposite timing
+   and different copy, so they don't share an event type.
+2. **`app_config.activity_reminder_lead_minutes_list`** — the first
+   `app_config` key that needs to hold *multiple* values (default `{30,10}`:
+   remind 30 minutes before start, and again 10 minutes before), unlike every
+   other existing key (`cooldown_minutes`, `confirm_window_minutes`,
+   `downgrade_consent_window_minutes`, `location_reminder_lead_minutes`),
+   which are all single scalars. Stored as a Postgres array literal
+   (`'{30,10}'`) rather than a comma-separated string, jsonb array, or split
+   across multiple keys (`activity_reminder_lead_1`/`_2`) — a literal casts
+   directly via `value::int[]` in a new `fn_get_config_int_array(p_key)`
+   helper, exactly mirroring the existing `fn_get_config_interval`'s
+   `value::interval` one-liner. No `string_to_array` step, no jsonb parsing,
+   no ad-hoc key-naming convention to maintain.
+3. **`fn_remind_upcoming_activities()`** (new) — scans `status='MATCHED'`
+   activities whose `start_time` falls within any configured lead point,
+   sends `ACTIVITY_UPCOMING` to every `JOINED` member with `lead_minutes` in
+   the payload so the client can render "starts in {lead_minutes} minutes".
+   Dedup mirrors `fn_remind_missing_location_candidates`'s existing pattern
+   (query `notification` itself, no extra column) but keyed on
+   `(activity_id, lead_minutes)` instead of just `activity_id`, since the
+   30-minute and 10-minute reminders for the same activity are two distinct
+   notifications that must each be able to fire independently.
+4. **Copy documented for the first time** (API.md §8.4) — no notification
+   event type in this repo had its title/body text formally recorded before
+   this round:
+   - `ACTIVITY_UPCOMING`: title "活動快開始了", body "還有 {lead_minutes} 分鐘，記得看一下活動地點跟集合地點"
+   - `ACTIVITY_REMINDER` (unchanged behavior, copy recorded for the first time): title "活動開始了", body "時間到囉，記得看一下活動地點跟集合地點再出發"
+
+Same as every other background job: callable function only, not scheduled
+via `pg_cron`.
+
 ## Error codes documented in API.md but never raised
 
 | Code | Documented at | What actually happens instead |

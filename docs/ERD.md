@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.12）
+# ERD — 校園活動配對 App（派生自 SPEC v1.13）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -228,7 +228,7 @@ erDiagram
     notification {
         uuid id PK
         uuid user_id FK
-        enum event_type "MATCH_SUCCESS | DOWNGRADE_REQUEST | DOWNGRADE_RESULT | ACTIVITY_REMINDER | COMPLETE_CONFIRMATION | LOCATION_NOT_YET_PROPOSED（v1.11） | MEETING_POINT_UPDATED（v1.11.1） | MATCH_NOT_FORMED（v1.12）"
+        enum event_type "MATCH_SUCCESS | DOWNGRADE_REQUEST | DOWNGRADE_RESULT | ACTIVITY_REMINDER | COMPLETE_CONFIRMATION | LOCATION_NOT_YET_PROPOSED（v1.11） | MEETING_POINT_UPDATED（v1.11.1） | MATCH_NOT_FORMED（v1.12） | ACTIVITY_UPCOMING（v1.13）"
         jsonb payload
         timestamptz read_at "nullable"
         timestamptz created_at
@@ -255,7 +255,7 @@ erDiagram
 | `pending_confirmation_response` | `CONFIRMED` `DECLINED` `NO_RESPONSE` | §12.1（v1.4） |
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
-| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） | §16 開放問題 5（清單可能擴充） |
+| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） `ACTIVITY_UPCOMING`（v1.13） | §16 開放問題 5（清單可能擴充） |
 
 > **註記**：`request_member_status` 與 `activity_member_status` 兩個欄位 SPEC 只寫了「status」沒列值域，此處補定為最小可用集合（成員可在配對前退出 Request → `LEFT`；成員可個別取消已成立的活動 → `CANCELLED`，活動本身可能照常進行）。這是 schema 層補完，不是產品邏輯變更。
 
@@ -305,3 +305,5 @@ erDiagram
 38. **修正 `activity_member` 的 SELECT RLS policy 自我參照造成無限遞迴（v1.11.1，bug fix）**：`20260724120000_init.sql` 原始定義的 `my_activity_members_select` policy 在自己的 `USING` 子句裡查詢 `activity_member` 本身（`exists (select 1 from activity_member me where ...)`），PostgreSQL 對「一張表的 RLS policy 查詢自己」會直接判定為無限遞迴並報錯，不是效能問題。範圍比這次新增的 `activity_meeting_point_update` 更大：`activity` 的 SELECT policy 也會 join `activity_member`，等於任何 `authenticated` 角色對 `activity`/`activity_member` 的直接查詢，過去都會 500，只是從未被任何測試或前端路徑實際觸發過（前端只透過 `SECURITY DEFINER` RPC 存取，pgTAP 測試只用 postgres superuser 連線）。修法：新增 `fn_is_activity_member(activity_id, user_id)`（`SECURITY DEFINER`，比照 `fn_get_config_interval` 的既有 helper function 慣例）包住判斷邏輯，讓內部查詢以 function owner 身份執行、不再觸發呼叫者的 RLS policy。
 39. **`fn_expire_requests()` 的 `target_size` 算法沒有寫死數字，衍生自實際資料（v1.12）**：`downgrade_request.target_size` 的值取 `greatest(2, 該 Request 目前實際 JOINED 的 request_member 人數)`——呼應第 7 節貪婪策略的精神，不發明一個武斷數字，而是直接問「現在實際到場的這幾個人，你們願不願意就這樣成局」；`downgrade_request.target_size` 本身已有 DB CHECK `>= 2`（設計備註 21 的既有約束），`greatest(2, ...)` 自然處理「只有 owner 一人」的邊界，若原本 `min_participants` 已經是下限 2，算出的 target 不可能低於它，會自然落入「不提供 downgrade」分支，不需要在應用層額外特判設計備註 21 那條「必須低於原 `min_participants`」規則。這個函式同時遇到一個目前刻意不處理的邊緣情況：若某個 `REQUESTING` Request 自己的實際 JOINED 人數已經 `>= min_participants`（Matching Engine 一直沒找到可合併的另一個 Request），現行 `fn_run_matching_engine()` 的合併機制需要兩個 Request 才能成局，這種「自給自足但沒有合併對象」的列目前沒有任何路徑能讓它自己變成 Activity；`fn_expire_requests()` 對這種列選擇不動它（不強制 EXPIRED，因為 R4 的定義本身是「仍未達 `min_participants`」），但也沒有解法，留給未來獨立評估。
 40. **R4 `EXPIRED` 轉移刻意不發通知，跟 STATE_MACHINE.md 舊版文字不同（v1.12）**：STATE_MACHINE.md 在 `fn_expire_requests()` 實作之前的文字寫「發通知告知未成團」，但那從未真正落地過，是純文件描述。這輪實作時重新評估：EXPIRED 是「什麼都沒發生」的被動結果，跟 `MATCH_NOT_FORMED`（配對確實發生過、後來失敗）或 `DOWNGRADE_RESULT`（使用者被明確詢問過、有結果要告知）不是同一種等級的事件，不足以構成需要打斷使用者的推播；使用者下次查詢自己的 Request 狀態會自然看到 `EXPIRED`。這輪也沒有為此新增 `notification_event_type` 值的預算（只新增 `MATCH_NOT_FORMED` 一個），故不重用任何既有事件類型硬套上去。STATE_MACHINE.md 對應文字已同步更新為明確記錄這個決定，而非保留一句從未實作過的舊描述。
+
+41. **`app_config` 第一次存「多個值」的參數，選擇 Postgres array literal 文字而非 jsonb/逗號分隔（v1.13）**：`activity_reminder_lead_minutes_list`（`fn_remind_upcoming_activities()` 用）需要同時表達 30 分鐘前、10 分鐘前兩個獨立提醒點，跟 `app_config` 其餘 key 都是單一數值（`cooldown_minutes` 等）不同。`value` 欄位本身是 `text`，既有慣例是「讀取端依語意 cast」（`fn_get_config_interval` 的 `value::interval`）；`'{30,10}'` 這個 Postgres array literal 可以直接 `value::int[]` 一行轉型（新增 `fn_get_config_int_array()`），跟既有寫法完全對稱，不需要 `string_to_array(value, ',')` 這道額外手續，也不需要引入 jsonb 解析（`value::jsonb` 再 `jsonb_array_elements_text`）這個目前全表都沒用過的路徑；更不採「拆成多筆 key」（`activity_reminder_lead_1`/`_2`……）方案，因為那需要一個沒人明講的命名規則、且未來想加第三個時間點就要新增 code 認得新 key 名，而不是單純改一筆資料。

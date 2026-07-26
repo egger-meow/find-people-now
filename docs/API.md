@@ -1,4 +1,4 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.12）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.13）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.7 與 [STATE_MACHINE.md](STATE_MACHINE.md) 定案之上。若與 SPEC 衝突，先改 SPEC。
 
@@ -117,6 +117,15 @@
 | 8.2 | `PATCH notification`（RLS：own） | 標記已讀（`read_at`）。 |
 | 8.3 | Push | FCM（SPEC §13），由背景任務發送，非 client API。 |
 
+### 8.4 通知文案（v1.13 起開始定案，逐則補齊）
+
+完整 `notification_event_type` 事件清單仍是 SPEC §16 開放問題 5 的一部分（其餘事件的文案細節待補）；目前只定案下面這兩則活動提醒相關的文案，因為 v1.13 新增 `ACTIVITY_UPCOMING` 時容易與既有 `ACTIVITY_REMINDER` 混淆，需要明確區分兩者的產品意圖與文字：
+
+| event_type | 標題 | 內文 |
+|---|---|---|
+| `ACTIVITY_UPCOMING`（v1.13） | 活動快開始了 | 還有 {lead_minutes} 分鐘，記得看一下活動地點跟集合地點（`{lead_minutes}` 依 payload 動態帶入，見 §9「活動開始前提前提醒」） |
+| `ACTIVITY_REMINDER` | 活動開始了 | 時間到囉，記得看一下活動地點跟集合地點再出發 |
+
 ---
 
 ## 9. 背景任務（非公開 API，pg_cron / Edge Function 排程）
@@ -131,6 +140,7 @@
 | Activity Location 零候選提醒（v1.11） | 每分鐘 | — | `fn_remind_missing_location_candidates()`：`status='MATCHED'` 且 `start_time` 在 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）內、仍無任何 `activity_location_option` → 向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知；去重靠查詢 `notification` 表本身是否已發過同一活動同一事件，不另存欄位。 |
 | Activity 超時完成 | 每小時 | A4 | 🟢 **v1.12 起第一次真正落地成 SQL**（`fn_complete_activities()`；先前完全沒有對應函式）：`status='ONGOING'` 且 `start_time + 24h` 已過 → 強制 `COMPLETED`，不做 No-show 判定、不記任何事件、不發通知（靜默 fallback）。不需要重新計算完成確認法定人數門檻——`submit_completion_report` 一旦達標當下就已經同步轉移為 `COMPLETED`（見 7.1），兩條路徑天然互斥，不會重複處理。 |
 | 結束提醒 | 每 15 分鐘 | — | 🟢 **v1.12 起第一次真正落地成 SQL**（`fn_remind_completions()`；先前完全沒有對應函式）：`status='ONGOING'` 且 `estimated_end_time` 已過、且尚未發過 `COMPLETE_CONFIRMATION` → 向全體 `JOINED` 成員發送 `COMPLETE_CONFIRMATION`；去重靠查詢 `notification` 表本身，同 Activity Location 零候選提醒的既有模式。 |
+| 活動開始前提前提醒（v1.13） | 每分鐘 | — | 🟢 **v1.13 新增**（`fn_remind_upcoming_activities()`）：掃描 `status='MATCHED'` 且 `start_time` 落在 `app_config.activity_reminder_lead_minutes_list`（預設 `{30,10}`，即 30 分鐘前 + 10 分鐘前兩個時間點）任一個時間點內的 Activity，向全體 `JOINED` 成員發送新事件 `ACTIVITY_UPCOMING`（跟「已經開始」的 `ACTIVITY_REMINDER` 區分，文案不同見 §8.4）；payload 帶 `lead_minutes` 供前端組文案。每個設定的時間點各自獨立掃描、獨立去重——去重鍵是 `(activity_id, lead_minutes)`，同一活動的 30 分鐘與 10 分鐘提醒是兩則獨立通知，查詢 `notification` 表本身即可，不另存欄位（同 Activity Location 零候選提醒的既有模式）。 |
 
 ---
 
@@ -161,3 +171,4 @@
 | §9.1 零候選地點不代選、改發提醒 (v1.11) | §9 背景任務「Activity Location 零候選提醒」`fn_remind_missing_location_candidates()` |
 | §9.2 Meeting Point / Meeting Hint，獨立於 activity_location_id 是否鎖定 (v1.11.1) | 6.6 / 6.7 |
 | §9 八個背景任務全數首次落地成 SQL (v1.12) | §9「Request 過期」`fn_expire_requests()` / 「Downgrade 超時」`fn_expire_downgrades()` / 「Activity 超時完成」`fn_complete_activities()` / 「結束提醒」`fn_remind_completions()`；並補齊 5.1 `respond_downgrade` 的 `DOWNGRADE_RESULT` 與「PENDING_CONFIRMATION 超時與拒絕清理」的 `MATCH_NOT_FORMED` 兩處此前缺漏的通知觸發點 |
+| 活動開始前提前提醒，可調多時間點 (v1.13) | §9「活動開始前提前提醒」`fn_remind_upcoming_activities()` + 新事件 `ACTIVITY_UPCOMING` + `app_config.activity_reminder_lead_minutes_list` + §8.4 文案 |

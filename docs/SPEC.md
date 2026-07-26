@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.12 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.13 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -96,6 +96,16 @@
 > 7. 🟢 **新增 `notification_event_type` 值 `MATCH_NOT_FORMED`**：`fn_cleanup_pending_confirmations()` 補上此前只有文件描述、從未真正發過的「配對未成立」無差別通知，不歸因原則比照 ERD 備註 16——payload 只帶收件者自己的 `request_id`，不透露對方是誰、拒絕還是超時。
 > 8. 🟢 **`respond_downgrade` 補上 `DOWNGRADE_RESULT` 通知**：任一人 `DISAGREE` 立即發（`status=REJECTED`）；全員 `AGREE` 的那一刻才發（`status=APPROVED`），部分同意時不提前發，比照 `respond_pending_confirmation` 只在最終 PC1/PC2 轉移時才通知的既有模式。
 > 9. 🔴 **已知、刻意不在這輪處理的既有落差**：`downgrade_request.status = 'APPROVED'` 之後「Matching Engine 以 `target_size` 重新撮合」（第 8 節、STATE_MACHINE.md）目前沒有任何程式碼實際消費 `target_size`——這是 `respond_downgrade` 原有註解就已承認的既有落差，這輪讓 `APPROVED` 狀態第一次真的可能被產生出來，但沒有一併補上撮合引擎讀取 `target_size` 的邏輯，留給未來獨立評估。
+
+> **v1.13 變更紀錄**（新增「活動開始前提前提醒」背景任務，可調多時間點）：
+> 1. 🟢 **新增 `notification_event_type` 值 `ACTIVITY_UPCOMING`**：跟既有 `ACTIVITY_REMINDER`（活動「已經」開始，A2 轉移時發送）刻意區分——`ACTIVITY_UPCOMING` 是活動「快」開始（`start_time` 尚未到），文案與產品意圖都不同，不能共用同一個事件類型。
+> 2. 🟢 **`app_config` 新增 `activity_reminder_lead_minutes_list`，值存成 Postgres array literal 文字**（預設 `'{30,10}'`，代表 30 分鐘前 + 10 分鐘前兩個提醒點）：這是 `app_config` 第一次需要存「多個時間點」而不是單一數值，跟既有 `cooldown_minutes`/`confirm_window_minutes`/`downgrade_consent_window_minutes`/`location_reminder_lead_minutes` 都是單一數值不同。評估過逗號分隔字串、jsonb array、拆成多筆 key 三種替代方案後選擇 Postgres array literal：讀取端新增 `fn_get_config_int_array(p_key)`，內部就是 `value::int[]` 一行轉型，跟既有 `fn_get_config_interval` 的 `value::interval` 寫法完全對稱，是同一套「`value` 欄位存文字、讀取端依語意 cast」慣例的自然延伸；不需要 `string_to_array` 或 jsonb 解析這些額外步驟，也不用像「拆成多筆 key」那樣自創一個沒人明講的命名規則（`activity_reminder_lead_1`/`_2`……）。
+> 3. 🟢 **`fn_remind_upcoming_activities()`（新）**：掃描 `status='MATCHED'` 且 `start_time` 落在任一個設定時間點內的 Activity，向全體 `JOINED` 成員發送 `ACTIVITY_UPCOMING`，payload 帶 `lead_minutes` 供前端動態組文案。對每個設定時間點各自獨立掃描、獨立去重——去重比照 `fn_remind_missing_location_candidates` 的既有模式（查 `notification` 表本身，不另存欄位），差別在於去重鍵是 `(activity_id, lead_minutes)` 這一組，而不是單純 `activity_id`，因為同一個活動的 30 分鐘提醒與 10 分鐘提醒是兩則不同的通知，必須能各自獨立觸發。
+> 4. 🟢 **文案定案**（第一次在文件裡正式記錄任何通知文案，`ACTIVITY_REMINDER` 沿用既有行為不變）：
+>    - `ACTIVITY_UPCOMING`：標題「活動快開始了」，內文「還有 {lead_minutes} 分鐘，記得看一下活動地點跟集合地點」（`{lead_minutes}` 依 payload 動態帶入）
+>    - `ACTIVITY_REMINDER`：標題「活動開始了」，內文「時間到囉，記得看一下活動地點跟集合地點再出發」
+>    完整 `NotificationEvent` 事件清單與文案仍是第 16 節開放問題 5 的一部分，這輪只定案這兩則。
+> 5. 跟既有背景任務慣例一致：只做成 callable function，不掛 `pg_cron.schedule`。
 
 ---
 
@@ -567,6 +577,8 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 
 🟢 **v1.12 補齊 API.md §9 表格裡此前完全沒有對應函式的四個背景任務**：`fn_expire_requests()`（Request 過期 R4 + Downgrade 發起）、`fn_expire_downgrades()`（Downgrade 超時）、`fn_complete_activities()`（Activity 超時完成 A4）、`fn_remind_completions()`（結束提醒）。至此 §9 表格列出的八個背景任務全數落地成 SQL callable function；同跟既有慣例一致，這輪一樣不掛 `pg_cron.schedule`。
 
+🟢 **v1.13 新增「活動開始前提前提醒」背景任務** `fn_remind_upcoming_activities()`：發送新事件 `ACTIVITY_UPCOMING`，跟 A2 轉移時發送的 `ACTIVITY_REMINDER`（活動已經開始）刻意區分。提醒時間點是**多個值**（預設 30 分鐘前 + 10 分鐘前），第一次讓 `app_config` 需要存一個值列表而不是單一數值，見下方 13.1 節 `activity_reminder_lead_minutes_list` 的存法說明。跟既有背景任務一致，只做成 callable function，不掛 `pg_cron.schedule`。
+
 ### 13.1 系統可調運營參數（`app_config`，v1.8）
 
 部分時間參數（冷卻時間、確認窗口）原本寫死在 RPC function 內，v1.8 起改為讀取 `app_config`（`key`/`value`/`description`/`updated_at`）設定表，冷啟動階段與系統穩定後可用不同數值，不需重新部署即可調整。
@@ -578,6 +590,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 | `downgrade_consent_window_minutes` | `10 minutes` | Downgrade 同意窗口時長（第 8 節）；`fn_expire_requests()`（v1.12）建立 `downgrade_request` 時使用，也用來判斷「deadline 過去多久內仍值得提供 downgrade」的寬限期 |
 | `location_reminder_lead_minutes` | `30 minutes` | `fn_remind_missing_location_candidates()` 的提前量：`start_time` 前多久仍零候選就發送 `LOCATION_NOT_YET_PROPOSED`（第 9.1 節，v1.11，先前遺漏補列於此表） |
 | `meeting_point_update_cooldown_minutes` | `2 minutes` | `update_meeting_point` 同一使用者對同一活動連續修改的冷卻時間（第 9.2 節，v1.11.1） |
+| `activity_reminder_lead_minutes_list` | `{30,10}` | 🟢 **v1.13**：`fn_remind_upcoming_activities()` 的提前量清單（分鐘）——第一次需要存**多個**時間點而不是單一數值，值直接存成 **Postgres array literal 文字**（`value::int[]` 一行轉型，讀取端 `fn_get_config_int_array()`），對稱既有 `fn_get_config_interval` 的 `value::interval` 寫法，不需要 `string_to_array`/jsonb 解析等額外步驟 |
 
 **MVP 階段透過 Dashboard 直接調整，未來量大後可評估是否需要獨立的 admin 介面。** 不新增管理用的 API/RPC——這是給團隊內部調整用的運營參數，不是使用者可見或可操作的功能。
 
