@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.13）
+# ERD — 校園活動配對 App（派生自 SPEC v1.14）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -68,6 +68,7 @@ erDiagram
         timestamptz suspended_until "nullable，連續 3 次 No-show 停權 7 天"
         timestamptz next_request_allowed_at "nullable，拒絕候選配對/LATE_CANCEL 觸發 30 分鐘冷卻（v1.7，SPEC §6.3）"
         timestamptz created_at
+        timestamptz deleted_at "nullable，帳號刪除去識別化標記，row 保留、id 不變（v1.14，見設計備註 42）"
     }
 
     activity_type {
@@ -307,3 +308,5 @@ erDiagram
 40. **R4 `EXPIRED` 轉移刻意不發通知，跟 STATE_MACHINE.md 舊版文字不同（v1.12）**：STATE_MACHINE.md 在 `fn_expire_requests()` 實作之前的文字寫「發通知告知未成團」，但那從未真正落地過，是純文件描述。這輪實作時重新評估：EXPIRED 是「什麼都沒發生」的被動結果，跟 `MATCH_NOT_FORMED`（配對確實發生過、後來失敗）或 `DOWNGRADE_RESULT`（使用者被明確詢問過、有結果要告知）不是同一種等級的事件，不足以構成需要打斷使用者的推播；使用者下次查詢自己的 Request 狀態會自然看到 `EXPIRED`。這輪也沒有為此新增 `notification_event_type` 值的預算（只新增 `MATCH_NOT_FORMED` 一個），故不重用任何既有事件類型硬套上去。STATE_MACHINE.md 對應文字已同步更新為明確記錄這個決定，而非保留一句從未實作過的舊描述。
 
 41. **`app_config` 第一次存「多個值」的參數，選擇 Postgres array literal 文字而非 jsonb/逗號分隔（v1.13）**：`activity_reminder_lead_minutes_list`（`fn_remind_upcoming_activities()` 用）需要同時表達 30 分鐘前、10 分鐘前兩個獨立提醒點，跟 `app_config` 其餘 key 都是單一數值（`cooldown_minutes` 等）不同。`value` 欄位本身是 `text`，既有慣例是「讀取端依語意 cast」（`fn_get_config_interval` 的 `value::interval`）；`'{30,10}'` 這個 Postgres array literal 可以直接 `value::int[]` 一行轉型（新增 `fn_get_config_int_array()`），跟既有寫法完全對稱，不需要 `string_to_array(value, ',')` 這道額外手續，也不需要引入 jsonb 解析（`value::jsonb` 再 `jsonb_array_elements_text`）這個目前全表都沒用過的路徑；更不採「拆成多筆 key」（`activity_reminder_lead_1`/`_2`……）方案，因為那需要一個沒人明講的命名規則、且未來想加第三個時間點就要新增 code 認得新 key 名，而不是單純改一筆資料。
+
+42. **帳號刪除：`app_user` row 保留、去識別化，不做真正的 `DELETE`（v1.14）**：`app_user.id references auth.users(id) on delete cascade` 是這個決定的直接觸發原因——若真的刪掉 `app_user`（不論是自己被 cascade 帶走，還是主動 `DELETE`），會撞上 13 張子表（`match_request.owner_id`、`activity_member.user_id`……）沒有 `on delete cascade` 的 FK，直接違反約束；若改成先清空這些子表，又會讓其他使用者依賴的 reliability／得票數／集合點等共用資料連帶失真（例如 `activity_location_vote` 的得票數會因為投票者的列被刪除而少算）。保留 row、id 不變、只清空 `email`/`display_name`/`avatar_url`/`gender`/`bio`/`department`/`contact_*` 這些識別欄位，是唯一不需要動任何子表 FK、也不影響其他使用者資料完整性的方案。新增 `deleted_at`（nullable timestamptz）作為「這是被去識別化的殼」的判斷依據；`email` 的兩條既有 CHECK（格式比對、`school_matches_email`）都補上 `deleted_at is not null or ...` 短路條件，讓已刪除帳號的佔位 email（`'deleted+' || id`，不再偽造符合網域格式的假信箱）不會被舊約束擋下。`user_reliability_event` 這張表刻意不做任何處理——實際查證 `fn_reliability_tier`/`fn_is_new_user` 的算法後確認，可信度計算只 `where user_id = p_user_id`，純粹自己查自己，不存在「別人的可信度依賴我的事件」這種跨人聚合。真正刪除 `auth.users` 那一列（GoTrue soft delete）是唯一需要 Edge Function 的地方，見 API.md §1.5 與 `supabase/functions/delete-auth-user/`。

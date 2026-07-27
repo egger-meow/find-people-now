@@ -80,3 +80,31 @@ Future<MyReliability> getMyReliability(SupabaseClient client) {
     },
   );
 }
+
+/// docs/API.md §1.5 — `rpc: delete_account()`.
+/// Only cleans up `public` schema business data and de-identifies the caller's
+/// `app_user` row (id unchanged, `deleted_at` set) — it does NOT touch
+/// `auth.users`. That step requires the `delete-auth-user` Edge Function (see
+/// `lib/account_deletion.dart`), which alone holds the service_role key
+/// needed to call the official Admin API.
+class DeleteAccountResult {
+  final bool success;
+  final bool? alreadyDeleted;
+  final bool? hadProfile;
+  DeleteAccountResult({required this.success, this.alreadyDeleted, this.hadProfile});
+}
+
+Future<DeleteAccountResult> deleteAccount(SupabaseClient client) {
+  return callRpc<DeleteAccountResult>(
+    client,
+    'delete_account',
+    decode: (data) {
+      final json = data as Map<String, dynamic>;
+      return DeleteAccountResult(
+        success: json['success'] as bool,
+        alreadyDeleted: json['already_deleted'] as bool?,
+        hadProfile: json['had_profile'] as bool?,
+      );
+    },
+  );
+}

@@ -19,6 +19,7 @@ class AppUser implements SupadartClass<AppUser> {
   final String? department;
   final DEGREE_LEVEL degreeLevel;
   final DateTime? nextRequestAllowedAt;
+  final DateTime? deletedAt;
 
   const AppUser({
     required this.id,
@@ -36,6 +37,7 @@ class AppUser implements SupadartClass<AppUser> {
     this.department,
     required this.degreeLevel,
     this.nextRequestAllowedAt,
+    this.deletedAt,
   });
 
   static String get table_name => 'app_user';
@@ -54,6 +56,7 @@ class AppUser implements SupadartClass<AppUser> {
   static String get c_department => 'department';
   static String get c_degreeLevel => 'degree_level';
   static String get c_nextRequestAllowedAt => 'next_request_allowed_at';
+  static String get c_deletedAt => 'deleted_at';
 
   static List<AppUser> converter(List<Map<String, dynamic>> data) {
     return data.map(AppUser.fromJson).toList();
@@ -79,6 +82,7 @@ class AppUser implements SupadartClass<AppUser> {
     String? department,
     DEGREE_LEVEL? degreeLevel,
     DateTime? nextRequestAllowedAt,
+    DateTime? deletedAt,
   }) {
     return {
       if (id != null) 'id': id,
@@ -101,6 +105,7 @@ class AppUser implements SupadartClass<AppUser> {
         'next_request_allowed_at': nextRequestAllowedAt
             .toUtc()
             .toIso8601String(),
+      if (deletedAt != null) 'deleted_at': deletedAt.toUtc().toIso8601String(),
     };
   }
 
@@ -120,6 +125,7 @@ class AppUser implements SupadartClass<AppUser> {
     String? department,
     required DEGREE_LEVEL degreeLevel,
     DateTime? nextRequestAllowedAt,
+    DateTime? deletedAt,
   }) {
     return _generateMap(
       id: id,
@@ -137,6 +143,7 @@ class AppUser implements SupadartClass<AppUser> {
       department: department,
       degreeLevel: degreeLevel,
       nextRequestAllowedAt: nextRequestAllowedAt,
+      deletedAt: deletedAt,
     );
   }
 
@@ -156,6 +163,7 @@ class AppUser implements SupadartClass<AppUser> {
     String? department,
     DEGREE_LEVEL? degreeLevel,
     DateTime? nextRequestAllowedAt,
+    DateTime? deletedAt,
   }) {
     return _generateMap(
       id: id,
@@ -173,6 +181,7 @@ class AppUser implements SupadartClass<AppUser> {
       department: department,
       degreeLevel: degreeLevel,
       nextRequestAllowedAt: nextRequestAllowedAt,
+      deletedAt: deletedAt,
     );
   }
 
@@ -215,6 +224,9 @@ class AppUser implements SupadartClass<AppUser> {
       nextRequestAllowedAt: jsonn['next_request_allowed_at'] != null
           ? DateTime.parse(jsonn['next_request_allowed_at'].toString())
           : null,
+      deletedAt: jsonn['deleted_at'] != null
+          ? DateTime.parse(jsonn['deleted_at'].toString())
+          : null,
     );
   }
 
@@ -234,6 +246,7 @@ class AppUser implements SupadartClass<AppUser> {
     String? department,
     DEGREE_LEVEL? degreeLevel,
     DateTime? nextRequestAllowedAt,
+    DateTime? deletedAt,
   }) {
     return {
       if (id != null) 'id': id,
@@ -252,6 +265,7 @@ class AppUser implements SupadartClass<AppUser> {
       if (degreeLevel != null) 'degree_level': degreeLevel,
       if (nextRequestAllowedAt != null)
         'next_request_allowed_at': nextRequestAllowedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
     };
   }
 
@@ -272,6 +286,7 @@ class AppUser implements SupadartClass<AppUser> {
       department: department,
       degreeLevel: degreeLevel,
       nextRequestAllowedAt: nextRequestAllowedAt,
+      deletedAt: deletedAt,
     );
   }
 
@@ -292,6 +307,7 @@ class AppUser implements SupadartClass<AppUser> {
     Object? department = _unset,
     Object? degreeLevel = _unset,
     Object? nextRequestAllowedAt = _unset,
+    Object? deletedAt = _unset,
   }) {
     return AppUser(
       id: id == _unset ? this.id : id as String,
@@ -323,6 +339,7 @@ class AppUser implements SupadartClass<AppUser> {
       nextRequestAllowedAt: nextRequestAllowedAt == _unset
           ? this.nextRequestAllowedAt
           : nextRequestAllowedAt as DateTime?,
+      deletedAt: deletedAt == _unset ? this.deletedAt : deletedAt as DateTime?,
     );
   }
 }

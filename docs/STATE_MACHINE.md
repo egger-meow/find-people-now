@@ -1,4 +1,4 @@
-# State Machine — 校園活動配對 App（派生自 SPEC v1.13）
+# State Machine — 校園活動配對 App（派生自 SPEC v1.14）
 
 > 本文件由 [SPEC.md](SPEC.md) §6.2、§7、§8、§9、§12.1 推導。**狀態值域已在 [ERD.md](ERD.md) 定案**（`request_status`、`activity_status`），本文件不新增狀態，價值在於補齊每條轉移的**觸發條件**：誰觸發（使用者／Matching Engine／排程）、什麼條件下觸發、伴隨哪些副作用。
 
@@ -35,7 +35,7 @@ stateDiagram-v2
 | PC1 | `PENDING_CONFIRMATION → MATCHED` | 使用者（雙方皆確認） | `pending_confirmation.user_a_response = CONFIRMED` 且 `user_b_response = CONFIRMED` | `pending_confirmation.status → CONFIRMED`；**建立 `activity`**（同 R3a 的建立邏輯）+ 發 `MATCH_SUCCESS` 通知 |
 | PC2 | `PENDING_CONFIRMATION → REQUESTING` | 使用者（任一方拒絕）或排程（`confirm_window_expire_at` 超時） | 任一方 `response = DECLINED`，或超時仍有一方 `NO_RESPONSE` | `pending_confirmation.status → DECLINED`/`TIMEOUT`；寫入 `match_history_avoidance(user_a_id, user_b_id, expire_at = now + 7 天)`；雙方皆收到「此次配對未成立」通知（🟢 v1.12 起真正發送，`notification_event_type = MATCH_NOT_FORMED`，`fn_cleanup_pending_confirmations()` 此前只有文件描述，從未真的發過），**不透露對方回應內容**（比照 SPEC §8 Downgrade 的不歸因原則，payload 只帶收件者自己的 `request_id`）；Request 退回 `REQUESTING` 重新進池；**若是主動 `DECLINED`（非 `TIMEOUT`）：對該使用者寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`**（v1.7 冷卻機制，SPEC §6.3，`TIMEOUT` 不觸發） |
 | R4 | `REQUESTING → EXPIRED` | 排程（時間觸發，🟢 v1.12 第一次真正落地成 SQL：`fn_expire_requests()`，先前完全沒有對應函式） | `latest_start` 已過，該 Request 實際 JOINED 人數仍未達 `min_participants`，且沒有可提供的 Downgrade 機會（`allow_downgrade=false`，或已經問過一次 `REJECTED`/`TIMEOUT` 不再問第二次，或已過期太久超過 `downgrade_consent_window_minutes` 的寬限期） | 🟢 **v1.12 決定：不發通知**（跟 v1.11 之前這裡「發通知告知未成團」的文件描述不同——那從未真正實作過；EXPIRED 是被動的「什麼都沒發生」結果，不是需要打斷使用者的失敗事件，使用者下次查詢自己的 Request 會自然看到，這輪也沒有為此新增 `notification_event_type` 值的預算，見 SPEC.md v1.12 變更紀錄）；不記任何 Reliability 事件 |
-| R5 | `REQUESTING → CANCELLED` | 使用者主動取消 | 無前置條件 | Request 移出 Queue；配對成立**前**取消不寫 `user_reliability_event`（懲罰只針對已成立的活動，見 Activity A4/A5） |
+| R5 | `REQUESTING → CANCELLED` | 使用者主動取消（`cancel_request`），**或 v1.14 帳號刪除**（`delete_account()`，owner 名下仍在 `DRAFT`/`REQUESTING`/`PENDING_CONFIRMATION` 的 Request 一併轉 `CANCELLED`，避免其他已加入成員卡死等一個永遠不會再回應的 owner；owner 若是非 owner 成員身分，則走 `request_member.status → LEFT`，不動 Request 本身） | 無前置條件 | Request 移出 Queue；配對成立**前**取消不寫 `user_reliability_event`（懲罰只針對已成立的活動，見 Activity A4/A5） |
 
 ### Downgrade 子流程（掛在 REQUESTING 內部，不是獨立狀態）
 
@@ -75,7 +75,7 @@ stateDiagram-v2
 | A2 | `MATCHED → ONGOING` | 排程（時間觸發，`fn_start_activities()`，v1.11 第一次落地成 SQL） | `current_time ≥ start_time`，**不用人工按開始** | 🟢 **v1.11**：若 `activity_location_id` 仍為 `NULL`，**先**依 Activity Location 投票結果鎖定候選（得票最高者勝出，同票取最早提案者；零候選則維持 `NULL`，不代替使用者決定，見下方「Activity Location 子流程」），**再**轉 `ONGOING`；發送 `ACTIVITY_REMINDER` 通知 |
 | A3 | `ONGOING → COMPLETED` | 系統（由回報驅動） | `completion_report` 回報數 ≥ 50% 參與者（法定人數門檻） | 結算多數決：被半數以上回報「沒來」者記 `NO_SHOW`；正常出席者記 `ATTENDED`；**2 人活動互咬特例**：雙方各說對方沒來 → 不判、雙方都不記事件。結算後檢查「連續 3 次 No-show」→ 是則寫 `app_user.suspended_until = now + 7 天` |
 | A4 | `ONGOING → COMPLETED` | 排程（時間觸發） | `start_time + 24h` 仍未達回報門檻 | 自動轉 COMPLETED，**不做任何 No-show 判定**、不記任何事件（未達法定人數不判任何人） |
-| A5 | `MATCHED → CANCELLED` | 使用者主動取消 | 個別成員取消：`activity_member.status → CANCELLED`；全體取消或人數跌破可成行下限時整個 Activity → `CANCELLED` | 依取消時點記 `user_reliability_event`：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h → `LATE_CANCEL`（記 1 次取消，**並對該使用者寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`**，v1.7 冷卻機制，SPEC §6.3，`EARLY_CANCEL` 不觸發） |
+| A5 | `MATCHED → CANCELLED` | 使用者主動取消（`cancel_activity_participation`） | 個別成員取消：`activity_member.status → CANCELLED`；全體取消或人數跌破可成行下限時整個 Activity → `CANCELLED` | 依取消時點記 `user_reliability_event`：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h → `LATE_CANCEL`（記 1 次取消，**並對該使用者寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`**，v1.7 冷卻機制，SPEC §6.3，`EARLY_CANCEL` 不觸發）。🟢 **v1.14 帳號刪除**（`delete_account()`）對個別成員觸發同一個 `activity_member.status → CANCELLED`，但**刻意不比照上述寫 `user_reliability_event`、不觸發冷卻**——這是使用者離開平台，不是失信行為，沒有未來需要懲罰或冷卻的對象 |
 | A6 | `ONGOING → CANCELLED` | 使用者主動取消 | 同 A5，發生在進行中 | 同 A5 的 `LATE_CANCEL` 處理（開始後取消必然 <1h 前，同樣觸發 30 分鐘冷卻） |
 
 ### Activity Location 子流程（掛在 MATCHED 內部，不是獨立狀態，v1.11）

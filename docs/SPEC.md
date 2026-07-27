@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.13 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.14 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -106,6 +106,14 @@
 >    - `ACTIVITY_REMINDER`：標題「活動開始了」，內文「時間到囉，記得看一下活動地點跟集合地點再出發」
 >    完整 `NotificationEvent` 事件清單與文案仍是第 16 節開放問題 5 的一部分，這輪只定案這兩則。
 > 5. 跟既有背景任務慣例一致：只做成 callable function，不掛 `pg_cron.schedule`。
+
+> **v1.14 變更紀錄**（帳號刪除功能——Apple/Google 上架硬性規定，第 16 節開放問題 6 隱私權政策文件的阻斷項之一）：
+> 1. 🟢 **架構決定：`app_user` row 保留、去識別化，不做真正的 `DELETE`**：`app_user.id` 對 `auth.users(id)` 掛的是 `on delete cascade`（見 init migration），若真的 `DELETE FROM auth.users` 或 `DELETE FROM app_user`，會立刻撞上 13 張子表（`match_request.owner_id`、`activity_member.user_id` 等）沒有 `on delete cascade` 的 FK；若改成先清空子表，又會讓其他使用者依賴的 reliability／得票數／集合點等共用資料連帶失真。保留 row、id 不變、只清空識別欄位，是唯一不需要動任何子表 FK、也不影響其他使用者資料完整性的方案。`app_user` 新增 `deleted_at`（nullable timestamptz）作為判斷依據；不新增 `deleted_reason`——目前只有使用者自行發起這一條刪除路徑，不為不存在的 admin/GDPR 代刪路徑預先開欄位。
+> 2. 🟢 **唯一偏離「純 SQL RPC」慣例之處：新增 Edge Function `delete-auth-user`**：查證 Supabase 官方文件確認，刪除 `auth.users` 那一列（含正確清理 GoTrue 內部的 sessions/refresh_tokens/identities）只有官方 Admin API `auth.admin.deleteUser(id, shouldSoftDelete: true)` 有維護保證，而這支 API 強制要求 `service_role`/`supabase_admin` 角色的 JWT（`GOTRUE_JWT_ADMIN_ROLES`），這把 key 不能進 Flutter client。新增的 Edge Function 是唯一持有這把 key 的地方，職責僅止於「驗證呼叫者自己的 JWT → 呼叫官方 Admin API」，不做任何業務資料清理。`shouldSoftDelete` 明確傳 `true`：官方原始碼與文件都確認這個參數預設 `false`（backward compatibility），不明確傳會變成真正 hard delete、意外撞上上一點的 cascade。
+> 3. 🟢 **`delete_account()` RPC（新）**：負責 `public` schema 全部業務資料清理，冪等（`deleted_at is not null` 直接 no-op），不檢查 `suspended_until`（停權是懲罰性狀態，帳號刪除權不該被拿來當懲罰籌碼）。逐表判斷結果——仍在進行中的 `match_request`（自己是 owner）強制轉 `CANCELLED`、（自己是非 owner 成員）轉 `LEFT`；仍在進行中的 `activity_member` 轉 `CANCELLED`（刻意不寫 Reliability 事件、不觸發冷卻，因為這是「離開平台」不是失信行為）；純屬自己的 `notification` 收件匣與涉及自己的 `match_history_avoidance` pair 直接硬刪除；其餘 9 張子表（`activity_type`/`location.created_by`、`activity_location_option`/`vote`、`activity_meeting_point_update`、`downgrade_consent`、`completion_report`、`user_reliability_event`、`rematch_vote`）維持原樣不動——全部是其他成員仍在依賴的共用資料（得票數/集合點/同意計票/結算稽核/可信度都是即時查詢，不會因為 `app_user` 的識別欄位被清空而變化）或純粹是無 PII 的歸屬 FK。**特別查證並修正一個原本的直覺誤解**：`user_reliability_event` 的可信度計算（`fn_reliability_tier`/`fn_is_new_user`）實際上只 `where user_id = p_user_id`，純粹自己查自己，不存在「別人的可信度依賴我的事件」這種跨人聚合，故這張表不需要任何去識別化處理。
+> 4. 🟢 **`app_user` 去識別化欄位**：`email` 改成 `'deleted+' || id`（不再偽造符合雙校網域格式的假信箱，且需要同步放寬 `email` 格式 CHECK 與 `school_matches_email` CHECK，兩者都補上 `deleted_at is not null or ...` 短路條件）；`display_name`/`avatar_url`（NOT NULL 門檻）改固定佔位字串／空字串；`gender`/`bio`/`department`/`contact_ig`/`contact_discord` 清空為 `NULL`；`contact_line` 留一項佔位值以滿足 `at_least_one_contact` CHECK（至少一項非 NULL）；`degree_level`/`school` 刻意保留不清——粗粒度分類（3 選 1／2 選 1），去掉姓名/照片/聯絡方式後不具單獨識別力，且 `school` 被 `school_matches_email` CHECK 綁死要跟新 `email` 一致，清空反而要拆 CHECK，不划算。
+> 5. 🟢 **21 支身分驗證類 RPC 全數補上 `ACCOUNT_DELETED` 檢查**（新增錯誤碼）：`complete_profile`、`get_my_reliability`、`propose_activity_type`、`create_request`、`submit_request`、`cancel_request`、`get_or_create_invite_link`、`join_request_by_token`、`revoke_invite_link`、`get_activity_contacts`、`cancel_activity_participation`、`get_pending_confirmation_status`、`respond_pending_confirmation`、`submit_completion_report`、`rematch_vote`、`leave_request`、`propose_location`、`propose_activity_location`、`vote_activity_location`、`update_meeting_point`、`update_meeting_hint`、`respond_downgrade`——逐一核對所有 `auth.uid()`-driven RPC 得出的完整清單，排除 `search_activity_type`（不使用 `auth.uid()`，純公開搜尋）。**`complete_profile` 特別納入的理由**：帳號刪除後、access token 尚未自然過期的殘留視窗內，同一個身分若重新呼叫這支 onboarding 入口，`on conflict (id) do update` 會直接把已清空的識別欄位覆寫回真實資料，等同繞過整個刪除機制「復活」帳號；加了檢查後，已刪除帳號重新呼叫會被擋下。
+> 6. 🟢 **Flutter 端流程與已驗證的真實限制**：`deleteAccountFlow()` 依序呼叫 `delete_account()` RPC（先清業務資料）→ Edge Function（2 次重試，1 秒/3 秒 backoff）→ 不論 Edge Function 結果一律本地登出。**用本地環境實測（非假設）**：`auth.admin.deleteUser` 本身對已 soft-delete 的帳號重複呼叫確認冪等（no-op），但 Edge Function 自己會先用呼叫者的 JWT 呼叫 `getUser()` 解析身分，這一步在帳號已被刪除後會直接回 401——代表「重複呼叫這支 Edge Function」不是「兩次都 200」，而是「第一次 200，之後每次 401」，這正是重試設計本來就能正確處理的情況，不影響最終收斂到本地登出。已知殘留風險：soft delete 不會讓已核發、尚未自然過期的 access token 立刻失效（JWT 特性），但屆時業務資料已經清空、`ACCOUNT_DELETED` 檢查也已生效，風險視窗內不會有任何實質影響。
 
 ---
 
@@ -619,7 +627,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 3. 冷啟動種子使用者渠道（社團/系學會/校內二手拍平台合作）
 4. 實際地點清單內容，依校分列且需標注 `campus`（v1.11 起地點的 school 已不足以判斷距離，見 SPEC v1.11 變更紀錄第 1 點；NYCU：光復籃球場／工程館／浩然／女二／竹湖…；NTHU：風雲球場…）
 5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION／LOCATION_NOT_YET_PROPOSED（v1.11），細節待補）
-6. 隱私權政策文件（收集資料種類、聯絡方式用途、刪除帳號流程、第三方服務 Supabase 揭露）—— 上架前必須補齊
+6. 隱私權政策文件（收集資料種類、聯絡方式用途、第三方服務 Supabase 揭露）—— 上架前必須補齊；🟢 **刪除帳號流程本身已於 v1.14 實作完成**（`delete_account()` RPC + `delete-auth-user` Edge Function，見上方 v1.14 變更紀錄與 [PRIVACY_POLICY.md](PRIVACY_POLICY.md) 第五節），此項開放問題範圍縮小為文件其餘部分
 7. 新人配對資格限制的 `min_participants ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
 8. 貪婪成局策略下，連續模式（`group_size_step` 為 null）的選項只要 `min_participants < max_participants`，達到 `min_participants` 就會立即成局、不等待湊到 `max_participants`——v1.5 版本「不限，人多熱鬧」的固定選項在 v1.6 UI 重構後已不存在，但此行為特性對任何連續模式選項依然成立，是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 6.2、7 節）
 9. `max_participants` 為 NULL 時是否要在寫入當下就填入 `activity_type.default_max_participants`、還是維持 NULL 由讀取端 fallback，兩種做法對「人數超額」判斷（第 7 節）行為一致但實作路徑不同，待 API 設計階段定案

@@ -1,4 +1,4 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.13）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.14）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.7 與 [STATE_MACHINE.md](STATE_MACHINE.md) 定案之上。若與 SPEC 衝突，先改 SPEC。
 
@@ -9,6 +9,8 @@
 - **驗證**：所有呼叫需 Supabase Auth JWT（信箱 OTP 登入）。`auth.uid()` 即操作者，request body 不帶 `user_id`。
 - **錯誤格式（v1.7 修正）**：RPC 以 `raise exception using message = '<CODE>'`（需要更細節的子原因時另加 `detail = '<detail>'`）回傳；下表的「錯誤碼」即為 `message` 的值，PostgREST 會將其映射到回應 JSON 的 `message` 欄位，client 應以此欄位比對錯誤碼。🔴 **不使用 `errcode = '<CODE>'`**：PL/pgSQL 的 `errcode` 只接受標準 5 碼 SQLSTATE 或內建的 condition name，塞入任意自訂字串（如 `'UNAUTHORIZED'`）會在 `raise` 當下直接拋出 `unrecognized exception condition`，蓋掉原本要回傳的錯誤，導致這裡列出的所有錯誤碼實際上從未真正生效過；v1.7 已修正全部 6 個 RPC migration 檔案的 65 處呼叫。
 - **停權檢查**：`suspended_until > now()` 的使用者呼叫任何寫入類 RPC 一律回 `USER_SUSPENDED`。
+- **已刪除帳號檢查（v1.14）**：`app_user.deleted_at is not null` 的呼叫者，呼叫任一身分驗證類（`auth.uid()`-driven）RPC 一律回 `ACCOUNT_DELETED`，唯一例外是 1.5 `delete_account()` 本身（冪等，重複呼叫回傳 `already_deleted: true` 而不是報錯）。完整受檢 RPC 清單見 SPEC.md v1.14 變更紀錄第 5 點，不在此重複列出。
+- **唯一偏離「純 RPC」慣例之處（v1.14）**：`auth.users` 的刪除（1.5 `delete_account()` 之後接續的一步）改走 Edge Function `supabase/functions/delete-auth-user/`，因為官方 Admin API `auth.admin.deleteUser()` 強制要求 `service_role` JWT，不能讓 Flutter client 持有這把 key；除此之外全部功能維持 SQL RPC，不新增第二支 Edge Function。
 
 ---
 
@@ -20,8 +22,9 @@
 | 1.2 | `rpc: complete_profile(display_name, avatar_url, degree_level, department?, gender?, bio?, contact_ig?, contact_line?, contact_discord?)` | 註冊硬性門檻（SPEC §2, v1.4）：`avatar_url` 必填 + `degree_level` (enum `UNDERGRAD\|MASTER\|PHD`) 必選 + 三項聯絡方式至少一項。`bio` 與 `department` 選填、不卡門檻。未完成必填項前所有 Request 類 RPC 回 `PROFILE_INCOMPLETE`。**`school` 不是參數**——由 email 網域 mapping（`nycu.edu.tw → NYCU`、`nthu.edu.tw → NTHU`）在 server 端寫入，DB CHECK 保證與網域一致（SPEC §2：不讓使用者自選）。 |
 | 1.3 | `PATCH app_user`（PostgREST，RLS：own row） | 更新個人資料（含 `bio`, `department`）；DB CHECK 保證改完仍滿足硬性門檻與必填約束。 |
 | 1.4 | `rpc: get_my_reliability()` | 回 `{ tier: TRUSTED\|NORMAL\|NEW, is_new_user: bool }`，即時由 `fn_reliability_tier` / `fn_is_new_user` 計算（SPEC §12：不存分數欄位）。 |
+| 1.5 | `rpc: delete_account()` **接著** Edge Function `delete-auth-user`（v1.14） | **App 內建帳號刪除**（Apple App Store Review Guideline 5.1.1(v) / Google Play 兩者的上架硬性規定，SPEC §16 開放問題 6）。分兩步、Flutter 端依序呼叫：① `delete_account()` RPC——清理 `public` schema 業務資料、去識別化 `app_user`（row 保留、id 不變，見 ERD 設計備註 42），冪等（`{ success, already_deleted? }`）。② Edge Function `delete-auth-user`——驗證呼叫者 JWT 後呼叫官方 `auth.admin.deleteUser(id, shouldSoftDelete: true)`，只有這支 Function 持有 `service_role` key。呼叫端（Flutter）對步驟②做 2 次重試（1 秒/3 秒 backoff）後放棄，不論結果一律本地登出——步驟①已完成、`ACCOUNT_DELETED` 檢查已生效，殘留風險視窗很小，不需要背景重試佇列。 |
 
-錯誤碼：`INVALID_EMAIL_DOMAIN`、`PROFILE_INCOMPLETE`、`DEGREE_LEVEL_REQUIRED`、`NO_CONTACT_METHOD`
+錯誤碼：`INVALID_EMAIL_DOMAIN`、`PROFILE_INCOMPLETE`、`DEGREE_LEVEL_REQUIRED`、`NO_CONTACT_METHOD`、`ACCOUNT_DELETED`（v1.14，見 §0）
 
 ---
 
@@ -172,3 +175,4 @@
 | §9.2 Meeting Point / Meeting Hint，獨立於 activity_location_id 是否鎖定 (v1.11.1) | 6.6 / 6.7 |
 | §9 八個背景任務全數首次落地成 SQL (v1.12) | §9「Request 過期」`fn_expire_requests()` / 「Downgrade 超時」`fn_expire_downgrades()` / 「Activity 超時完成」`fn_complete_activities()` / 「結束提醒」`fn_remind_completions()`；並補齊 5.1 `respond_downgrade` 的 `DOWNGRADE_RESULT` 與「PENDING_CONFIRMATION 超時與拒絕清理」的 `MATCH_NOT_FORMED` 兩處此前缺漏的通知觸發點 |
 | 活動開始前提前提醒，可調多時間點 (v1.13) | §9「活動開始前提前提醒」`fn_remind_upcoming_activities()` + 新事件 `ACTIVITY_UPCOMING` + `app_config.activity_reminder_lead_minutes_list` + §8.4 文案 |
+| App 內建帳號刪除，Apple/Google 上架硬性規定 (v1.14) | 1.5 `delete_account()` + Edge Function `delete-auth-user` + `app_user.deleted_at` + 21 支 RPC 的 `ACCOUNT_DELETED` 檢查（見 §0）+ ERD 設計備註 42 |

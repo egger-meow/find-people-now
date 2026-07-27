@@ -440,6 +440,94 @@ New migrations `20260724122300_activity_upcoming_enum.sql` +
 Same as every other background job: callable function only, not scheduled
 via `pg_cron`.
 
+## v1.14 update: account deletion (Apple/Google App Store hard requirement)
+
+New migrations `20260724122500_delete_account_schema.sql` +
+`20260724122600_delete_account_guard.sql` +
+`20260724122700_delete_account_rpc.sql`, plus a new Edge Function
+`supabase/functions/delete-auth-user/`:
+
+1. **Architecture decision, backed by real research, not assumption**:
+   confirmed via Supabase's own docs that deleting `auth.users` correctly
+   (cleaning up GoTrue-internal sessions/refresh_tokens/identities) has no
+   self-service client endpoint — only the Admin API
+   (`auth.admin.deleteUser`), which requires a `service_role`/`supabase_admin`
+   JWT. That key can never live in the Flutter client, so this is the one
+   piece of the whole feature that genuinely cannot stay a plain SQL RPC. A
+   thin Edge Function is the exception; every other piece is a SQL RPC as
+   usual.
+2. **`app_user` row is kept and de-identified in place, never actually
+   `DELETE`d** — discovered `app_user.id references auth.users(id) on
+   delete cascade` in the init migration, which means a real row delete
+   (whether triggered directly or via the auth.users cascade) would
+   immediately hit FK violations on 13 child tables that have no `on delete
+   cascade` (`match_request.owner_id`, `activity_member.user_id`, etc.).
+   Clearing those child rows first was rejected too — it would corrupt other
+   users' reliability counts, vote tallies, and meeting-point history. Kept
+   row + unchanged `id` + scrubbed identity columns sidesteps the FK problem
+   entirely and preserves every other user's data integrity, at the cost of
+   one new nullable `app_user.deleted_at` column.
+3. **21 RPCs re-`create or replace`d in one migration** to add an
+   `ACCOUNT_DELETED` guard right after each one's existing `UNAUTHORIZED`
+   check: `complete_profile`, `get_my_reliability`, `propose_activity_type`,
+   `create_request`, `submit_request`, `cancel_request`,
+   `get_or_create_invite_link`, `join_request_by_token`,
+   `revoke_invite_link`, `get_activity_contacts`,
+   `cancel_activity_participation`, `get_pending_confirmation_status`,
+   `respond_pending_confirmation`, `submit_completion_report`,
+   `rematch_vote`, `leave_request`, `propose_location`,
+   `propose_activity_location`, `vote_activity_location`,
+   `update_meeting_point`, `update_meeting_hint`, `respond_downgrade`.
+   Excluded: `search_activity_type` (doesn't use `auth.uid()` at all — pure
+   public search) and every `fn_*` background job / internal helper (no
+   caller identity to check). `complete_profile` is the one non-obvious
+   inclusion: it's the onboarding entry point, but it's also an `upsert`
+   (`on conflict (id) do update`) — without the guard, a still-valid
+   residual access token from a just-deleted account could call it again and
+   overwrite the scrubbed fields back to real data, silently "undeleting"
+   the account.
+4. **`delete_account()` RPC** — idempotent (`deleted_at is not null` is a
+   no-op returning `{success: true, already_deleted: true}`), doesn't gate on
+   `suspended_until` (deletion is a right, not something a punitive status
+   should be able to block). De-identifies `app_user` (email becomes
+   `'deleted+' || id`, which also required loosening the two existing email
+   CHECK constraints with a `deleted_at is not null or ...` escape hatch —
+   they can't be altered in place, only dropped and re-added).
+   `degree_level`/`school` are deliberately left untouched (coarse
+   categories, not individually identifying once name/photo/contacts are
+   gone). Auto-cancels/leaves any still-open `match_request` and
+   `activity_member` the caller is part of so other members aren't left
+   waiting on a ghost; deliberately does **not** write a
+   `user_reliability_event` or trigger the cooldown for the activity-member
+   case — leaving the platform isn't a no-show. Hard-deletes the caller's own
+   `notification` inbox and any `match_history_avoidance` rows involving
+   them (both are either purely private or permanently useless once the
+   account can never re-enter the matching pool). Every other child table
+   (`activity_location_option`/`vote`, `activity_meeting_point_update`,
+   `downgrade_consent`, `completion_report`, `user_reliability_event`,
+   `rematch_vote`, `activity_type`/`location.created_by`) is left completely
+   untouched — confirmed by reading `fn_reliability_tier`/`fn_is_new_user`
+   that reliability is purely self-referential (`where user_id =
+   p_user_id`), so there is no cross-user data-integrity risk from leaving a
+   deleted user's historical rows in place.
+5. **Idempotency, verified against the real local instance, not assumed**:
+   `auth.admin.deleteUser(id, true)` itself is confirmed idempotent (GoTrue's
+   `internal/api/admin.go` early-returns on an already-`DeletedAt` user). But
+   the Edge Function resolves the caller's identity first via
+   `supabaseAdmin.auth.getUser(jwt)`, and a real test against a running local
+   instance showed that call returns 401 once the account is already
+   soft-deleted — even with the same still-valid access token. So a repeat
+   call to `delete-auth-user` isn't "200 both times", it's "200 then 401
+   forever after". The Flutter-side retry loop (`account_deletion.dart`,
+   2 retries with 1s/3s backoff) handles this correctly regardless, since it
+   only exists to cover a transient failure on the *first* successful
+   attempt and unconditionally signs out locally either way — documented
+   here so nobody "fixes" the 401 into a false idempotency guarantee later.
+6. `shouldSoftDelete` is passed explicitly as `true` — both the Go source
+   and the JS client docs confirm it defaults to `false` ("backward
+   compatibility"), which would hard-delete `auth.users` and trigger the
+   cascade from point 2.
+
 ## Error codes documented in API.md but never raised
 
 | Code | Documented at | What actually happens instead |

@@ -45,6 +45,7 @@ enum ApiErrorCode {
   activityLocationLocked('ACTIVITY_LOCATION_LOCKED'),
   activityNotActive('ACTIVITY_NOT_ACTIVE'),
   meetingPointUpdateCooldown('MEETING_POINT_UPDATE_COOLDOWN'),
+  accountDeleted('ACCOUNT_DELETED'),
   unknown('__UNKNOWN__');
 
   final String code;
