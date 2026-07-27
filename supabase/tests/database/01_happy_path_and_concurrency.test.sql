@@ -63,7 +63,11 @@ begin
     ('NTHU', v_campus_nthu, '風雲球場', true)
   on conflict (school, name) do update set is_active = true, campus = excluded.campus;
 
-  -- User A / B 各自發起 籃球 (min 6, max 12)，直接寫入 REQUESTING 以重現既有撮合情境
+  -- User A / B 各自發起 籃球 (min 6, max 12)，各自都只有自己 1 人，直接寫入
+  -- REQUESTING——v1.15 起 fn_run_matching_engine 改成 N 方累積演算法，>2 人撮合
+  -- 必須用「6 個互不相識、各自 1 人的陌生人」這個真實情境測試，不能再用「單一
+  -- Request 塞假成員」的方式繞過（那其實是「已透過邀請連結成團的 5 人 + 1 位
+  -- 陌生人」，是另一種合法但不同的情境，見 v1.15 SPEC 變更紀錄）
   insert into match_request (
     owner_id, activity_type_id, school, campus,
     earliest_start, latest_start, min_participants, max_participants, status
@@ -86,16 +90,28 @@ begin
   insert into request_member (request_id, user_id, role, status)
   values (v_req_b.id, v_user_b_id, 'OWNER', 'JOINED');
 
-  -- 模擬 4 名成員併入
+  -- 另外 4 位互不相識的陌生人，各自獨立發起 1 人的 Request（時間窗與 A/B 相同、
+  -- 同校同 campus），驗證 Matching Engine 真的能把 6 個獨立陌生人逐步累積成團，
+  -- 而不是仰賴某一筆 Request 自己先塞好幾個人
   for i in 1..4 loop
     declare
-      v_ex_id uuid := gen_random_uuid();
+      v_ex_id  uuid := gen_random_uuid();
+      v_ex_req match_request;
     begin
       insert into auth.users (id, email) values (v_ex_id, 'rel_ex_' || i || '@nycu.edu.tw');
       insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig)
       values (v_ex_id, 'rel_ex_' || i || '@nycu.edu.tw', 'NYCU', 'Ex ' || i, 'https://avatar.ex', 'UNDERGRAD', 'rel_ex_' || i || '_ig');
+
+      insert into match_request (
+        owner_id, activity_type_id, school, campus,
+        earliest_start, latest_start, min_participants, max_participants, status
+      ) values (
+        v_ex_id, v_act_type_id, 'NYCU', v_campus_nycu,
+        now(), now() + interval '2 hours', 6, 12, 'REQUESTING'
+      ) returning * into v_ex_req;
+
       insert into request_member (request_id, user_id, role, status)
-      values (v_req_a.id, v_ex_id, 'MEMBER', 'JOINED');
+      values (v_ex_req.id, v_ex_id, 'OWNER', 'JOINED');
     end;
   end loop;
 
