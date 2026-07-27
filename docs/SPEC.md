@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.14 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.14.1 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -114,6 +114,13 @@
 > 4. 🟢 **`app_user` 去識別化欄位**：`email` 改成 `'deleted+' || id`（不再偽造符合雙校網域格式的假信箱，且需要同步放寬 `email` 格式 CHECK 與 `school_matches_email` CHECK，兩者都補上 `deleted_at is not null or ...` 短路條件）；`display_name`/`avatar_url`（NOT NULL 門檻）改固定佔位字串／空字串；`gender`/`bio`/`department`/`contact_ig`/`contact_discord` 清空為 `NULL`；`contact_line` 留一項佔位值以滿足 `at_least_one_contact` CHECK（至少一項非 NULL）；`degree_level`/`school` 刻意保留不清——粗粒度分類（3 選 1／2 選 1），去掉姓名/照片/聯絡方式後不具單獨識別力，且 `school` 被 `school_matches_email` CHECK 綁死要跟新 `email` 一致，清空反而要拆 CHECK，不划算。
 > 5. 🟢 **21 支身分驗證類 RPC 全數補上 `ACCOUNT_DELETED` 檢查**（新增錯誤碼）：`complete_profile`、`get_my_reliability`、`propose_activity_type`、`create_request`、`submit_request`、`cancel_request`、`get_or_create_invite_link`、`join_request_by_token`、`revoke_invite_link`、`get_activity_contacts`、`cancel_activity_participation`、`get_pending_confirmation_status`、`respond_pending_confirmation`、`submit_completion_report`、`rematch_vote`、`leave_request`、`propose_location`、`propose_activity_location`、`vote_activity_location`、`update_meeting_point`、`update_meeting_hint`、`respond_downgrade`——逐一核對所有 `auth.uid()`-driven RPC 得出的完整清單，排除 `search_activity_type`（不使用 `auth.uid()`，純公開搜尋）。**`complete_profile` 特別納入的理由**：帳號刪除後、access token 尚未自然過期的殘留視窗內，同一個身分若重新呼叫這支 onboarding 入口，`on conflict (id) do update` 會直接把已清空的識別欄位覆寫回真實資料，等同繞過整個刪除機制「復活」帳號；加了檢查後，已刪除帳號重新呼叫會被擋下。
 > 6. 🟢 **Flutter 端流程與已驗證的真實限制**：`deleteAccountFlow()` 依序呼叫 `delete_account()` RPC（先清業務資料）→ Edge Function（2 次重試，1 秒/3 秒 backoff）→ 不論 Edge Function 結果一律本地登出。**用本地環境實測（非假設）**：`auth.admin.deleteUser` 本身對已 soft-delete 的帳號重複呼叫確認冪等（no-op），但 Edge Function 自己會先用呼叫者的 JWT 呼叫 `getUser()` 解析身分，這一步在帳號已被刪除後會直接回 401——代表「重複呼叫這支 Edge Function」不是「兩次都 200」，而是「第一次 200，之後每次 401」，這正是重試設計本來就能正確處理的情況，不影響最終收斂到本地登出。已知殘留風險：soft delete 不會讓已核發、尚未自然過期的 access token 立刻失效（JWT 特性），但屆時業務資料已經清空、`ACCOUNT_DELETED` 檢查也已生效，風險視窗內不會有任何實質影響。
+
+> **v1.14.1 變更紀錄**（API.md 錯誤碼表 vs. 實際 RPC 行為全面校對，見 `app/lib/rpc/RPC_COVERAGE.md`；不新增任何產品決策，純粹是文件與實作對齊）：
+> 1. 🟢 **`cancel_activity_participation` 補上 `ACTIVITY_NOT_ACTIVE` 閘門**：STATE_MACHINE.md A5/A6 本來就只定義 `MATCHED`/`ONGOING` 兩個來源狀態，但 RPC 從未實際檢查 `activity.status`，對一個已 `COMPLETED`/`CANCELLED` 的活動仍可呼叫，會誤記一次 `LATE_CANCEL` 事件並觸發冷卻——這是真正的驗證缺口，不是文件問題。重用 6.6/6.7 既有的 `ACTIVITY_NOT_ACTIVE`（同一個「`status not in (MATCHED, ONGOING)`」條件），不新造一個從未實作過的 `ACTIVITY_ALREADY_ENDED`。
+> 2. 🟢 **`submit_completion_report` 補上兩個閘門**：① 活動必須是 `ONGOING` 才能提交完成回報（`ACTIVITY_NOT_ENDED`）——此前完全沒有任何時間點/狀態檢查，`MATCHED`（還沒開始）或 `COMPLETED`/`CANCELLED`（已經結束/取消）的活動都能被提交，後者還會讓結算迴圈重跑一次、重複寫入 `user_reliability_event`，這個閘門一併堵上。② `absent_user_ids` 必須全部是該活動的實際成員（`INVALID_ABSENT_TARGET`）——此前完全沒有成員資格檢查。兩者都是 SPEC §10 早已明訂、只是 RPC 層從未真正落實的規則。
+> 3. 🟢 **API.md 錯誤碼表校對，如實反映既有的合理替代行為**：`INVITE_LINK_REVOKED`（`join_request_by_token` 對缺失/撤銷/過期的 token 一律回 `INVITE_LINK_EXPIRED`，呼叫端不需要分辨三者，區分沒有實質意義）、`INVALID_PENDING_CONFIRMATION`（實際回 `NOT_FOUND` detail `PENDING_CONFIRMATION_NOT_FOUND`，跟其他所有 lookup RPC 同一慣例）、`CONTACT_EXPIRED`（`get_activity_contacts` 用 `members[].contacts == null` 表達逾期，讓 client 不必為一個常態情境寫例外處理）——三者從文件移除，不回頭補一個從未被需要過的錯誤碼。`NAME_BLACKLISTED`（`propose_activity_type` 的黑名單預檢從未實作）維持不動，是已知、明確延後處理的落差，不在本輪範圍內。
+> 4. 🟢 **API.md 補上 3 個「有 raise、文件沒寫」的錯誤碼**：`INVALID_INPUT`（`create_request`/`propose_activity_type`/`propose_location`/`rematch_vote` 共用的輸入格式錯誤 catch-all）、`INVALID_MIN_PARTICIPANTS`/`INVALID_MAX_PARTICIPANTS`（`create_request` 的人數範圍檢查）、`FORBIDDEN` detail `NOT_PARTY_TO_CONFIRMATION`（`respond_pending_confirmation` 擋非當事人）。
+> 5. 🟢 **API.md 第 2 行的 ERD.md/STATE_MACHINE.md 版本引用修正**：原文標注「ERD.md v1.7」是好幾輪前遺留、從未跟著後續改版同步更新的過期編號；改為如實引用兩份文件目前的實際版本（v1.14，本輪未變動兩者內容，故版本沿用不動）。
 
 ---
 

@@ -1,6 +1,6 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.14）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.14.1）
 
-> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.7 與 [STATE_MACHINE.md](STATE_MACHINE.md) 定案之上。若與 SPEC 衝突，先改 SPEC。
+> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.14 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
 
 ## 0. 總約定
 
@@ -38,7 +38,7 @@
 | 2.4 | `GET location?is_active=eq.true&status=eq.APPROVED&school=eq.{我的 school}&campus=eq.{選定 campus}`（PostgREST) | 固定地點下拉清單，依校分列（SPEC §1）；client 只顯示自己學校、已審核通過的清單，server 端最終由 3.1 的 `INVALID_CAMPUS_SCOPE` 把關。`status=eq.APPROVED` 為 v1.10 新增，排除提案中/被拒的地點；`campus=eq.{...}` 為 v1.11 新增（`location.campus`，見 ERD 備註 28），選定 Matching Scope 的 campus 後用來列出該範圍內的候選地點（供 6.4 `propose_activity_location` 用）。 |
 | 2.5 | `rpc: propose_location(name, school, campus)`（v1.10，v1.11 新增 `campus` 參數） | 提議新地點，流程比照 2.3：`PENDING` → admin 審核。不做關鍵字黑名單預檢——地點名稱塞入違規字眼的難度較高，且 MVP 真正的把關是 admin 人工查 `pending_review` view（ERD 備註 26/27）再核准。`campus` 為必填（v1.11）：核准後的地點需要 `campus` 才能參與任何撮合，不補會產生無法使用的死地點。 |
 
-錯誤碼：`NAME_BLACKLISTED`、`DUPLICATE_TYPE_NAME`、`DUPLICATE_LOCATION_NAME`（v1.10）
+錯誤碼：`NAME_BLACKLISTED`、`DUPLICATE_TYPE_NAME`、`DUPLICATE_LOCATION_NAME`（v1.10）、`INVALID_INPUT`（v1.14.1 補上文件：2.3 空白名稱 detail `NAME_REQUIRED`；2.5 空白名稱/校區 detail `NAME_REQUIRED`/`CAMPUS_REQUIRED`）
 
 > 🟢 **審核管道（v1.10）**：`activity_type`/`location` 的 `PENDING` 審核共用同一張 `pending_review` view（UNION 兩表 `status = 'PENDING'` 的項目），admin 直接在 Supabase Studio 查詢並修改對應原表的 `status` 欄位，不新建任何 admin 專屬 API 或前端頁面（ERD 備註 27）。
 
@@ -59,7 +59,7 @@
 | 3.8 | `rpc: join_request_by_token(invite_token)` | — | **透過邀請連結加入 Request (v1.5)**：已完成身份驗證的使用者帶入 `invite_token` 加入（本質為信任引導 Trust Bootstrap，不與 Friend 表綁定）。檢查：Token 未撤銷、未過期、未超過 `max_participants` 上限、通過新人低人數限制與同校隔離檢查。加入後新增 `request_member` 記錄。 |
 | 3.9 | `rpc: revoke_invite_link(request_id)` | — | **撤銷邀請連結 (v1.5)**：僅 owner 可呼叫，設定 `revoked_at = now()`，使該 Token 立即失效。 |
 
-錯誤碼：`ALREADY_REQUESTING`（單一 REQUESTING 限制）、`WINDOW_EXCEEDS_24H`、`NEW_USER_LOW_HEADCOUNT`（新人不可 ≤2 人局）、`INVALID_CAMPUS_SCOPE`（v1.11，`campus` 在 owner 的 `school` 底下無任何已核准地點，取代 v1.10 及之前版本 3.1 用的 `SCHOOL_LOCATION_MISMATCH`）、`SCHOOL_LOCATION_MISMATCH`（v1.11 起僅用於 3.8 `join_request_by_token` 的跨校加入檢查——學校本身不對，跟 `INVALID_CAMPUS_SCOPE` 語意分開，見 ERD 備註 34）、`INVALID_GROUP_SIZE_OPTION`（人數不符步階）、`INVITE_LINK_REVOKED`（邀請連結已撤銷）、`INVITE_LINK_EXPIRED`（邀請連結已失效）、`REQUEST_FULL`（已達人數上限）、`REQUEST_NOT_OPEN`、`USER_SUSPENDED`、`ACTIVE_ACTIVITY_IN_PROGRESS`（名下有進行中活動，v1.7）、`REQUEST_COOLDOWN_ACTIVE`（拒絕/晚取消觸發的 30 分鐘冷卻未過，v1.7）
+錯誤碼：`ALREADY_REQUESTING`（單一 REQUESTING 限制）、`WINDOW_EXCEEDS_24H`、`NEW_USER_LOW_HEADCOUNT`（新人不可 ≤2 人局）、`INVALID_CAMPUS_SCOPE`（v1.11，`campus` 在 owner 的 `school` 底下無任何已核准地點，取代 v1.10 及之前版本 3.1 用的 `SCHOOL_LOCATION_MISMATCH`）、`SCHOOL_LOCATION_MISMATCH`（v1.11 起僅用於 3.8 `join_request_by_token` 的跨校加入檢查——學校本身不對，跟 `INVALID_CAMPUS_SCOPE` 語意分開，見 ERD 備註 34）、`INVALID_GROUP_SIZE_OPTION`（人數不符步階）、`INVITE_LINK_EXPIRED`（邀請連結已失效——🔴 v1.14.1 校對：不存在/已撤銷/已過期的 token 一律回這個碼，不單獨區分「已撤銷」，呼叫端的補救方式相同，故文件移除先前誤植的 `INVITE_LINK_REVOKED`）、`REQUEST_FULL`（已達人數上限）、`REQUEST_NOT_OPEN`、`USER_SUSPENDED`、`ACTIVE_ACTIVITY_IN_PROGRESS`（名下有進行中活動，v1.7）、`REQUEST_COOLDOWN_ACTIVE`（拒絕/晚取消觸發的 30 分鐘冷卻未過，v1.7）、`INVALID_INPUT`（v1.14.1 補上文件：3.1 `create_request` 的時間桶不合法 detail `INVALID_TIME_BUCKET`、活動類型不存在或未核准 detail `ACTIVITY_TYPE_NOT_FOUND_OR_NOT_APPROVED`）、`INVALID_MIN_PARTICIPANTS`（v1.14.1 補上文件：3.1 `min_participants < 2`）、`INVALID_MAX_PARTICIPANTS`（v1.14.1 補上文件：3.1 `max_participants < min_participants`）
 
 ---
 
@@ -70,7 +70,7 @@
 | 4.1 | `rpc: get_pending_confirmation_status(request_id)` | — | **專用受控讀取 RPC（SECURITY DEFINER）**：給前端查詢當前候選配對進度。回傳 `{ pending_confirmation_id, status: PENDING\|CONFIRMED\|DECLINED\|TIMEOUT, confirm_window_expire_at }`。<br>🟢 **對稱不歸因原則（ERD 備註 16）**：RPC 僅傳回整體 `status`，**絕對不暴露**對方的個人選擇 (`CONFIRMED`/`DECLINED`/`NO_RESPONSE`)，避免任何一方判斷出是誰造成配對未成立。 |
 | 4.2 | `rpc: respond_pending_confirmation(pending_confirmation_id, confirm: bool)` | PC1 / PC2 | 使用者在 10 分鐘 `CONFIRM_WINDOW` 內回應。🟢 **允許反悔（v1.7 澄清）**：窗口內可重複呼叫改變心意，覆寫先前的回應，不視為錯誤——過去版本文件曾列出 `ALREADY_RESPONDED` 錯誤碼，但 RPC 從未真正實作過這道擋，v1.7 正式移除，避免文件承諾不存在的行為。<br>🟢 **原子性與並發安全**：RPC **僅更新呼叫者自己的欄位**（`user_a_response` 或 `user_b_response`，設定為 `CONFIRMED` 或 `DECLINED`），並於同一 Transaction 內（利用 `UPDATE ... WHERE status = 'PENDING'` 或 `SELECT ... FOR UPDATE` 加鎖）原子性判定雙方回應結果：<br>① **若雙方皆為 CONFIRMED**：轉移至 **PC1**（`pending_confirmation.status → CONFIRMED`，建立 `Activity` + `activity_member` 並發送 `MATCH_SUCCESS` 通知）。<br>② **若任一方為 DECLINED**：轉移至 **PC2**（`pending_confirmation.status → DECLINED`；並由 RPC 或背景 Worker 執行 PC2 清理：寫入 `match_history_avoidance` 降權記錄、雙方 Request 無差別退回 Queue `REQUESTING`、發送無差別「配對未成立」通知）。**主動傳 `confirm=false` 的呼叫者另會被寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`（v1.7 冷卻機制，SPEC §6.3；由背景 Worker 觸發的 `TIMEOUT` 不寫入此欄位，因為無法歸咎任何一方）**。 |
 
-錯誤碼：`CONFIRMATION_WINDOW_CLOSED`（10 分鐘已過）、`INVALID_PENDING_CONFIRMATION`
+錯誤碼：`CONFIRMATION_WINDOW_CLOSED`（10 分鐘已過）、`NOT_FOUND`（detail `PENDING_CONFIRMATION_NOT_FOUND`——🔴 v1.14.1 校對：`pending_confirmation_id` 不存在時實際回這個碼，跟其他所有 lookup RPC 同一慣例，文件移除先前誤植、從未實作過的 `INVALID_PENDING_CONFIRMATION`）、`FORBIDDEN`（detail `NOT_PARTY_TO_CONFIRMATION`，v1.14.1 補上文件：4.2 呼叫者既非 request_a 也非 request_b 的 owner）
 
 ---
 
@@ -90,14 +90,16 @@
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
 | 6.1 | `GET activity` + `GET activity_member`（PostgREST，RLS：成員） | — | 我的活動、成員名單、`source_request_id` 來源。🔴 v1.11.1 修正一個 bug：兩表的 RLS SELECT policy 過去會觸發「infinite recursion detected in policy」（`activity_member` policy 自我參照），這個端點對 `authenticated` 角色實際上一直是 500，見 SPEC v1.11.1 變更紀錄第 7 條、ERD 設計備註 38。 |
-| 6.2 | `rpc: get_activity_contacts(activity_id)` | — | **聯絡方式唯一出口**（不走 RLS 直讀 `app_user.contact_*`）。規則（SPEC §11）：呼叫者是該活動成員，且（`now() < contact_visible_until`【以 Activity 的 `created_at` 起算 +24h，SPEC v1.1 變更 5】**或** 與對方互按過再約）。回各成員自選公開的聯絡方式。 |
-| 6.3 | `rpc: cancel_activity_participation(activity_id)` | A5/A6 | 個別取消。server 依時點記事件：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h 或已開始 → `LATE_CANCEL`（SPEC §10 處罰分級，**同時寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`，v1.7 冷卻機制，SPEC §6.3；`EARLY_CANCEL` 不觸發**）。 |
+| 6.2 | `rpc: get_activity_contacts(activity_id)` | — | **聯絡方式唯一出口**（不走 RLS 直讀 `app_user.contact_*`）。規則（SPEC §11）：呼叫者是該活動成員，且（`now() < contact_visible_until`【以 Activity 的 `created_at` 起算 +24h，SPEC v1.1 變更 5】**或** 與對方互按過再約）。回各成員自選公開的聯絡方式。🔴 **v1.14.1 校對補充**：逾期或未達成互相再約條件時，該成員的 `contacts` 欄位回傳 `null`（HTTP 200），不是拋錯——client 一律先拿到成員名單再自行判斷 `contacts` 是否為 null，不需要 try/catch 一個常態情境。此規則跟活動的 `status`（`MATCHED`/`ONGOING`/`COMPLETED`/`CANCELLED`）無關，`COMPLETED`/`CANCELLED` 後的活動一樣照上述規則判斷，不額外加狀態閘門（活動結束後仍能看到彼此聯絡方式正是這支 RPC 存在的目的）。 |
+| 6.3 | `rpc: cancel_activity_participation(activity_id)` | A5/A6 | 個別取消。🔴 **v1.14.1 補上驗證缺口**：活動須為 `MATCHED`/`ONGOING`（STATE_MACHINE.md A5/A6 本來就只定義這兩個來源狀態），否則回 `ACTIVITY_NOT_ACTIVE`（重用 6.6/6.7 既有的碼，同一個狀態閘門，不是新錯誤碼）。通過後 server 依時點記事件：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h 或已開始 → `LATE_CANCEL`（SPEC §10 處罰分級，**同時寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`，v1.7 冷卻機制，SPEC §6.3；`EARLY_CANCEL` 不觸發**）。 |
 | 6.4 | `rpc: propose_activity_location(activity_id, location_id)`（v1.11） | — | **提案 Activity Location 候選（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須屬於該活動的 `(school, campus)` 範圍內、`status='APPROVED'` 的地點。提案動作同時視為投給該候選一票；若該地點已是既有候選（他人先提過），本次呼叫退化成投票，不視為錯誤。 |
 | 6.5 | `rpc: vote_activity_location(activity_id, location_id)`（v1.11） | — | **對既有候選投票（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須已是該活動的既有候選（先前透過 6.4 建立），否則回 `NOT_FOUND`。一人一票，可改票（重複呼叫覆寫先前的投票）。得票最高者於 `start_time` 由背景任務 `fn_start_activities()` 鎖定；同票取最早提案者勝出（見 SPEC §9.1、ERD 設計備註 31/32）。 |
 | 6.6 | `rpc: update_meeting_point(activity_id, description)`（v1.11.1） | — | **更新集合地點（SPEC §9.2）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`；`description` 不可為空白。獨立於 `activity_location_id` 是否鎖定，append-only（不覆寫舊記錄，「目前集合點」＝取最新一筆）。同一人 2 分鐘內連續呼叫回 `MEETING_POINT_UPDATE_COOLDOWN`（`app_config.meeting_point_update_cooldown_minutes`，預設 2 分鐘）。成功後向該活動全體 `JOINED` 成員發送 `MEETING_POINT_UPDATED` 通知。 |
 | 6.7 | `rpc: update_meeting_hint(activity_id, hint)`（v1.11.1） | — | **更新個人化見面提示（SPEC §9.2）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`；`hint` 最多 30 字（RPC 層 `INVALID_INPUT` + DB 層 CHECK 雙重防線），可傳空字串/空白清空。直接覆寫 `activity_member.meeting_hint`，不像 6.6 是 append-only 記錄，不觸發通知。 |
 
-錯誤碼：`NOT_ACTIVITY_MEMBER`、`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）、`ACTIVITY_NOT_ACTIVE`（v1.11.1，6.6/6.7 的活動已 `COMPLETED`/`CANCELLED`，見 SPEC §9.2 邊界判斷）、`MEETING_POINT_UPDATE_COOLDOWN`（v1.11.1，6.6 冷卻中）、`INVALID_INPUT`（v1.11.1，6.6 空白描述 / 6.7 提示超過 30 字）
+錯誤碼：`NOT_ACTIVITY_MEMBER`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）、`ACTIVITY_NOT_ACTIVE`（v1.11.1 起用於 6.6/6.7；v1.14.1 起 6.3 也重用同一個碼，見上方 6.3 說明）、`MEETING_POINT_UPDATE_COOLDOWN`（v1.11.1，6.6 冷卻中）、`INVALID_INPUT`（v1.11.1，6.6 空白描述 / 6.7 提示超過 30 字）
+
+> 🔴 **v1.14.1 校對移除**：`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED` 兩個碼從未被任何 RPC 實際 raise 過。前者的替代行為（`contacts` 回傳 `null`）已是合理設計，見上方 6.2 說明；後者拆成兩支 RPC 分別判斷——6.2 刻意不需要這個狀態閘門（見 6.2 說明），6.3 的真缺口已改用既有的 `ACTIVITY_NOT_ACTIVE` 補上（見上方 6.3 說明與 RPC_COVERAGE.md）。
 
 ---
 
@@ -105,10 +107,10 @@
 
 | # | Endpoint | State Machine | 說明 |
 |---|---|---|---|
-| 7.1 | `rpc: submit_completion_report(activity_id, result, absent_user_ids?)` | A3 | 三選一（SPEC §10）。`absent_user_ids` 僅 `result=REPORTED_ABSENT` 時必填，且限定該活動成員。每人一次（DB unique）。達 ≥50% 門檻時由本 RPC 內嵌觸發結算：多數決記 `NO_SHOW`／`ATTENDED`；2 人互咬不判；連續 3 次 No-show → 寫 `suspended_until`。 |
+| 7.1 | `rpc: submit_completion_report(activity_id, result, absent_user_ids?)` | A3 | 三選一（SPEC §10）。🔴 **v1.14.1 補上驗證缺口**：活動須為 `ONGOING` 才能提交，否則回 `ACTIVITY_NOT_ENDED`（此前完全沒有狀態檢查，`MATCHED`/`COMPLETED`/`CANCELLED` 都能被提交）。`absent_user_ids` 僅 `result=REPORTED_ABSENT` 時必填，且限定該活動成員，否則回 `INVALID_ABSENT_TARGET`（此前完全沒有成員資格檢查）。每人一次（DB unique）。達 ≥50% 門檻時由本 RPC 內嵌觸發結算：多數決記 `NO_SHOW`／`ATTENDED`；2 人互咬不判；連續 3 次 No-show → 寫 `suspended_until`。 |
 | 7.2 | `rpc: rematch_vote(activity_id, to_user_id)` | — | 按「👍 再約」。當對方也投過（雙向成立）→ 該兩人間聯絡方式永久保留（6.2 的判定來源），並各發通知。 |
 
-錯誤碼：`ALREADY_REPORTED`、`INVALID_ABSENT_TARGET`（指認對象不在成員名單）、`ACTIVITY_NOT_ENDED`
+錯誤碼：`ALREADY_REPORTED`、`INVALID_ABSENT_TARGET`（指認對象不在成員名單，v1.14.1 起真正落實）、`ACTIVITY_NOT_ENDED`（活動須為 `ONGOING`，v1.14.1 起真正落實）、`INVALID_INPUT`（v1.14.1 補上文件：7.2 `rematch_vote` 對自己投票 detail `CANNOT_VOTE_SELF`）
 
 ---
 

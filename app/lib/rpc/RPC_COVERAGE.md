@@ -528,26 +528,89 @@ New migrations `20260724122500_delete_account_schema.sql` +
    compatibility"), which would hard-delete `auth.users` and trigger the
    cascade from point 2.
 
+## v1.14.1 update: closed out the 11-code doc↔code discrepancy from the general proofreading pass
+
+Full round-trip resolution of both discrepancy tables below (`Error codes
+documented in API.md but never raised` and `Error codes raised in practice
+but not documented`), verified against `supabase test db` (141 assertions,
+14 files, all green) after a `supabase db reset`. Scope was explicitly bounded
+to doc↔code alignment, no product decisions — see SPEC.md's v1.14.1 changelog
+entry for the user-facing summary.
+
+1. **Two real implementation gaps fixed**, both in
+   `20260724122800_fix_activity_validation_gaps.sql`, both new
+   `create or replace` on top of `20260724122600_delete_account_guard.sql`'s
+   versions (so the `ACCOUNT_DELETED` guard stays intact):
+   - `cancel_activity_participation` gained an `ACTIVITY_NOT_ACTIVE` check
+     (`activity.status not in ('MATCHED', 'ONGOING')`) — reused the existing
+     code from 6.6/6.7 rather than implementing the never-raised
+     `ACTIVITY_ALREADY_ENDED`, since the underlying condition is identical.
+   - `submit_completion_report` gained two checks: `activity.status = 'ONGOING'`
+     (else `ACTIVITY_NOT_ENDED`) and an `absent_user_ids` membership check
+     (else `INVALID_ABSENT_TARGET`). The `ONGOING`-only gate has a useful side
+     effect: it closes a latent duplicate-settlement bug where a report
+     arriving after the activity had already flipped to `COMPLETED` would
+     re-run the full settlement loop and double-insert `user_reliability_event`
+     rows for every member (the loop has no "already settled" guard of its
+     own — see `20260724120600_rpc_completion_and_settlement.sql`).
+   - Both covered by new `supabase/tests/database/14_activity_validation_gaps.test.sql`
+     (9 pgTAP assertions: the two new `ACTIVITY_NOT_ACTIVE` sites, the three
+     `ACTIVITY_NOT_ENDED` sites — not-started/`COMPLETED`/`CANCELLED` — the
+     `INVALID_ABSENT_TARGET` site plus a no-leftover-row check, and a
+     regression check that a legitimate `ONGOING` submission with a real
+     member id still succeeds).
+2. **Six doc-only fixes** (see the two discrepancy tables below for the
+   per-code detail): `INVITE_LINK_REVOKED`, `INVALID_PENDING_CONFIRMATION`,
+   `CONTACT_EXPIRED` removed from API.md (existing alternative behavior was
+   already correct design, just undocumented); `INVALID_INPUT` (multiple
+   sites), `INVALID_MIN_PARTICIPANTS`/`INVALID_MAX_PARTICIPANTS`, `FORBIDDEN`
+   (detail `NOT_PARTY_TO_CONFIRMATION`) added to API.md where they were
+   missing.
+3. **`NAME_BLACKLISTED` deliberately left untouched** — flagged in the v1.10
+   update section above as an already-known, already-deferred gap; the user
+   explicitly reconfirmed keeping it out of scope for this round rather than
+   letting a general cleanup pass quietly absorb it.
+4. **API.md's stale ERD.md version reference fixed**: line 2 had said "建立在
+   ERD.md v1.7 之上" since some early round and was never updated in step with
+   ERD.md's own header bumps (last actually at v1.14) — same class of drift
+   this file exists to catch, just in the other direction (a *citation*
+   going stale, not a behavior). Now reads v1.14 for both ERD.md and
+   STATE_MACHINE.md, matching their current headers.
+5. `lib/rpc/api_exception.dart` gained `activityNotEnded`/`invalidAbsentTarget`
+   entries (per that file's own rule: add a code only once a migration
+   actually raises it — both now do).
+
 ## Error codes documented in API.md but never raised
 
-| Code | Documented at | What actually happens instead |
-|---|---|---|
-| `NAME_BLACKLISTED` | §2.3 `propose_activity_type` | No blacklist check exists at all (verified: no `blacklist` string anywhere in migrations). Only empty-name (`INVALID_INPUT`, itself undocumented) and exact-duplicate (`DUPLICATE_TYPE_NAME`) are checked. |
-| `INVITE_LINK_REVOKED` | §3 error table | `join_request_by_token` only ever raises `INVITE_LINK_EXPIRED`, for missing/revoked/expired tokens alike (single `where invite_token = ... and revoked_at is null` filter, one raise site). |
-| `INVALID_PENDING_CONFIRMATION` | §4 error table | A nonexistent `pending_confirmation_id` raises `NOT_FOUND` (detail `PENDING_CONFIRMATION_NOT_FOUND`) instead, same convention as every other lookup RPC. |
-| `ALREADY_RESPONDED` (§4 `respond_pending_confirmation` only) | — | Confirmed *not* raised for this endpoint — matches API.md's own v1.7 note that the code was intentionally removed from §4 ("允許反悔"). §5's `respond_downgrade` is a *different* endpoint and does raise `ALREADY_RESPONDED` (§5's error table still lists it, unlike §4's) — see the confirmed-matches section below. |
-| `CONTACT_EXPIRED` | §6 error table | `get_activity_contacts` never throws for this; it returns HTTP 200 with `members[].contacts == null`. Client must branch on null, not catch an exception. |
-| `ACTIVITY_ALREADY_ENDED` | §6 error table | Not checked by either `get_activity_contacts` or `cancel_activity_participation`. |
-| `ACTIVITY_NOT_ENDED` | §7 error table | `submit_completion_report` has no gate on `activity.status`/`start_time` before accepting a report. |
-| `INVALID_ABSENT_TARGET` | §7 error table | `absent_user_ids` is inserted with no check that the ids are actually members of the activity. |
+**Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all
+verified against `supabase test db` (141 assertions, all green) plus a manual
+`supabase db reset`.** `NAME_BLACKLISTED` is the one deliberately untouched
+row — see its own entry below for why. This section is kept for history
+(don't delete resolved rows), each row now states its resolution.
+
+| Code | Documented at | What actually happens instead | Resolution (v1.14.1) |
+|---|---|---|---|
+| `NAME_BLACKLISTED` | §2.3 `propose_activity_type` | No blacklist check exists at all (verified: no `blacklist` string anywhere in migrations). Only empty-name (`INVALID_INPUT`, itself undocumented until this round) and exact-duplicate (`DUPLICATE_TYPE_NAME`) are checked. | **Deliberately left untouched.** Flagged and explicitly deferred by the user in an earlier round (see the v1.10 update section above, "propose_activity_type's documented blacklist precheck was never actually implemented either") and reconfirmed out of scope for this round specifically so this cleanup pass wouldn't quietly absorb it. Still an open gap — pick it up as its own dedicated round. |
+| `INVITE_LINK_REVOKED` | §3 error table | `join_request_by_token` only ever raises `INVITE_LINK_EXPIRED`, for missing/revoked/expired tokens alike (single `where invite_token = ... and revoked_at is null` filter, one raise site). | **Docs fixed, no code change.** The single-code behavior is the right design — the caller's remedy is identical in all three cases (ask the owner for a fresh link), so a separate code would carry information nobody consumes. Removed from API.md §3's error table with a note explaining why `INVITE_LINK_EXPIRED` alone is correct. |
+| `INVALID_PENDING_CONFIRMATION` | §4 error table | A nonexistent `pending_confirmation_id` raises `NOT_FOUND` (detail `PENDING_CONFIRMATION_NOT_FOUND`) instead, same convention as every other lookup RPC. | **Docs fixed, no code change.** API.md §4 now documents `NOT_FOUND` (detail `PENDING_CONFIRMATION_NOT_FOUND`) instead, matching the convention already used by every other lookup RPC (`REQUEST_NOT_FOUND`, `ACTIVITY_NOT_FOUND`, `DOWNGRADE_REQUEST_NOT_FOUND`, `LOCATION_OPTION_NOT_FOUND`). |
+| `ALREADY_RESPONDED` (§4 `respond_pending_confirmation` only) | — | Confirmed *not* raised for this endpoint — matches API.md's own v1.7 note that the code was intentionally removed from §4 ("允許反悔"). §5's `respond_downgrade` is a *different* endpoint and does raise `ALREADY_RESPONDED` (§5's error table still lists it, unlike §4's) — see the confirmed-matches section below. | **Untouched — already correct.** Not part of this round's scope (already resolved/confirmed in v1.7, listed here only for completeness). |
+| `CONTACT_EXPIRED` | §6 error table | `get_activity_contacts` never throws for this; it returns HTTP 200 with `members[].contacts == null`. Client must branch on null, not catch an exception. | **Docs fixed, no code change.** The null-contacts design is correct as-is (lets the client always render the member list without a try/catch for a routine, expected state) and is independent of `activity.status` on purpose — contacts must stay visible after the activity ends, that's the entire point of the endpoint. Removed from API.md §6's error table; 6.2's description now states the null-return behavior explicitly. |
+| `ACTIVITY_ALREADY_ENDED` | §6 error table | Not checked by either `get_activity_contacts` or `cancel_activity_participation`. | **Split judgment — one doc fix, one real code fix.** `get_activity_contacts`: doc fix only, no status gate needed (see `CONTACT_EXPIRED` row above — visibility is governed by `contact_visible_until` + mutual rematch, not `activity.status`, by design). `cancel_activity_participation`: **real gap, fixed in code** — STATE_MACHINE.md A5/A6 only define `MATCHED`/`ONGOING` as valid source states, but the RPC never checked `activity.status` at all, so calling it against an already-`COMPLETED`/`CANCELLED` activity would incorrectly record a `LATE_CANCEL` reliability event and trigger the cooldown. Fixed in `20260724122800_fix_activity_validation_gaps.sql` by reusing the existing `ACTIVITY_NOT_ACTIVE` code (same `status not in (MATCHED, ONGOING)` gate 6.6/6.7 already use) rather than implementing the never-raised `ACTIVITY_ALREADY_ENDED`. Covered by `14_activity_validation_gaps.test.sql` (assertions 1–2). `ACTIVITY_ALREADY_ENDED` itself is now removed from API.md entirely — nothing needs it. |
+| `ACTIVITY_NOT_ENDED` | §7 error table | `submit_completion_report` has no gate on `activity.status`/`start_time` before accepting a report. | **Real gap, fixed in code.** Added a `activity.status = 'ONGOING'` requirement in `20260724122800_fix_activity_validation_gaps.sql`, raising `ACTIVITY_NOT_ENDED` otherwise (blocks both "not started yet" `MATCHED` and "already settled/cancelled" `COMPLETED`/`CANCELLED` submissions). This incidentally closes a latent duplicate-settlement bug: the settlement loop re-runs in full every time `report_count >= quorum` with no "already settled" guard, so a report arriving after the activity had already flipped to `COMPLETED` would have re-inserted `user_reliability_event` rows for every member a second time. Covered by `14_activity_validation_gaps.test.sql` (assertions 3–5). |
+| `INVALID_ABSENT_TARGET` | §7 error table | `absent_user_ids` is inserted with no check that the ids are actually members of the activity. | **Real gap, fixed in code.** Added a membership check in the same migration: every id in `p_absent_user_ids` must be a `JOINED` member of `p_activity_id`, else `INVALID_ABSENT_TARGET`. Covered by `14_activity_validation_gaps.test.sql` (assertions 6–7, plus a regression check in assertions 8–9 that a legitimate member id still submits successfully). |
 
 ## Error codes raised in practice but not documented
 
-| Code | Raised by | Detail |
-|---|---|---|
-| `INVALID_INPUT` | `create_request`, `propose_activity_type`, `propose_location` (v1.10), `rematch_vote` | Generic catch-all for malformed input (empty name, bad time bucket, unknown activity type, voting for yourself). Always carries a `detail` distinguishing the case. |
-| `INVALID_MIN_PARTICIPANTS` / `INVALID_MAX_PARTICIPANTS` | `create_request` | `min_participants < 2`, or `max_participants < min_participants`. |
-| `FORBIDDEN` (detail `NOT_PARTY_TO_CONFIRMATION`) | `respond_pending_confirmation` | Caller is neither request_a's nor request_b's owner. |
+**Status as of v1.14.1: all 3 rows below are now documented in API.md**
+(§2/§3/§7 error tables for `INVALID_INPUT`'s various sites, §3 for the
+participant-count codes, §4 for `FORBIDDEN`/`NOT_PARTY_TO_CONFIRMATION`).
+Rows kept here for history/traceability, not because the gap still exists.
+
+| Code | Raised by | Detail | Resolution (v1.14.1) |
+|---|---|---|---|
+| `INVALID_INPUT` | `create_request`, `propose_activity_type`, `propose_location` (v1.10), `rematch_vote` | Generic catch-all for malformed input (empty name, bad time bucket, unknown activity type, voting for yourself). Always carries a `detail` distinguishing the case. | Added to API.md §2 (propose_activity_type/propose_location), §3 (create_request), §7 (rematch_vote) error tables. |
+| `INVALID_MIN_PARTICIPANTS` / `INVALID_MAX_PARTICIPANTS` | `create_request` | `min_participants < 2`, or `max_participants < min_participants`. | Added to API.md §3 error table. |
+| `FORBIDDEN` (detail `NOT_PARTY_TO_CONFIRMATION`) | `respond_pending_confirmation` | Caller is neither request_a's nor request_b's owner. | Added to API.md §4 error table. |
 
 ## Confirmed exact matches (worth calling out — not everything is a gap)
 
