@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.15 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.16 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -133,6 +133,12 @@
 > 3. 🟢 **API.md 錯誤碼表校對，如實反映既有的合理替代行為**：`INVITE_LINK_REVOKED`（`join_request_by_token` 對缺失/撤銷/過期的 token 一律回 `INVITE_LINK_EXPIRED`，呼叫端不需要分辨三者，區分沒有實質意義）、`INVALID_PENDING_CONFIRMATION`（實際回 `NOT_FOUND` detail `PENDING_CONFIRMATION_NOT_FOUND`，跟其他所有 lookup RPC 同一慣例）、`CONTACT_EXPIRED`（`get_activity_contacts` 用 `members[].contacts == null` 表達逾期，讓 client 不必為一個常態情境寫例外處理）——三者從文件移除，不回頭補一個從未被需要過的錯誤碼。`NAME_BLACKLISTED`（`propose_activity_type` 的黑名單預檢從未實作）維持不動，是已知、明確延後處理的落差，不在本輪範圍內。
 > 4. 🟢 **API.md 補上 3 個「有 raise、文件沒寫」的錯誤碼**：`INVALID_INPUT`（`create_request`/`propose_activity_type`/`propose_location`/`rematch_vote` 共用的輸入格式錯誤 catch-all）、`INVALID_MIN_PARTICIPANTS`/`INVALID_MAX_PARTICIPANTS`（`create_request` 的人數範圍檢查）、`FORBIDDEN` detail `NOT_PARTY_TO_CONFIRMATION`（`respond_pending_confirmation` 擋非當事人）。
 > 5. 🟢 **API.md 第 2 行的 ERD.md/STATE_MACHINE.md 版本引用修正**：原文標注「ERD.md v1.7」是好幾輪前遺留、從未跟著後續改版同步更新的過期編號；改為如實引用兩份文件目前的實際版本（v1.14，本輪未變動兩者內容，故版本沿用不動）。
+
+> **v1.16 變更紀錄**（`create_request` 修正實作偏離原始意圖的架構調整：時段桶換算邏輯移回前端，backend 只保留範圍合法性驗證；不是產品邏輯變動）：
+> 1. 🟢 **根因**：第 4 節原文早就定案「桶是 UI 層包裝，選完仍換算成具體 `earliest_start`/`latest_start`」，但實作把 `'NOW'/'TODAY'/'TONIGHT'/'TOMORROW_AM'` 這組寫死的封閉集合直接焊在 `create_request` 內部用 if/elsif 換算時間戳，等於把「UI 要提供哪些桶選項、要不要支援自由範圍」這個前端關注點綁死在 RPC 層——之後前端想改成 5 個桶（早上/中午/下午/傍晚/晚上）＋動態顯示＋多選收斂＋詳細時間範圍模式，backend 都要跟著改。這輪把換算邏輯移回前端，backend 只驗證前端算好、傳進來的時間戳範圍是否合法。
+> 2. 🟢 **簽章變更**：`p_bucket text` → `p_earliest_start timestamptz, p_latest_start timestamptz`。backend 保留三項驗證：① `p_latest_start <= p_earliest_start` → `INVALID_INPUT` detail `LATEST_START_MUST_BE_AFTER_EARLIEST_START`；② `p_latest_start > now() + 24 小時` → `WINDOW_EXCEEDS_24H`（沿用既有錯誤碼，不新造）；③ `p_latest_start < now()` → `INVALID_INPUT` detail `LATEST_START_IN_PAST`。`p_earliest_start` 刻意不做下限檢查——Matching Engine 本來就用 `greatest(earliest_start, ...)` 決定實際 `start_time`，過早的 `earliest_start` 不影響正確性，前端夾好即可。
+> 3. 🟢 **`submit_request` 既有的 `latest_start > created_at + 24h` 二次檢查維持不動**：檢查時機不同（建立當下 vs 提交當下），但兩者邏輯上恆為同一個布林值（`latest_start`/`created_at` 都在建立當下就已固定），不會互相打架，且不在本次修正範圍內。
+> 4. 🟢 **呼叫點檢查**：`join_request_by_token`/`propose_location` 等其他 RPC 皆未引用桶換算邏輯，範圍僅限 `create_request`；`app/lib/rpc/match_request_rpc.dart` 的 `createRequest()` 連帶同步（拿掉 `RequestBucket` enum，改收 `earliestStart`/`latestStart` 兩個 `DateTime`），僅做參數綁定的機械性替換，不涉及任何桶選單/多選/UI 邏輯（那些留待前端後續處理）。
 
 ---
 

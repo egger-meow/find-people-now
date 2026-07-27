@@ -172,7 +172,8 @@ void main() {
         clientA,
         activityTypeId: coffeeId,
         campus: testCampus,
-        bucket: RequestBucket.NOW,
+        earliestStart: DateTime.now().toUtc(),
+        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
         minParticipants: 3,
       );
       await submitRequest(clientA, requestA.id);
@@ -183,7 +184,8 @@ void main() {
         clientB,
         activityTypeId: coffeeId,
         campus: testCampus,
-        bucket: RequestBucket.NOW,
+        earliestStart: DateTime.now().toUtc(),
+        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
         minParticipants: 3,
       );
       await submitRequest(clientB, requestB.id);

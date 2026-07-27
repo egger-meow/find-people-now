@@ -608,7 +608,7 @@ Rows kept here for history/traceability, not because the gap still exists.
 
 | Code | Raised by | Detail | Resolution (v1.14.1) |
 |---|---|---|---|
-| `INVALID_INPUT` | `create_request`, `propose_activity_type`, `propose_location` (v1.10), `rematch_vote` | Generic catch-all for malformed input (empty name, bad time bucket, unknown activity type, voting for yourself). Always carries a `detail` distinguishing the case. | Added to API.md §2 (propose_activity_type/propose_location), §3 (create_request), §7 (rematch_vote) error tables. |
+| `INVALID_INPUT` | `create_request`, `propose_activity_type`, `propose_location` (v1.10), `rematch_vote` | Generic catch-all for malformed input (empty name, invalid time window, unknown activity type, voting for yourself). Always carries a `detail` distinguishing the case. `create_request`'s time-window details (v1.16, since the old `bucket` param was replaced by direct `earliest_start`/`latest_start` timestamps): `LATEST_START_MUST_BE_AFTER_EARLIEST_START`, `LATEST_START_IN_PAST`. | Added to API.md §2 (propose_activity_type/propose_location), §3 (create_request), §7 (rematch_vote) error tables. |
 | `INVALID_MIN_PARTICIPANTS` / `INVALID_MAX_PARTICIPANTS` | `create_request` | `min_participants < 2`, or `max_participants < min_participants`. | Added to API.md §3 error table. |
 | `FORBIDDEN` (detail `NOT_PARTY_TO_CONFIRMATION`) | `respond_pending_confirmation` | Caller is neither request_a's nor request_b's owner. | Added to API.md §4 error table. |
 

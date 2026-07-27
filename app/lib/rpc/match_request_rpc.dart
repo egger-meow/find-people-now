@@ -3,13 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../generated/match_request.dart';
 import 'rpc_client.dart';
 
-/// `p_bucket` in docs/API.md §3.1 — Postgres param is plain `text` (validated
-/// by an if/elsif chain in create_request, not a DB enum — see
-/// supabase/migrations/20260724120300_rpc_match_request.sql:85-99), so this
-/// Dart enum exists purely as an API-contract convenience, not a codegen fact.
-// ignore: constant_identifier_names
-enum RequestBucket { NOW, TODAY, TONIGHT, TOMORROW_AM }
-
 /// docs/API.md §3.1 — `rpc: create_request(...)`.
 /// min/max participants counts include the owner (see API.md §3.1 note ①).
 ///
@@ -17,11 +10,19 @@ enum RequestBucket { NOW, TODAY, TONIGHT, TOMORROW_AM }
 /// Matching Scope (free-text `location.campus` value within the caller's own
 /// `school`), not a precise location FK. The precise Activity Location is
 /// decided post-match via voting (see `activity_location_rpc.dart`).
+///
+/// `earliestStart`/`latestStart` (v1.16) replace the old `bucket` enum param —
+/// SPEC.md §4 always intended time buckets ("now" / "tonight" / etc.) as a
+/// UI-layer convenience that gets converted to concrete timestamps before
+/// hitting the backend; the caller is responsible for that conversion now.
+/// The backend only validates the resulting range (`WINDOW_EXCEEDS_24H`,
+/// `INVALID_INPUT` for an inverted or already-past window).
 Future<MatchRequest> createRequest(
   SupabaseClient client, {
   required String activityTypeId,
   required String campus,
-  required RequestBucket bucket,
+  required DateTime earliestStart,
+  required DateTime latestStart,
   required int minParticipants,
   int? maxParticipants,
   bool allowDowngrade = false,
@@ -32,7 +33,8 @@ Future<MatchRequest> createRequest(
     params: {
       'p_activity_type_id': activityTypeId,
       'p_campus': campus,
-      'p_bucket': bucket.name,
+      'p_earliest_start': earliestStart.toUtc().toIso8601String(),
+      'p_latest_start': latestStart.toUtc().toIso8601String(),
       'p_min_participants': minParticipants,
       'p_max_participants': maxParticipants,
       'p_allow_downgrade': allowDowngrade,

@@ -12,7 +12,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(10);
+select plan(13);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup：建立測試用 Users / Location / ActivityType 等基礎資料
@@ -141,10 +141,10 @@ end $$;
 
 select throws_ok(
   format(
-    $sql$select create_request(%L, %L, %L, %s, %s, %L)$sql$,
+    $sql$select create_request(%L, %L, now(), now() + interval '2 hours', %s, %s, %L)$sql$,
     (select act_type_id from fixtures),
     (select campus_nthu from fixtures),
-    'NOW', 6, 12, false
+    6, 12, false
   ),
   'INVALID_CAMPUS_SCOPE',
   'NYCU 學生對只存在於 NTHU 的 campus 發起請求應被拒絕 (INVALID_CAMPUS_SCOPE)'
@@ -221,7 +221,8 @@ begin
   v_req := create_request(
     (select act_type_id from fixtures),
     (select campus_nycu from fixtures),
-    'NOW', 6, 12, false
+    now(), now() + interval '2 hours',
+    6, 12, false
   );
   update fixtures set new_req_a_id = v_req.id;
 end $$;
@@ -244,7 +245,8 @@ begin
   v_req := create_request(
     (select act_type_id from fixtures),
     (select campus_nthu from fixtures),
-    'NOW', 6, 12, false
+    now(), now() + interval '2 hours',
+    6, 12, false
   );
   update fixtures set new_req_c_id = v_req.id;
 end $$;
@@ -273,6 +275,48 @@ select throws_ok(
   format($sql$select submit_request(%L)$sql$, (select new_req_a_id from fixtures)),
   'ACTIVE_ACTIVITY_IN_PROGRESS',
   '同時違反兩條 v1.7 規則時，submit_request 應優先回傳 ACTIVE_ACTIVITY_IN_PROGRESS（驗證檢查順序，非 REQUEST_COOLDOWN_ACTIVE）'
+);
+
+-- -----------------------------------------------------------------------------
+-- 6. v1.16：create_request 時間窗合法性驗證（桶換算移回前端後，
+--    backend 只保留範圍檢查）
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select user_a_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format(
+    $sql$select create_request(%L, %L, now(), now() + interval '25 hours', %s, %s, %L)$sql$,
+    (select act_type_id from fixtures),
+    (select campus_nycu from fixtures),
+    6, 12, false
+  ),
+  'WINDOW_EXCEEDS_24H',
+  'latest_start 超過 now()+24h 應被拒絕 (WINDOW_EXCEEDS_24H)'
+);
+
+select throws_ok(
+  format(
+    $sql$select create_request(%L, %L, now() - interval '3 hours', now() - interval '1 hour', %s, %s, %L)$sql$,
+    (select act_type_id from fixtures),
+    (select campus_nycu from fixtures),
+    6, 12, false
+  ),
+  'INVALID_INPUT',
+  'latest_start 早於現在應被拒絕 (INVALID_INPUT / LATEST_START_IN_PAST)'
+);
+
+select throws_ok(
+  format(
+    $sql$select create_request(%L, %L, now() + interval '2 hours', now() + interval '1 hour', %s, %s, %L)$sql$,
+    (select act_type_id from fixtures),
+    (select campus_nycu from fixtures),
+    6, 12, false
+  ),
+  'INVALID_INPUT',
+  'latest_start 早於或等於 earliest_start 應被拒絕 (INVALID_INPUT / LATEST_START_MUST_BE_AFTER_EARLIEST_START)'
 );
 
 select * from finish();

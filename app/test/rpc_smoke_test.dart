@@ -157,7 +157,8 @@ void main() {
         client,
         activityTypeId: coffee.id,
         campus: testCampus,
-        bucket: RequestBucket.NOW,
+        earliestStart: DateTime.now().toUtc(),
+        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
         minParticipants: 2,
       );
       expect(request.status, REQUEST_STATUS.DRAFT);
