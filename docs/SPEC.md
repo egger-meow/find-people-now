@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.17 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.18 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -145,6 +145,12 @@
 > 2. 🟢 **新增 `rpc: block_user(p_blocked_id, p_reason)` / `rpc: unblock_user(p_blocked_id)`**：兩者皆冪等。`block_user` 拒絕自我封鎖（`INVALID_INPUT` detail `CANNOT_BLOCK_SELF`）與不存在的對象（`NOT_FOUND` detail `BLOCKED_USER_NOT_FOUND`）。封鎖清單查詢直接用 PostgREST（`GET user_block?blocker_id=eq.<self>`），不另開查詢用 RPC。
 > 3. 🟢 **RLS 只開放封鎖方自己看得到**（`blocker_id = auth.uid()`）：被封鎖方永遠不會、也不該知道自己被封鎖，這是功能設計的核心前提。
 > 4. 🟢 **Matching Engine 新增獨立檢查**：候選 owner 與目前累積集合裡任一成員 owner，任一方向存在 `user_block` 記錄就跳過該候選（`fn_run_matching_engine`，見 20260724124300 migration）。與 12.1.4 節既有的 `match_history_avoidance` 檢查各自獨立、不共用程式碼，只影響未來配對，不影響任何進行中的活動。
+
+> **v1.18 變更紀錄**（檢舉機制）：
+> 1. 🟢 **新增 `report` 表（`reporter_id`/`reported_user_id`/`reported_activity_id`/`category`/`detail`/`status`/`created_at`）**：檢舉對象是使用者或活動，`reported_user_id`/`reported_activity_id` 皆 nullable 但 CHECK 至少一項非 null。`category` 為 `SPAM`/`HARASSMENT`/`OTHER`；`status` 為 `PENDING`/`REVIEWED`。
+> 2. 🟢 **新增 `rpc: submit_report(category, reported_user_id?, reported_activity_id?, detail?)`**：兩個檢舉對象皆缺時回 `INVALID_INPUT` detail `REPORT_TARGET_REQUIRED`。
+> 3. 🟢 **審核走 Supabase Studio 人工查詢 `status='PENDING'`**，比照既有 `pending_review` view（第 5 節、ERD 設計備註 27）的審核慣例，不新建 admin API/介面。人工判斷後可視情況手動更新對應使用者既有的 `suspended_until`（第 10 節）——不新增獨立的懲罰機制，沿用既有停權欄位。
+> 4. 🟢 **RLS 只開放檢舉發起人自己看得到**（`reporter_id = auth.uid()`）。
 
 ---
 
@@ -605,6 +611,14 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 - 🟢 **只影響未來配對，不影響任何進行中的活動**：已經成局的 Activity 不會因為之後有一方封鎖對方而受影響
 - 🟢 **可自行解除**（`unblock_user`），不像配對冷卻是時間到自動失效，也不像帳號停權需要等待或人工介入
 - 封鎖清單查詢、封鎖/解除封鎖入口見 `docs/UI_PLAN.md`
+
+#### 12.1.6 檢舉機制（v1.18）
+
+跟 12.1.5 封鎖是同一批安全工具的另一半：封鎖是「我不想再遇到這個人」的私人決定，檢舉是「這件事需要平台知道」的公開通報，兩者互不取代：
+
+- 檢舉對象可以是使用者或一次活動；審核由人工在 Supabase Studio 查詢 `status='PENDING'` 的記錄處理，不做自動化懲罰
+- 人工判斷後可視情況手動更新對應使用者的 `suspended_until`（第 10 節既有停權欄位），不為此新增獨立的懲罰機制
+- 檢舉記錄只有發起人自己看得到，其餘使用者（含被檢舉方）皆不可見
 
 ---
 

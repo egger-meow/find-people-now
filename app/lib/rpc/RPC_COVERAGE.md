@@ -627,6 +627,39 @@ New migrations `20260724124100_user_block_schema.sql` +
    no other generated file changed content-wise (`supadart_exports.dart`/
    `supadart_header.dart` diffs are just the new table being registered).
 
+## v1.18 update: report mechanism
+
+New migrations `20260724124400_report_schema.sql` +
+`20260724124500_report_rpc.sql`:
+
+1. **New table `report`** (`reporter_id`/`reported_user_id`/
+   `reported_activity_id`/`category`/`detail`/`status`/`created_at`) — target
+   is a user and/or an activity (`check (reported_user_id is not null or
+   reported_activity_id is not null)`). New enums `report_category`
+   (`SPAM`/`HARASSMENT`/`OTHER`) and `report_status` (`PENDING`/`REVIEWED`).
+2. **`submit_report(category, reported_user_id?, reported_activity_id?,
+   detail?)`** — both targets missing raises `INVALID_INPUT` detail
+   `REPORT_TARGET_REQUIRED` (checked in the RPC before the DB CHECK would
+   catch it, for a clearer error code). Wrapped in new
+   `lib/rpc/report_rpc.dart`.
+3. **No admin API/UI added** — same pattern as the `pending_review` view
+   (v1.10): review happens by hand in Supabase Studio querying
+   `status='PENDING'`; a human can then manually update the target's
+   existing `app_user.suspended_until` if warranted. No new punishment
+   mechanism, no dedicated view either (unlike `pending_review`, `report` is
+   a single table — querying `status='PENDING'` directly is enough, no UNION
+   needed).
+4. **RLS**: `own_reports_select` (`reporter_id = auth.uid()`) + `grant select
+   on report to authenticated`, inline in the schema migration (same
+   pattern as `user_block`). No insert/update grant — writes go through
+   `submit_report`; status review is a `service_role`/Studio operation.
+5. **New `supabase/tests/database/17_report.test.sql`** (7 pgTAP assertions):
+   reporting a user, reporting an activity, `REPORT_TARGET_REQUIRED` when
+   both targets are missing, and RLS (reporter sees own reports, other users
+   don't).
+6. `supadart.yaml` gained `report_category`/`report_status` enum entries;
+   regen picked up `lib/generated/report.dart` (new table).
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

@@ -36,6 +36,7 @@ abstract class SupadartClass<T> {
 // Supabase Client Extension
 extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get downgrade_request => from('downgrade_request');
+  SupabaseQueryBuilder get report => from('report');
   SupabaseQueryBuilder get downgrade_consent => from('downgrade_consent');
   SupabaseQueryBuilder get pending_review => from('pending_review');
   SupabaseQueryBuilder get location => from('location');
@@ -96,6 +97,10 @@ enum PENDING_CONFIRMATION_RESPONSE { CONFIRMED, DECLINED, NO_RESPONSE }
 enum PENDING_CONFIRMATION_STATUS { PENDING, CONFIRMED, DECLINED, TIMEOUT }
 
 enum RELIABILITY_EVENT_TYPE { ATTENDED, EARLY_CANCEL, LATE_CANCEL, NO_SHOW }
+
+enum REPORT_CATEGORY { SPAM, HARASSMENT, OTHER }
+
+enum REPORT_STATUS { PENDING, REVIEWED }
 
 enum REQUEST_MEMBER_ROLE { OWNER, MEMBER }
 

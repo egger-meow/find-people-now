@@ -1,6 +1,7 @@
 library models;
 
 export 'downgrade_request.dart';
+export 'report.dart';
 export 'downgrade_consent.dart';
 export 'pending_review.dart';
 export 'location.dart';

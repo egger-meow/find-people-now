@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.17）
+# ERD — 校園活動配對 App（派生自 SPEC v1.18）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 實體關聯圖（20 張表）
+## 1. 實體關聯圖（21 張表）
 
 ```mermaid
 erDiagram
@@ -53,6 +53,9 @@ erDiagram
     app_user ||--o{ notification : ""
 
     app_user ||--o{ user_block : "blocker_id 封鎖／blocked_id 被封鎖（v1.17）"
+
+    app_user ||--o{ report : "reporter_id 發起／reported_user_id 被檢舉對象，nullable（v1.18）"
+    activity ||--o{ report : "reported_activity_id 被檢舉對象，nullable（v1.18）"
 
     app_user {
         uuid id PK "= auth.users.id"
@@ -244,6 +247,17 @@ erDiagram
         text reason "nullable"
         timestamptz created_at
     }
+
+    report {
+        uuid id PK
+        uuid reporter_id FK "檢舉發起人"
+        uuid reported_user_id FK "nullable，被檢舉的使用者"
+        uuid reported_activity_id FK "nullable，被檢舉的活動；CHECK：reported_user_id / reported_activity_id 至少一項非 null"
+        enum category "SPAM | HARASSMENT | OTHER"
+        text detail "nullable"
+        enum status "PENDING | REVIEWED，人工於 Supabase Studio 審核"
+        timestamptz created_at
+    }
 ```
 
 ---
@@ -267,6 +281,8 @@ erDiagram
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
 | `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） `ACTIVITY_UPCOMING`（v1.13） | §16 開放問題 5（清單可能擴充） |
+| `report_category` | `SPAM` `HARASSMENT` `OTHER` | §12.1.6（v1.18） |
+| `report_status` | `PENDING` `REVIEWED` | §12.1.6（v1.18） |
 
 > **註記**：`request_member_status` 與 `activity_member_status` 兩個欄位 SPEC 只寫了「status」沒列值域，此處補定為最小可用集合（成員可在配對前退出 Request → `LEFT`；成員可個別取消已成立的活動 → `CANCELLED`，活動本身可能照常進行）。這是 schema 層補完，不是產品邏輯變更。
 
@@ -322,3 +338,4 @@ erDiagram
 42. **帳號刪除：`app_user` row 保留、去識別化，不做真正的 `DELETE`（v1.14）**：`app_user.id references auth.users(id) on delete cascade` 是這個決定的直接觸發原因——若真的刪掉 `app_user`（不論是自己被 cascade 帶走，還是主動 `DELETE`），會撞上 13 張子表（`match_request.owner_id`、`activity_member.user_id`……）沒有 `on delete cascade` 的 FK，直接違反約束；若改成先清空這些子表，又會讓其他使用者依賴的 reliability／得票數／集合點等共用資料連帶失真（例如 `activity_location_vote` 的得票數會因為投票者的列被刪除而少算）。保留 row、id 不變、只清空 `email`/`display_name`/`avatar_url`/`gender`/`bio`/`department`/`contact_*` 這些識別欄位，是唯一不需要動任何子表 FK、也不影響其他使用者資料完整性的方案。新增 `deleted_at`（nullable timestamptz）作為「這是被去識別化的殼」的判斷依據；`email` 的兩條既有 CHECK（格式比對、`school_matches_email`）都補上 `deleted_at is not null or ...` 短路條件，讓已刪除帳號的佔位 email（`'deleted+' || id`，不再偽造符合網域格式的假信箱）不會被舊約束擋下。`user_reliability_event` 這張表刻意不做任何處理——實際查證 `fn_reliability_tier`/`fn_is_new_user` 的算法後確認，可信度計算只 `where user_id = p_user_id`，純粹自己查自己，不存在「別人的可信度依賴我的事件」這種跨人聚合。真正刪除 `auth.users` 那一列（GoTrue soft delete）是唯一需要 Edge Function 的地方，見 API.md §1.5 與 `supabase/functions/delete-auth-user/`。
 
 43. **`user_block` 不共用 `match_history_avoidance` 的表與正規化 pair 設計（v1.17）**：`match_history_avoidance`（設計備註 15）是系統自動寫入、7 天到期、正規化成無方向性的 pair（`user_a_id < user_b_id`，查詢只需一個方向）；`user_block` 是使用者主動、永久（不到期）、有方向性——A 封鎖 B 不代表 B 封鎖 A，且只有 blocker 能單方解除，兩者語意上不是同一件事，硬塞進同一張表只會讓「到期」「正規化」「誰能解除」這些欄位對一半的資料列沒有意義。代價是 Matching Engine 的封鎖檢查（`fn_run_matching_engine`）必須用 `or` 比對兩個方向（`(blocker=a and blocked=b) or (blocker=b and blocked=a)`），而不是 avoidance 那樣 `least`/`greatest` 正規化成單一查詢路徑——這是刻意的取捨，不是漏做正規化。RLS 也刻意跟 avoidance 不同：avoidance 兩個當事人都查不到（見設計備註 15 原文的「不歸因」設計，比封鎖更敏感），`user_block` 則是 blocker 自己能查（清單管理需求），blocked 方仍然永遠查不到（核心前提：被封鎖方不該知道自己被封鎖）。
+44. **`report` 沒有 admin API/介面，審核走 Supabase Studio 人工查詢（v1.18，比照設計備註 27 `pending_review` view 的既有慣例）**：`status='PENDING'` 的檢舉記錄由人工在 Studio 查詢處理，人工判斷後視情況手動更新對應使用者的 `suspended_until`——不新增獨立的懲罰機制，沿用既有停權欄位。與 `pending_review` view 不同的是這裡不另開 view（`report` 本身就是單一表，直接查 `status='PENDING'` 即可，不需要 UNION 多張來源表）。

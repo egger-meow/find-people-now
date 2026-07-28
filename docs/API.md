@@ -1,6 +1,6 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.17）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.18）
 
-> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.17 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
+> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.18 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
 
 ## 0. 總約定
 
@@ -179,15 +179,18 @@
 | 活動開始前提前提醒，可調多時間點 (v1.13) | §9「活動開始前提前提醒」`fn_remind_upcoming_activities()` + 新事件 `ACTIVITY_UPCOMING` + `app_config.activity_reminder_lead_minutes_list` + §8.4 文案 |
 | App 內建帳號刪除，Apple/Google 上架硬性規定 (v1.14) | 1.5 `delete_account()` + Edge Function `delete-auth-user` + `app_user.deleted_at` + 21 支 RPC 的 `ACCOUNT_DELETED` 檢查（見 §0）+ ERD 設計備註 42 |
 | §12.1.5 使用者主動封鎖，永久、單方、可自行解除 (v1.17) | §11 `block_user`/`unblock_user` + `fn_run_matching_engine` 新增獨立檢查 + ERD 設計備註 43 |
+| §12.1.6 檢舉機制，人工審核不做自動懲罰 (v1.18) | §11 `submit_report` + ERD 設計備註 44 |
 
 ---
 
-## 11. 安全機制（封鎖／檢舉；v1.17）
+## 11. 安全機制（封鎖／檢舉；v1.17/v1.18）
 
 | # | Endpoint | 說明 |
 |---|---|---|
 | 11.1 | `rpc: block_user(p_blocked_id, p_reason?)` | **單方面封鎖（SPEC §12.1.5）**：冪等，重複呼叫只覆寫 `p_reason`。拒絕自我封鎖（`INVALID_INPUT` detail `CANNOT_BLOCK_SELF`）與不存在的對象（`NOT_FOUND` detail `BLOCKED_USER_NOT_FOUND`）。不檢查 `suspended_until`——封鎖是自我保護行為，停權中的使用者仍應能封鎖騷擾自己的人。生效後只影響 Matching Engine 未來的撮合（`fn_run_matching_engine` 新增獨立檢查，不與 `match_history_avoidance` 共用程式碼，見 ERD 設計備註 43），不影響任何進行中的活動。 |
 | 11.2 | `rpc: unblock_user(p_blocked_id)` | 解除封鎖，冪等（找不到記錄也視為成功）。 |
 | 11.3 | `GET user_block?blocker_id=eq.{自己}`（PostgREST，RLS：`blocker_id = auth.uid()`） | 查自己的封鎖清單。**被封鎖方永遠查不到自己被封鎖的記錄**（無 RLS policy 開放給 `blocked_id`），這是功能設計的核心前提，不是漏做。 |
+| 11.4 | `rpc: submit_report(category, reported_user_id?, reported_activity_id?, detail?)`（v1.18） | **檢舉使用者或活動（SPEC §12.1.6）**：`reported_user_id`/`reported_activity_id` 至少一項非 null，否則回 `INVALID_INPUT` detail `REPORT_TARGET_REQUIRED`。`category` 為 `SPAM`\|`HARASSMENT`\|`OTHER`。審核走 Supabase Studio 人工查 `status='PENDING'`（比照 ERD 備註 27 `pending_review` view 的既有慣例），MVP 不做 admin API；人工判斷後可視情況手動更新對應使用者既有的 `suspended_until`，不新增獨立懲罰機制。 |
+| 11.5 | `GET report?reporter_id=eq.{自己}`（PostgREST，RLS：`reporter_id = auth.uid()`）（v1.18） | 查自己送出的檢舉記錄；其餘使用者（含被檢舉方）皆查不到。 |
 
-錯誤碼：`INVALID_INPUT`（detail `CANNOT_BLOCK_SELF`）、`NOT_FOUND`（detail `BLOCKED_USER_NOT_FOUND`）
+錯誤碼：`INVALID_INPUT`（detail `CANNOT_BLOCK_SELF` / `REPORT_TARGET_REQUIRED`）、`NOT_FOUND`（detail `BLOCKED_USER_NOT_FOUND`）

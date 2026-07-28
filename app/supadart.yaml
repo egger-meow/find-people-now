@@ -1,7 +1,8 @@
-# supadart config — generates typed Dart classes for the 19 public.* tables
+# supadart config — generates typed Dart classes for the 21 public.* tables
 # (v1.11: +activity_location_option, +activity_location_vote;
-#  v1.11.1: +activity_meeting_point_update) by introspecting the local
-# Supabase instance's PostgREST OpenAPI schema.
+#  v1.11.1: +activity_meeting_point_update; v1.17: +user_block;
+#  v1.18: +report) by introspecting the local Supabase instance's
+# PostgREST OpenAPI schema.
 #
 # NOTE: supadart (like every other Dart codegen tool for Supabase) only reads
 # the table/view swagger definitions. It does NOT generate parameter/return
@@ -36,6 +37,8 @@ enums:
   pending_confirmation_response: [CONFIRMED, DECLINED, NO_RESPONSE]
   pending_confirmation_status: [PENDING, CONFIRMED, DECLINED, TIMEOUT]
   reliability_event_type: [ATTENDED, EARLY_CANCEL, LATE_CANCEL, NO_SHOW]
+  report_category: [SPAM, HARASSMENT, OTHER]
+  report_status: [PENDING, REVIEWED]
   request_member_role: [OWNER, MEMBER]
   request_member_status: [JOINED, LEFT]
   request_status: [DRAFT, REQUESTING, PENDING_CONFIRMATION, MATCHED, EXPIRED, CANCELLED]
