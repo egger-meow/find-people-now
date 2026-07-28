@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.18）
+# ERD — 校園活動配對 App（派生自 SPEC v1.20）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -74,6 +74,7 @@ erDiagram
         timestamptz next_request_allowed_at "nullable，拒絕候選配對/LATE_CANCEL 觸發 30 分鐘冷卻（v1.7，SPEC §6.3）"
         timestamptz created_at
         timestamptz deleted_at "nullable，帳號刪除去識別化標記，row 保留、id 不變（v1.14，見設計備註 42）"
+        timestamptz onboarding_seen_at "nullable，新手上手引導卡片是否已看過（v1.20，UI_PLAN.md §11.1）"
     }
 
     activity_type {

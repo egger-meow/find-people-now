@@ -20,6 +20,7 @@ class AppUser implements SupadartClass<AppUser> {
   final DEGREE_LEVEL degreeLevel;
   final DateTime? nextRequestAllowedAt;
   final DateTime? deletedAt;
+  final DateTime? onboardingSeenAt;
 
   const AppUser({
     required this.id,
@@ -38,6 +39,7 @@ class AppUser implements SupadartClass<AppUser> {
     required this.degreeLevel,
     this.nextRequestAllowedAt,
     this.deletedAt,
+    this.onboardingSeenAt,
   });
 
   static String get table_name => 'app_user';
@@ -57,6 +59,7 @@ class AppUser implements SupadartClass<AppUser> {
   static String get c_degreeLevel => 'degree_level';
   static String get c_nextRequestAllowedAt => 'next_request_allowed_at';
   static String get c_deletedAt => 'deleted_at';
+  static String get c_onboardingSeenAt => 'onboarding_seen_at';
 
   static List<AppUser> converter(List<Map<String, dynamic>> data) {
     return data.map(AppUser.fromJson).toList();
@@ -83,6 +86,7 @@ class AppUser implements SupadartClass<AppUser> {
     DEGREE_LEVEL? degreeLevel,
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
+    DateTime? onboardingSeenAt,
   }) {
     return {
       if (id != null) 'id': id,
@@ -106,6 +110,8 @@ class AppUser implements SupadartClass<AppUser> {
             .toUtc()
             .toIso8601String(),
       if (deletedAt != null) 'deleted_at': deletedAt.toUtc().toIso8601String(),
+      if (onboardingSeenAt != null)
+        'onboarding_seen_at': onboardingSeenAt.toUtc().toIso8601String(),
     };
   }
 
@@ -126,6 +132,7 @@ class AppUser implements SupadartClass<AppUser> {
     required DEGREE_LEVEL degreeLevel,
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
+    DateTime? onboardingSeenAt,
   }) {
     return _generateMap(
       id: id,
@@ -144,6 +151,7 @@ class AppUser implements SupadartClass<AppUser> {
       degreeLevel: degreeLevel,
       nextRequestAllowedAt: nextRequestAllowedAt,
       deletedAt: deletedAt,
+      onboardingSeenAt: onboardingSeenAt,
     );
   }
 
@@ -164,6 +172,7 @@ class AppUser implements SupadartClass<AppUser> {
     DEGREE_LEVEL? degreeLevel,
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
+    DateTime? onboardingSeenAt,
   }) {
     return _generateMap(
       id: id,
@@ -182,6 +191,7 @@ class AppUser implements SupadartClass<AppUser> {
       degreeLevel: degreeLevel,
       nextRequestAllowedAt: nextRequestAllowedAt,
       deletedAt: deletedAt,
+      onboardingSeenAt: onboardingSeenAt,
     );
   }
 
@@ -227,6 +237,9 @@ class AppUser implements SupadartClass<AppUser> {
       deletedAt: jsonn['deleted_at'] != null
           ? DateTime.parse(jsonn['deleted_at'].toString())
           : null,
+      onboardingSeenAt: jsonn['onboarding_seen_at'] != null
+          ? DateTime.parse(jsonn['onboarding_seen_at'].toString())
+          : null,
     );
   }
 
@@ -247,6 +260,7 @@ class AppUser implements SupadartClass<AppUser> {
     DEGREE_LEVEL? degreeLevel,
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
+    DateTime? onboardingSeenAt,
   }) {
     return {
       if (id != null) 'id': id,
@@ -266,6 +280,7 @@ class AppUser implements SupadartClass<AppUser> {
       if (nextRequestAllowedAt != null)
         'next_request_allowed_at': nextRequestAllowedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (onboardingSeenAt != null) 'onboarding_seen_at': onboardingSeenAt,
     };
   }
 
@@ -287,6 +302,7 @@ class AppUser implements SupadartClass<AppUser> {
       degreeLevel: degreeLevel,
       nextRequestAllowedAt: nextRequestAllowedAt,
       deletedAt: deletedAt,
+      onboardingSeenAt: onboardingSeenAt,
     );
   }
 
@@ -308,6 +324,7 @@ class AppUser implements SupadartClass<AppUser> {
     Object? degreeLevel = _unset,
     Object? nextRequestAllowedAt = _unset,
     Object? deletedAt = _unset,
+    Object? onboardingSeenAt = _unset,
   }) {
     return AppUser(
       id: id == _unset ? this.id : id as String,
@@ -340,6 +357,9 @@ class AppUser implements SupadartClass<AppUser> {
           ? this.nextRequestAllowedAt
           : nextRequestAllowedAt as DateTime?,
       deletedAt: deletedAt == _unset ? this.deletedAt : deletedAt as DateTime?,
+      onboardingSeenAt: onboardingSeenAt == _unset
+          ? this.onboardingSeenAt
+          : onboardingSeenAt as DateTime?,
     );
   }
 }

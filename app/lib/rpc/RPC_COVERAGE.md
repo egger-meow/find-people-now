@@ -660,6 +660,19 @@ New migrations `20260724124400_report_schema.sql` +
 6. `supadart.yaml` gained `report_category`/`report_status` enum entries;
    regen picked up `lib/generated/report.dart` (new table).
 
+## v1.20 update: `app_user.onboarding_seen_at`
+
+New migration `20260724124600_onboarding_seen_at.sql`: adds nullable
+`app_user.onboarding_seen_at timestamptz`. No new RPC — the existing `grant
+select, update on app_user to authenticated` + `own_profile_update` RLS
+policy (`id = auth.uid()`) already cover a plain `PATCH app_user` write, so
+the client can set this directly via `client.from('app_user').update(...)`.
+`docs/UI_PLAN.md` §11.1 already specified this design (onboarding card shown
+once when this column is null) before the column existed — this migration
+just makes that design implementable. `supadart` regen picked up the new
+field on `lib/generated/app_user.dart` (`onboardingSeenAt`); no other
+generated file changed content-wise.
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

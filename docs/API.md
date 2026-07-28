@@ -1,6 +1,6 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.18）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.20）
 
-> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.18 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
+> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.20 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
 
 ## 0. 總約定
 
@@ -20,7 +20,7 @@
 |---|---|---|
 | 1.1 | `auth.signInWithOtp({ email })` | Supabase 內建。前端先擋非 `@nycu.edu.tw` / `@nthu.edu.tw`；DB 端 `app_user.email` CHECK 為最終防線（SPEC §2：完整雙校網域比對，非 `.edu.tw` 後綴）。 |
 | 1.2 | `rpc: complete_profile(display_name, avatar_url, degree_level, department?, gender?, bio?, contact_ig?, contact_line?, contact_discord?)` | 註冊硬性門檻（SPEC §2, v1.4）：`avatar_url` 必填 + `degree_level` (enum `UNDERGRAD\|MASTER\|PHD`) 必選 + 三項聯絡方式至少一項。`bio` 與 `department` 選填、不卡門檻。未完成必填項前所有 Request 類 RPC 回 `PROFILE_INCOMPLETE`。**`school` 不是參數**——由 email 網域 mapping（`nycu.edu.tw → NYCU`、`nthu.edu.tw → NTHU`）在 server 端寫入，DB CHECK 保證與網域一致（SPEC §2：不讓使用者自選）。 |
-| 1.3 | `PATCH app_user`（PostgREST，RLS：own row） | 更新個人資料（含 `bio`, `department`）；DB CHECK 保證改完仍滿足硬性門檻與必填約束。 |
+| 1.3 | `PATCH app_user`（PostgREST，RLS：own row） | 更新個人資料（含 `bio`, `department`）；DB CHECK 保證改完仍滿足硬性門檻與必填約束。也用於寫入 `onboarding_seen_at`（v1.20，新手上手引導卡片已讀時間戳，見 `docs/UI_PLAN.md` §11.1），不另開 RPC。 |
 | 1.4 | `rpc: get_my_reliability()` | 回 `{ tier: TRUSTED\|NORMAL\|NEW, is_new_user: bool }`，即時由 `fn_reliability_tier` / `fn_is_new_user` 計算（SPEC §12：不存分數欄位）。 |
 | 1.5 | `rpc: delete_account()` **接著** Edge Function `delete-auth-user`（v1.14） | **App 內建帳號刪除**（Apple App Store Review Guideline 5.1.1(v) / Google Play 兩者的上架硬性規定，SPEC §16 開放問題 6）。分兩步、Flutter 端依序呼叫：① `delete_account()` RPC——清理 `public` schema 業務資料、去識別化 `app_user`（row 保留、id 不變，見 ERD 設計備註 42），冪等（`{ success, already_deleted? }`）。② Edge Function `delete-auth-user`——驗證呼叫者 JWT 後呼叫官方 `auth.admin.deleteUser(id, shouldSoftDelete: true)`，只有這支 Function 持有 `service_role` key。呼叫端（Flutter）對步驟②做 2 次重試（1 秒/3 秒 backoff）後放棄，不論結果一律本地登出——步驟①已完成、`ACCOUNT_DELETED` 檢查已生效，殘留風險視窗很小，不需要背景重試佇列。 |
 
@@ -180,6 +180,7 @@
 | App 內建帳號刪除，Apple/Google 上架硬性規定 (v1.14) | 1.5 `delete_account()` + Edge Function `delete-auth-user` + `app_user.deleted_at` + 21 支 RPC 的 `ACCOUNT_DELETED` 檢查（見 §0）+ ERD 設計備註 42 |
 | §12.1.5 使用者主動封鎖，永久、單方、可自行解除 (v1.17) | §11 `block_user`/`unblock_user` + `fn_run_matching_engine` 新增獨立檢查 + ERD 設計備註 43 |
 | §12.1.6 檢舉機制，人工審核不做自動懲罰 (v1.18) | §11 `submit_report` + ERD 設計備註 44 |
+| 新手上手引導已讀時間戳 (v1.20，`docs/UI_PLAN.md` §11.1) | 1.3 `PATCH app_user` 的 `onboarding_seen_at` 欄位，不另開 RPC |
 
 ---
 

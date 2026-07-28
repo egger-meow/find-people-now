@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.19 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.20 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -154,6 +154,10 @@
 
 > **v1.19 變更紀錄**（新增 `docs/TERMS_OF_SERVICE.md`）：
 > 1. 🟢 **新增服務條款文件**，比照 [PRIVACY_POLICY.md](PRIVACY_POLICY.md) 的草稿免責寫法：禁止騷擾、禁止冒充身份、禁止色情內容、禁止違法行為、使用者生成內容（活動類型提案、地點提案、集合地點/見面提示自由文字）行為規範，以及違規可能導致的停權/刪除帳號處理，並與 v1.17/v1.18 新增的封鎖/檢舉機制互相 cross-reference。純文件新增，不涉及任何 schema/RPC 變動。
+
+> **v1.20 變更紀錄**（`app_user.onboarding_seen_at`）：
+> 1. 🟢 **新增 `app_user.onboarding_seen_at`（nullable timestamptz）**：供 `docs/UI_PLAN.md` 第 11.1 節既有的新手上手引導設計使用——只在此欄位為 `null` 時自動跳出引導卡片，看過一次（或按叉叉關閉）後寫入目前時間，之後不再自動跳出。選擇存後端而非純前端裝置記憶，理由是使用者換手機/重灌 App 是常見情境，只存本機會導致重複看到，體驗不佳。
+> 2. 🟢 **不新增 RPC**：既有 `grant select, update on app_user to authenticated` 與 `own_profile_update` RLS policy（`id = auth.uid()`）已完整覆蓋，前端直接 `PATCH app_user` 更新即可。
 
 ---
 
