@@ -580,6 +580,53 @@ entry for the user-facing summary.
    entries (per that file's own rule: add a code only once a migration
    actually raises it — both now do).
 
+## v1.17 update: user-initiated blocking
+
+New migrations `20260724124100_user_block_schema.sql` +
+`20260724124200_user_block_rpc.sql` + `20260724124300_matching_engine_user_block_check.sql`:
+
+1. **New table `user_block`** (`blocker_id`/`blocked_id`/`reason`/`created_at`,
+   `unique(blocker_id, blocked_id)`, `check (blocker_id <> blocked_id)`) —
+   deliberately not the same table as `match_history_avoidance`: that one is
+   system-written, 7-day-expiring, and normalized into a directionless pair
+   (`user_a_id < user_b_id`); this one is user-initiated, permanent, and
+   directional (A blocking B says nothing about B blocking A), and only the
+   blocker can undo it. See ERD.md design note 43 for the full reasoning.
+2. **`block_user(p_blocked_id, p_reason?)` / `unblock_user(p_blocked_id)`** —
+   both idempotent. `block_user` rejects self-block (`INVALID_INPUT` detail
+   `CANNOT_BLOCK_SELF`) and a nonexistent target (`NOT_FOUND` detail
+   `BLOCKED_USER_NOT_FOUND`); repeat calls just overwrite `reason` via
+   `on conflict do update`, no second row. Neither checks `suspended_until` —
+   blocking is a self-protection action, not a privilege a suspended user
+   should lose. Both wrapped in new `lib/rpc/user_block_rpc.dart`.
+3. **`fn_run_matching_engine` gained an independent `user_block` check**,
+   added right after the existing `match_history_avoidance` check inside the
+   candidate-scan loop — deliberately separate code, not merged into the
+   avoidance check, since the two have different semantics (see point 1).
+   Checks both directions (`(blocker=a and blocked=b) or (blocker=b and
+   blocked=a)`) since `user_block` isn't normalized like avoidance is.
+4. **RLS**: `own_blocks_select` policy (`blocker_id = auth.uid()`) + `grant
+   select on user_block to authenticated` (inline in the schema migration,
+   same pattern as `activity_meeting_point_update`'s grant — not appended to
+   the historical `20260724120800_grants.sql`). Listing is plain PostgREST
+   (`GET user_block?blocker_id=eq.<self>`), no dedicated RPC. The blocked
+   party has no select policy at all — same "RLS enabled, no policy for the
+   other side" pattern as `pending_confirmation`, but here only one side
+   (blocked) is excluded, not both.
+5. **New `supabase/tests/database/16_user_block.test.sql`** (10 pgTAP
+   assertions): block prevents matching, unblock restores it, idempotent
+   repeat-block, self-block/nonexistent-target rejection, and RLS (blocker
+   sees own block, blocked party never does). Note for anyone writing a
+   similar RLS test: switching to `set local role authenticated` mid-test
+   loses access to a `create temp table` fixture unless you `grant select on
+   fixtures to authenticated` first (temp tables aren't owned by/auto-granted
+   to that role) — same fix already documented inline in
+   `05_propose_location.test.sql`, easy to forget when writing a new file
+   from scratch.
+6. `supadart` regen picked up `lib/generated/user_block.dart` (new table);
+   no other generated file changed content-wise (`supadart_exports.dart`/
+   `supadart_header.dart` diffs are just the new table being registered).
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

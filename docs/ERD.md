@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.14）
+# ERD — 校園活動配對 App（派生自 SPEC v1.17）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 實體關聯圖（19 張表）
+## 1. 實體關聯圖（20 張表）
 
 ```mermaid
 erDiagram
@@ -51,6 +51,8 @@ erDiagram
     app_user ||--o{ rematch_vote : "from_user_id / to_user_id"
 
     app_user ||--o{ notification : ""
+
+    app_user ||--o{ user_block : "blocker_id 封鎖／blocked_id 被封鎖（v1.17）"
 
     app_user {
         uuid id PK "= auth.users.id"
@@ -234,6 +236,14 @@ erDiagram
         timestamptz read_at "nullable"
         timestamptz created_at
     }
+
+    user_block {
+        uuid id PK
+        uuid blocker_id FK "封鎖發起人"
+        uuid blocked_id FK "被封鎖對象，CHECK：blocker_id != blocked_id；UNIQUE(blocker_id, blocked_id)"
+        text reason "nullable"
+        timestamptz created_at
+    }
 ```
 
 ---
@@ -310,3 +320,5 @@ erDiagram
 41. **`app_config` 第一次存「多個值」的參數，選擇 Postgres array literal 文字而非 jsonb/逗號分隔（v1.13）**：`activity_reminder_lead_minutes_list`（`fn_remind_upcoming_activities()` 用）需要同時表達 30 分鐘前、10 分鐘前兩個獨立提醒點，跟 `app_config` 其餘 key 都是單一數值（`cooldown_minutes` 等）不同。`value` 欄位本身是 `text`，既有慣例是「讀取端依語意 cast」（`fn_get_config_interval` 的 `value::interval`）；`'{30,10}'` 這個 Postgres array literal 可以直接 `value::int[]` 一行轉型（新增 `fn_get_config_int_array()`），跟既有寫法完全對稱，不需要 `string_to_array(value, ',')` 這道額外手續，也不需要引入 jsonb 解析（`value::jsonb` 再 `jsonb_array_elements_text`）這個目前全表都沒用過的路徑；更不採「拆成多筆 key」（`activity_reminder_lead_1`/`_2`……）方案，因為那需要一個沒人明講的命名規則、且未來想加第三個時間點就要新增 code 認得新 key 名，而不是單純改一筆資料。
 
 42. **帳號刪除：`app_user` row 保留、去識別化，不做真正的 `DELETE`（v1.14）**：`app_user.id references auth.users(id) on delete cascade` 是這個決定的直接觸發原因——若真的刪掉 `app_user`（不論是自己被 cascade 帶走，還是主動 `DELETE`），會撞上 13 張子表（`match_request.owner_id`、`activity_member.user_id`……）沒有 `on delete cascade` 的 FK，直接違反約束；若改成先清空這些子表，又會讓其他使用者依賴的 reliability／得票數／集合點等共用資料連帶失真（例如 `activity_location_vote` 的得票數會因為投票者的列被刪除而少算）。保留 row、id 不變、只清空 `email`/`display_name`/`avatar_url`/`gender`/`bio`/`department`/`contact_*` 這些識別欄位，是唯一不需要動任何子表 FK、也不影響其他使用者資料完整性的方案。新增 `deleted_at`（nullable timestamptz）作為「這是被去識別化的殼」的判斷依據；`email` 的兩條既有 CHECK（格式比對、`school_matches_email`）都補上 `deleted_at is not null or ...` 短路條件，讓已刪除帳號的佔位 email（`'deleted+' || id`，不再偽造符合網域格式的假信箱）不會被舊約束擋下。`user_reliability_event` 這張表刻意不做任何處理——實際查證 `fn_reliability_tier`/`fn_is_new_user` 的算法後確認，可信度計算只 `where user_id = p_user_id`，純粹自己查自己，不存在「別人的可信度依賴我的事件」這種跨人聚合。真正刪除 `auth.users` 那一列（GoTrue soft delete）是唯一需要 Edge Function 的地方，見 API.md §1.5 與 `supabase/functions/delete-auth-user/`。
+
+43. **`user_block` 不共用 `match_history_avoidance` 的表與正規化 pair 設計（v1.17）**：`match_history_avoidance`（設計備註 15）是系統自動寫入、7 天到期、正規化成無方向性的 pair（`user_a_id < user_b_id`，查詢只需一個方向）；`user_block` 是使用者主動、永久（不到期）、有方向性——A 封鎖 B 不代表 B 封鎖 A，且只有 blocker 能單方解除，兩者語意上不是同一件事，硬塞進同一張表只會讓「到期」「正規化」「誰能解除」這些欄位對一半的資料列沒有意義。代價是 Matching Engine 的封鎖檢查（`fn_run_matching_engine`）必須用 `or` 比對兩個方向（`(blocker=a and blocked=b) or (blocker=b and blocked=a)`），而不是 avoidance 那樣 `least`/`greatest` 正規化成單一查詢路徑——這是刻意的取捨，不是漏做正規化。RLS 也刻意跟 avoidance 不同：avoidance 兩個當事人都查不到（見設計備註 15 原文的「不歸因」設計，比封鎖更敏感），`user_block` 則是 blocker 自己能查（清單管理需求），blocked 方仍然永遠查不到（核心前提：被封鎖方不該知道自己被封鎖）。

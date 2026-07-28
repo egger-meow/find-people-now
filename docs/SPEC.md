@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.16 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.17 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -139,6 +139,12 @@
 > 2. 🟢 **簽章變更**：`p_bucket text` → `p_earliest_start timestamptz, p_latest_start timestamptz`。backend 保留三項驗證：① `p_latest_start <= p_earliest_start` → `INVALID_INPUT` detail `LATEST_START_MUST_BE_AFTER_EARLIEST_START`；② `p_latest_start > now() + 24 小時` → `WINDOW_EXCEEDS_24H`（沿用既有錯誤碼，不新造）；③ `p_latest_start < now()` → `INVALID_INPUT` detail `LATEST_START_IN_PAST`。`p_earliest_start` 刻意不做下限檢查——Matching Engine 本來就用 `greatest(earliest_start, ...)` 決定實際 `start_time`，過早的 `earliest_start` 不影響正確性，前端夾好即可。
 > 3. 🟢 **`submit_request` 既有的 `latest_start > created_at + 24h` 二次檢查維持不動**：檢查時機不同（建立當下 vs 提交當下），但兩者邏輯上恆為同一個布林值（`latest_start`/`created_at` 都在建立當下就已固定），不會互相打架，且不在本次修正範圍內。
 > 4. 🟢 **呼叫點檢查**：`join_request_by_token`/`propose_location` 等其他 RPC 皆未引用桶換算邏輯，範圍僅限 `create_request`；`app/lib/rpc/match_request_rpc.dart` 的 `createRequest()` 連帶同步（拿掉 `RequestBucket` enum，改收 `earliestStart`/`latestStart` 兩個 `DateTime`），僅做參數綁定的機械性替換，不涉及任何桶選單/多選/UI 邏輯（那些留待前端後續處理）。
+
+> **v1.17 變更紀錄**（使用者主動封鎖，見新增第 12.1.5 節）：
+> 1. 🟢 **新增 `user_block` 表（`blocker_id`/`blocked_id`/`reason`/`created_at`，`unique(blocker_id, blocked_id)`）**：單方面生效、永久（不到期）、可被封鎖方自行 `unblock_user` 解除。**刻意不與既有 `match_history_avoidance`（第 12.1.4 節）共用同一張表**——後者是系統自動寫入、7 天到期、正規化成無方向性的 pair（`user_a_id < user_b_id`，見 ERD 設計備註 15）；`user_block` 是使用者主動、永久、有方向性（誰封鎖誰有語意差異）。獨立建表避免牽動既有核心撮合邏輯的風險。
+> 2. 🟢 **新增 `rpc: block_user(p_blocked_id, p_reason)` / `rpc: unblock_user(p_blocked_id)`**：兩者皆冪等。`block_user` 拒絕自我封鎖（`INVALID_INPUT` detail `CANNOT_BLOCK_SELF`）與不存在的對象（`NOT_FOUND` detail `BLOCKED_USER_NOT_FOUND`）。封鎖清單查詢直接用 PostgREST（`GET user_block?blocker_id=eq.<self>`），不另開查詢用 RPC。
+> 3. 🟢 **RLS 只開放封鎖方自己看得到**（`blocker_id = auth.uid()`）：被封鎖方永遠不會、也不該知道自己被封鎖，這是功能設計的核心前提。
+> 4. 🟢 **Matching Engine 新增獨立檢查**：候選 owner 與目前累積集合裡任一成員 owner，任一方向存在 `user_block` 記錄就跳過該候選（`fn_run_matching_engine`，見 20260724124300 migration）。與 12.1.4 節既有的 `match_history_avoidance` 檢查各自獨立、不共用程式碼，只影響未來配對，不影響任何進行中的活動。
 
 ---
 
@@ -590,6 +596,15 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 
 - 若同一對使用者曾進入 `PENDING_CONFIRMATION` 但最終未成立（任一方未確認），近 7 天內 Matching Engine 對這一對使用者應**降低**（不是禁止）再次被配成同一組的權重
 - 這是軟性降權，不是永久或硬性拉黑，避免「只是當時時間不合」被永久排除
+
+#### 12.1.5 使用者主動封鎖（v1.17）
+
+跟 12.1.4 的配對冷卻是**互補、不是重複**的兩套機制——冷卻是系統自動、暫時、雙向對稱（不區分是誰造成配對失敗）；這裡是使用者主動、永久、單方面：
+
+- 🟢 **單方面生效，不需對方同意、不通知對方**：被封鎖方永遠不會、也不該知道自己被封鎖，避免封鎖行為本身引發對立或報復
+- 🟢 **只影響未來配對，不影響任何進行中的活動**：已經成局的 Activity 不會因為之後有一方封鎖對方而受影響
+- 🟢 **可自行解除**（`unblock_user`），不像配對冷卻是時間到自動失效，也不像帳號停權需要等待或人工介入
+- 封鎖清單查詢、封鎖/解除封鎖入口見 `docs/UI_PLAN.md`
 
 ---
 

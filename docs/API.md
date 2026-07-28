@@ -1,6 +1,6 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.14.1）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.17）
 
-> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.14 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
+> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.17 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
 
 ## 0. 總約定
 
@@ -178,3 +178,16 @@
 | §9 八個背景任務全數首次落地成 SQL (v1.12) | §9「Request 過期」`fn_expire_requests()` / 「Downgrade 超時」`fn_expire_downgrades()` / 「Activity 超時完成」`fn_complete_activities()` / 「結束提醒」`fn_remind_completions()`；並補齊 5.1 `respond_downgrade` 的 `DOWNGRADE_RESULT` 與「PENDING_CONFIRMATION 超時與拒絕清理」的 `MATCH_NOT_FORMED` 兩處此前缺漏的通知觸發點 |
 | 活動開始前提前提醒，可調多時間點 (v1.13) | §9「活動開始前提前提醒」`fn_remind_upcoming_activities()` + 新事件 `ACTIVITY_UPCOMING` + `app_config.activity_reminder_lead_minutes_list` + §8.4 文案 |
 | App 內建帳號刪除，Apple/Google 上架硬性規定 (v1.14) | 1.5 `delete_account()` + Edge Function `delete-auth-user` + `app_user.deleted_at` + 21 支 RPC 的 `ACCOUNT_DELETED` 檢查（見 §0）+ ERD 設計備註 42 |
+| §12.1.5 使用者主動封鎖，永久、單方、可自行解除 (v1.17) | §11 `block_user`/`unblock_user` + `fn_run_matching_engine` 新增獨立檢查 + ERD 設計備註 43 |
+
+---
+
+## 11. 安全機制（封鎖／檢舉；v1.17）
+
+| # | Endpoint | 說明 |
+|---|---|---|
+| 11.1 | `rpc: block_user(p_blocked_id, p_reason?)` | **單方面封鎖（SPEC §12.1.5）**：冪等，重複呼叫只覆寫 `p_reason`。拒絕自我封鎖（`INVALID_INPUT` detail `CANNOT_BLOCK_SELF`）與不存在的對象（`NOT_FOUND` detail `BLOCKED_USER_NOT_FOUND`）。不檢查 `suspended_until`——封鎖是自我保護行為，停權中的使用者仍應能封鎖騷擾自己的人。生效後只影響 Matching Engine 未來的撮合（`fn_run_matching_engine` 新增獨立檢查，不與 `match_history_avoidance` 共用程式碼，見 ERD 設計備註 43），不影響任何進行中的活動。 |
+| 11.2 | `rpc: unblock_user(p_blocked_id)` | 解除封鎖，冪等（找不到記錄也視為成功）。 |
+| 11.3 | `GET user_block?blocker_id=eq.{自己}`（PostgREST，RLS：`blocker_id = auth.uid()`） | 查自己的封鎖清單。**被封鎖方永遠查不到自己被封鎖的記錄**（無 RLS policy 開放給 `blocked_id`），這是功能設計的核心前提，不是漏做。 |
+
+錯誤碼：`INVALID_INPUT`（detail `CANNOT_BLOCK_SELF`）、`NOT_FOUND`（detail `BLOCKED_USER_NOT_FOUND`）

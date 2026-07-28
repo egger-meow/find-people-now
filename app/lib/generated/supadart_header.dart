@@ -58,6 +58,7 @@ extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get pending_confirmation => from('pending_confirmation');
   SupabaseQueryBuilder get app_user => from('app_user');
   SupabaseQueryBuilder get match_request => from('match_request');
+  SupabaseQueryBuilder get user_block => from('user_block');
   SupabaseQueryBuilder get user_reliability_event =>
       from('user_reliability_event');
 }

@@ -19,4 +19,5 @@ export 'notification.dart';
 export 'pending_confirmation.dart';
 export 'app_user.dart';
 export 'match_request.dart';
+export 'user_block.dart';
 export 'user_reliability_event.dart';
