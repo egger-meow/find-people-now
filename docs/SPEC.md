@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.18 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.19 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -151,6 +151,9 @@
 > 2. 🟢 **新增 `rpc: submit_report(category, reported_user_id?, reported_activity_id?, detail?)`**：兩個檢舉對象皆缺時回 `INVALID_INPUT` detail `REPORT_TARGET_REQUIRED`。
 > 3. 🟢 **審核走 Supabase Studio 人工查詢 `status='PENDING'`**，比照既有 `pending_review` view（第 5 節、ERD 設計備註 27）的審核慣例，不新建 admin API/介面。人工判斷後可視情況手動更新對應使用者既有的 `suspended_until`（第 10 節）——不新增獨立的懲罰機制，沿用既有停權欄位。
 > 4. 🟢 **RLS 只開放檢舉發起人自己看得到**（`reporter_id = auth.uid()`）。
+
+> **v1.19 變更紀錄**（新增 `docs/TERMS_OF_SERVICE.md`）：
+> 1. 🟢 **新增服務條款文件**，比照 [PRIVACY_POLICY.md](PRIVACY_POLICY.md) 的草稿免責寫法：禁止騷擾、禁止冒充身份、禁止色情內容、禁止違法行為、使用者生成內容（活動類型提案、地點提案、集合地點/見面提示自由文字）行為規範，以及違規可能導致的停權/刪除帳號處理，並與 v1.17/v1.18 新增的封鎖/檢舉機制互相 cross-reference。純文件新增，不涉及任何 schema/RPC 變動。
 
 ---
 
@@ -682,7 +685,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 3. 冷啟動種子使用者渠道（社團/系學會/校內二手拍平台合作）
 4. 實際地點清單內容，依校分列且需標注 `campus`（v1.11 起地點的 school 已不足以判斷距離，見 SPEC v1.11 變更紀錄第 1 點；NYCU：光復籃球場／工程館／浩然／女二／竹湖…；NTHU：風雲球場…）
 5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION／LOCATION_NOT_YET_PROPOSED（v1.11），細節待補）
-6. 隱私權政策文件（收集資料種類、聯絡方式用途、第三方服務 Supabase 揭露）—— 上架前必須補齊；🟢 **刪除帳號流程本身已於 v1.14 實作完成**（`delete_account()` RPC + `delete-auth-user` Edge Function，見上方 v1.14 變更紀錄與 [PRIVACY_POLICY.md](PRIVACY_POLICY.md) 第五節），此項開放問題範圍縮小為文件其餘部分
+6. 隱私權政策文件（收集資料種類、聯絡方式用途、第三方服務 Supabase 揭露）—— 上架前必須補齊；🟢 **刪除帳號流程本身已於 v1.14 實作完成**（`delete_account()` RPC + `delete-auth-user` Edge Function，見上方 v1.14 變更紀錄與 [PRIVACY_POLICY.md](PRIVACY_POLICY.md) 第五節），此項開放問題範圍縮小為文件其餘部分；🟢 **服務條款文件已於 v1.19 新增**（[TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md)），與隱私權政策同為上架前需經法務審閱的草稿
 7. 新人配對資格限制的 `min_participants ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
 8. 貪婪成局策略下，連續模式（`group_size_step` 為 null）的選項只要 `min_participants < max_participants`，達到 `min_participants` 就會立即成局、不等待湊到 `max_participants`——v1.5 版本「不限，人多熱鬧」的固定選項在 v1.6 UI 重構後已不存在，但此行為特性對任何連續模式選項依然成立，是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 6.2、7 節）
 9. `max_participants` 為 NULL 時是否要在寫入當下就填入 `activity_type.default_max_participants`、還是維持 NULL 由讀取端 fallback，兩種做法對「人數超額」判斷（第 7 節）行為一致但實作路徑不同，待 API 設計階段定案
@@ -706,6 +709,6 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 3. ✅ State Machine diagram（第 9 節核心版本 + 完整轉移觸發條件表）→ [STATE_MACHINE.md](STATE_MACHINE.md)
 4. ✅ Supabase migration（enum 來自 State Machine 定案值域）→ [migrations/](migrations/)
 5. ✅ API endpoint spec（建立在 ERD 定案之上）→ [API.md](API.md)
-6. 🔲（平行進行）地點清單內容、Notification 事件細節、隱私權政策文件
+6. 🔲（平行進行）地點清單內容、Notification 事件細節、隱私權政策文件；✅ 服務條款文件（v1.19）→ [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md)
 7. 🔲 User Flow + Wireframe
 8. 🔲 10–20 位清交學生訪談（兩校都要有），驗證配對流程是否真的比「LINE 群組揪人」更方便
