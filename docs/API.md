@@ -1,6 +1,6 @@
-# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.20）
+# API Endpoint Spec — 校園活動配對 App（派生自 SPEC v1.21）
 
-> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.20 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
+> 本文件由 [SPEC.md](SPEC.md) 推導，建立在 [ERD.md](ERD.md) v1.21 與 [STATE_MACHINE.md](STATE_MACHINE.md) v1.14 定案之上。若與 SPEC 衝突，先改 SPEC。
 
 ## 0. 總約定
 
@@ -23,6 +23,7 @@
 | 1.3 | `PATCH app_user`（PostgREST，RLS：own row） | 更新個人資料（含 `bio`, `department`）；DB CHECK 保證改完仍滿足硬性門檻與必填約束。也用於寫入 `onboarding_seen_at`（v1.20，新手上手引導卡片已讀時間戳，見 `docs/UI_PLAN.md` §11.1），不另開 RPC。 |
 | 1.4 | `rpc: get_my_reliability()` | 回 `{ tier: TRUSTED\|NORMAL\|NEW, is_new_user: bool }`，即時由 `fn_reliability_tier` / `fn_is_new_user` 計算（SPEC §12：不存分數欄位）。 |
 | 1.5 | `rpc: delete_account()` **接著** Edge Function `delete-auth-user`（v1.14） | **App 內建帳號刪除**（Apple App Store Review Guideline 5.1.1(v) / Google Play 兩者的上架硬性規定，SPEC §16 開放問題 6）。分兩步、Flutter 端依序呼叫：① `delete_account()` RPC——清理 `public` schema 業務資料、去識別化 `app_user`（row 保留、id 不變，見 ERD 設計備註 42），冪等（`{ success, already_deleted? }`）。② Edge Function `delete-auth-user`——驗證呼叫者 JWT 後呼叫官方 `auth.admin.deleteUser(id, shouldSoftDelete: true)`，只有這支 Function 持有 `service_role` key。呼叫端（Flutter）對步驟②做 2 次重試（1 秒/3 秒 backoff）後放棄，不論結果一律本地登出——步驟①已完成、`ACCOUNT_DELETED` 檢查已生效，殘留風險視窗很小，不需要背景重試佇列。 |
+| 1.6 | `rpc: check_enrollment_reminder(p_degree_level)`（v1.21） | **NYCU 在校生年限軟性提醒（SPEC §2）**：僅當呼叫者信箱網域為 `nycu.edu.tw` 時才可能回 `true`；回傳布林值，由 `fn_seniority_reminder_needed(email, degree_level)` 計算（`fn_parse_nycu_enrollment_year(email)` 負責解析入學年，見 ERD 設計備註 45）。Flutter 端在 `complete_profile`（1.2）送出前呼叫，回 `true` 才跳一次性確認訊息，使用者確認後仍照常呼叫 1.2，**不阻擋註冊流程**。不落地存任何欄位，也不影響 1.2 本身的驗證邏輯。 |
 
 錯誤碼：`INVALID_EMAIL_DOMAIN`、`PROFILE_INCOMPLETE`、`DEGREE_LEVEL_REQUIRED`、`NO_CONTACT_METHOD`、`ACCOUNT_DELETED`（v1.14，見 §0）
 
@@ -181,6 +182,7 @@
 | §12.1.5 使用者主動封鎖，永久、單方、可自行解除 (v1.17) | §11 `block_user`/`unblock_user` + `fn_run_matching_engine` 新增獨立檢查 + ERD 設計備註 43 |
 | §12.1.6 檢舉機制，人工審核不做自動懲罰 (v1.18) | §11 `submit_report` + ERD 設計備註 44 |
 | 新手上手引導已讀時間戳 (v1.20，`docs/UI_PLAN.md` §11.1) | 1.3 `PATCH app_user` 的 `onboarding_seen_at` 欄位，不另開 RPC |
+| §2 NYCU 在校生年限軟性提醒，僅提醒不擋門 (v1.21) | 1.6 `check_enrollment_reminder` + ERD 設計備註 45 |
 
 ---
 

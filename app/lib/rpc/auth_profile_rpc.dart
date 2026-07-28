@@ -108,3 +108,23 @@ Future<DeleteAccountResult> deleteAccount(SupabaseClient client) {
     },
   );
 }
+
+/// docs/API.md §1 — `rpc: check_enrollment_reminder(p_degree_level)` (v1.21).
+/// Call this with the form's chosen [degreeLevel] right before submitting
+/// [completeProfile] during registration; if it returns `true`, show a
+/// one-time confirmation dialog (NYCU-only seniority reminder — see
+/// SPEC.md §2 point 5) before proceeding with the actual `completeProfile`
+/// call. Does not block registration either way.
+Future<bool> checkEnrollmentReminder(
+  SupabaseClient client, {
+  required DEGREE_LEVEL degreeLevel,
+}) {
+  return callRpc<bool>(
+    client,
+    'check_enrollment_reminder',
+    params: {
+      'p_degree_level': degreeLevel.name,
+    },
+    decode: (data) => data as bool,
+  );
+}

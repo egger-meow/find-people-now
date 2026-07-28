@@ -1,4 +1,4 @@
-# ERD — 校園活動配對 App（派生自 SPEC v1.20）
+# ERD — 校園活動配對 App（派生自 SPEC v1.21）
 
 > 本文件由 [SPEC.md](SPEC.md) 推導，不得與其衝突；若有衝突，先改 SPEC 再改這裡。
 >
@@ -340,3 +340,4 @@ erDiagram
 
 43. **`user_block` 不共用 `match_history_avoidance` 的表與正規化 pair 設計（v1.17）**：`match_history_avoidance`（設計備註 15）是系統自動寫入、7 天到期、正規化成無方向性的 pair（`user_a_id < user_b_id`，查詢只需一個方向）；`user_block` 是使用者主動、永久（不到期）、有方向性——A 封鎖 B 不代表 B 封鎖 A，且只有 blocker 能單方解除，兩者語意上不是同一件事，硬塞進同一張表只會讓「到期」「正規化」「誰能解除」這些欄位對一半的資料列沒有意義。代價是 Matching Engine 的封鎖檢查（`fn_run_matching_engine`）必須用 `or` 比對兩個方向（`(blocker=a and blocked=b) or (blocker=b and blocked=a)`），而不是 avoidance 那樣 `least`/`greatest` 正規化成單一查詢路徑——這是刻意的取捨，不是漏做正規化。RLS 也刻意跟 avoidance 不同：avoidance 兩個當事人都查不到（見設計備註 15 原文的「不歸因」設計，比封鎖更敏感），`user_block` 則是 blocker 自己能查（清單管理需求），blocked 方仍然永遠查不到（核心前提：被封鎖方不該知道自己被封鎖）。
 44. **`report` 沒有 admin API/介面，審核走 Supabase Studio 人工查詢（v1.18，比照設計備註 27 `pending_review` view 的既有慣例）**：`status='PENDING'` 的檢舉記錄由人工在 Studio 查詢處理，人工判斷後視情況手動更新對應使用者的 `suspended_until`——不新增獨立的懲罰機制，沿用既有停權欄位。與 `pending_review` view 不同的是這裡不另開 view（`report` 本身就是單一表，直接查 `status='PENDING'` 即可，不需要 UNION 多張來源表）。
+45. **NYCU 在校生年限軟性提醒不落地存欄位、也不新增任何 schema（v1.21）**：跟 `known_member_count`（設計備註 20）、得票數（設計備註 32）同一精神——入學年份（信箱本身）、`degree_level`、目前日期都已存在，註冊當下即時算即可；這個判斷只在註冊當下用一次，不需要之後反覆查詢，比前述兩者更沒有快取的理由。`fn_parse_nycu_enrollment_year`/`fn_seniority_reminder_needed` 刻意寫成 plain SQL/PL/pgSQL function（不是 RPC），方便 pgTAP 直接測、不需要模擬 `auth.uid()`；`check_enrollment_reminder` RPC 只是包一層 `auth.uid() → auth.users.email` 查詢再呼叫這兩個 helper。

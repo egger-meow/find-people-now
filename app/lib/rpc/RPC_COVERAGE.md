@@ -673,6 +673,43 @@ just makes that design implementable. `supadart` regen picked up the new
 field on `lib/generated/app_user.dart` (`onboardingSeenAt`); no other
 generated file changed content-wise.
 
+## v1.21 update: NYCU seniority reminder
+
+New migration `20260724124700_seniority_reminder_rpc.sql`:
+
+1. **`fn_parse_nycu_enrollment_year(email)`** (plain `language sql`, not
+   plpgsql) — returns the ROC enrollment year parsed from the last two
+   characters of the email's local-part (`mg09` → 109, `cs15` → 115,
+   regardless of prefix length), or `null` if those two characters aren't
+   both digits. Written as a plain SQL function specifically so pgTAP can
+   call it directly without simulating `auth.uid()`.
+2. **`fn_seniority_reminder_needed(email, degree_level)`** — `false`
+   immediately for any non-`@nycu.edu.tw` domain (including `@nthu.edu.tw`)
+   or an unparseable email; otherwise compares `(current ROC year - enrolled
+   ROC year) > threshold`, threshold = 6/4/7 for `UNDERGRAD`/`MASTER`/`PHD`.
+   Strictly `>`, not `>=` — exactly-at-threshold does not trigger.
+3. **`check_enrollment_reminder(p_degree_level)`** (the only actual RPC) —
+   thin wrapper: resolves the caller's email from `auth.users` via
+   `auth.uid()`, then calls point 2's helper. Deliberately has no
+   `ACCOUNT_DELETED`/`suspended_until` guard — called during registration,
+   before an `app_user` row necessarily exists, so neither check is
+   meaningful at that point. Wrapped as `checkEnrollmentReminder()` in
+   `lib/rpc/auth_profile_rpc.dart`, meant to be called right before
+   `completeProfile()` during the registration flow (see
+   `docs/UI_PLAN.md` §12).
+4. **No new column, no persisted result** — email (enrollment year),
+   `degree_level`, and current date are all already available; this is
+   computed once at registration time, same "query instead of cache"
+   philosophy as `known_member_count`/vote tallies (see ERD design note 45).
+5. **New `supabase/tests/database/18_seniority_reminder.test.sql`** (9
+   pgTAP assertions) — deliberately builds test emails *dynamically* from
+   `extract(year from now())::int - 1911` rather than hardcoding a specific
+   ROC year, so the test doesn't silently start failing/passing for the
+   wrong reason as real time passes. Covers over-threshold (true) and
+   exactly-at-threshold (false) for all three degree levels, non-NYCU
+   domain skip, unparseable-format skip, and one real `set_config`-simulated
+   end-to-end call through the `check_enrollment_reminder` RPC.
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all
