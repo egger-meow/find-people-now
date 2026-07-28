@@ -1,30 +1,47 @@
-// This is a basic Flutter widget test.
+// Boots the real app widget tree (go_router + AppTheme via the riverpod
+// provider graph) against a real [SupabaseClient] pointed at the local
+// Supabase instance (same no-mock convention as rpc_smoke_test.dart) and
+// confirms an unauthenticated session lands on the OTP login screen — the
+// go_router `redirect` in lib/router/app_router.dart is what's actually being
+// exercised here, not a canned counter widget.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+// Deliberately does NOT call `Supabase.initialize()` (the global singleton
+// `supabase_bootstrap.dart` uses in real app startup): that path pulls in
+// session-persistence storage plugins that hang forever under bare
+// `flutter test` (no platform channel implementations registered outside
+// `integration_test`). Overriding [supabaseClientProvider] with a plain
+// [SupabaseClient] sidesteps that entirely while still exercising the real
+// widget tree against a real backend.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:find_people_now/auth/auth_providers.dart';
 import 'package:find_people_now/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('unauthenticated session lands on the OTP login screen', (WidgetTester tester) async {
+    await dotenv.load();
+    final client = SupabaseClient(
+      dotenv.get('SUPABASE_URL'),
+      dotenv.get('SUPABASE_ANON_KEY'),
+      // No session is ever established in this test, so the periodic
+      // auto-refresh timer would just sit there — `flutter_test` asserts no
+      // timers are pending after a test finishes, so turn it off rather than
+      // work around the assertion.
+      authOptions: const AuthClientOptions(autoRefreshToken: false),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [supabaseClientProvider.overrideWithValue(client)],
+        child: const MyApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('學校信箱'), findsOneWidget);
+    expect(find.text('傳送驗證碼'), findsOneWidget);
   });
 }
