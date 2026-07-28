@@ -156,14 +156,35 @@ void main() {
       // ignore: avoid_print
       print('[setup] candidate location id=$locationId');
 
+      // 2.5. This test's real intent is the small-headcount path (SPEC §12.1
+      // "≤2 人安全確認" + the location-voting flow that follows it), so
+      // min_participants=2 (not 3 — the old min=3 only existed to dodge
+      // submit_request's NEW_USER_LOW_HEADCOUNT gate, which is a workaround,
+      // not the scenario being tested). With min=2, both fresh test accounts
+      // WOULD trip that gate (fn_is_new_user = true for anyone with zero
+      // 'ATTENDED' rows), so seed one historical ATTENDED event per user
+      // first — the same raw-SQL fixture escape hatch used elsewhere in this
+      // file, mirroring how the pgTAP tests attach reliability events to a
+      // real (fixture) activity row rather than special-casing the gate.
+      await _psqlScalar('''
+        with hist_activity as (
+          insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
+          select id, 'NYCU', '$testCampus', now() - interval '10 days',
+                 now() - interval '10 days' + interval '1 hour', 'COMPLETED'
+          from activity_type where name = '咖啡' limit 1
+          returning id
+        )
+        insert into user_reliability_event (user_id, activity_id, event_type)
+        select uid, hist_activity.id, 'ATTENDED'
+        from hist_activity, (values ('$userAId'::uuid), ('$userBId'::uuid)) as u(uid);
+      ''');
+      // ignore: avoid_print
+      print('[setup] seeded ATTENDED history for userA/userB (unlocks low-headcount eligibility)');
+
       // 3. Both users create+submit a real REQUESTING request via the actual
-      // RPC surface. min_participants=3 (not 2) so brand-new users clear
-      // submit_request's NEW_USER_LOW_HEADCOUNT gate (SPEC §12.1.1) —
-      // unrelated to the eventual match size, which is decided by actual
-      // request_member counts at merge time, not this field. Neither request
-      // gets extra fixture members, so the real merge total is exactly 2
-      // (1+1), landing in commit_match's <=2 PENDING_CONFIRMATION branch —
-      // this is the real 2-person path, not routed around it.
+      // RPC surface. min_participants=2, matching the real merge total (1+1),
+      // which lands in commit_match's <=2 PENDING_CONFIRMATION branch — the
+      // real 2-person path, not routed around it.
       final types = await searchActivityType(clientA, query: '咖啡');
       expect(types, isNotEmpty);
       final coffeeId = types.firstWhere((t) => t.name == '咖啡').id;
@@ -174,7 +195,7 @@ void main() {
         campus: testCampus,
         earliestStart: DateTime.now().toUtc(),
         latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
-        minParticipants: 3,
+        minParticipants: 2,
       );
       await submitRequest(clientA, requestA.id);
       // ignore: avoid_print
@@ -186,7 +207,7 @@ void main() {
         campus: testCampus,
         earliestStart: DateTime.now().toUtc(),
         latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
-        minParticipants: 3,
+        minParticipants: 2,
       );
       await submitRequest(clientB, requestB.id);
       // ignore: avoid_print
