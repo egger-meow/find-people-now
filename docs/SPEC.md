@@ -720,6 +720,6 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 3. ✅ State Machine diagram（第 9 節核心版本 + 完整轉移觸發條件表）→ [STATE_MACHINE.md](STATE_MACHINE.md)
 4. ✅ Supabase migration（enum 來自 State Machine 定案值域）→ [migrations/](migrations/)
 5. ✅ API endpoint spec（建立在 ERD 定案之上）→ [API.md](API.md)
-6. 🔲（平行進行）地點清單內容、Notification 事件細節、隱私權政策文件；✅ 服務條款文件（v1.19）→ [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md)
+6. ✅（平行進行）地點清單內容、Notification 事件細節、隱私權政策文件；✅ 服務條款文件（v1.19）→ [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md)
 7. 🔲 User Flow + Wireframe
 8. 🔲 10–20 位清交學生訪談（兩校都要有），驗證配對流程是否真的比「LINE 群組揪人」更方便
