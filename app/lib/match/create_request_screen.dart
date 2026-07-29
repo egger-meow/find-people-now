@@ -12,11 +12,12 @@ import '../widgets/app_button.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
 
-/// UI_PLAN.md §2 配對頁（首頁）— 這輪只做填表 → 送出 → 等待室這一條路徑。
-/// §7 時段桶 UI 標記為 🔴 尚未細化，這輪先用最單純的「現在，2 小時內」固定窗口
-/// 頂上去，讓 create_request/submit_request 這條路徑先能真的跑——之後桶 UI 定案
-/// 後這裡只需要換算邏輯，不影響 RPC 呼叫本身（earliest_start/latest_start 早已是
-/// 前端算好傳原始時間戳，v1.16）。
+/// UI_PLAN.md §2 配對頁（首頁）— 填表 → 送出 → 等待室這一條路徑。
+/// §7 時段桶 UI：方向已定案（5 個固定時段桶＋「現在」快速選項、僅顯示
+/// now()~now()+24h 內的桶、多選收斂成單一連續區間、可切換詳細時間模式），
+/// 這裡是第一版實作——`create_request` 早已直接收 `p_earliest_start`/
+/// `p_latest_start` 原始時間戳（v1.16），這裡的桶邏輯只是前端換算，不影響
+/// RPC 呼叫本身。
 class CreateRequestScreen extends ConsumerWidget {
   const CreateRequestScreen({super.key});
 
@@ -28,6 +29,11 @@ class CreateRequestScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('找人一起做點事'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline_rounded),
+            tooltip: '使用說明',
+            onPressed: () => context.push('/help'),
+          ),
           IconButton(
             icon: const Icon(Icons.event_note_rounded),
             tooltip: '我的活動',
@@ -48,7 +54,7 @@ class CreateRequestScreen extends ConsumerWidget {
               // 等待室，不重新顯示表單。用 post-frame callback 避免在 build
               // 中途觸發導覽。
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (context.mounted) context.go('/waiting-room/${request.id}');
+                if (context.mounted) context.push('/waiting-room/${request.id}');
               });
               return const LoadingIndicator(label: '你已經有進行中的配對，正在帶你過去…');
             }
@@ -63,6 +69,53 @@ class CreateRequestScreen extends ConsumerWidget {
     );
   }
 }
+
+/// UI_PLAN.md §7 — 5 個固定時段桶，跨午夜的桶（晚上 20-24）`end` 落在隔天
+/// 00:00。桶本身跟日期無關，實際 [DateTime] 由 [_generateBuckets] 依「今天」
+/// 「明天」兩個候選日展開。
+const _bucketDefs = [
+  ('早上', 6, 12),
+  ('中午', 12, 14),
+  ('下午', 14, 18),
+  ('傍晚', 18, 20),
+  ('晚上', 20, 24),
+];
+
+class _TimeBucket {
+  _TimeBucket({required this.label, required this.start, required this.end, required this.isTomorrow});
+
+  final String label;
+  final DateTime start;
+  final DateTime end;
+  final bool isTomorrow;
+
+  String get displayLabel => isTomorrow ? '明天 $label' : label;
+}
+
+/// 動態顯示規則（UI_PLAN §7）：僅列出「起始時間」落在 `now()~now()+24h`
+/// 內的桶——今天已經開始（起始時間已過去）的桶不顯示，即使桶本身還沒結束；
+/// 跨到隔天範圍的桶帶「明天」前綴。
+List<_TimeBucket> _generateBuckets(DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  final windowEnd = now.add(const Duration(hours: 24));
+  final buckets = <_TimeBucket>[];
+  for (final dayOffset in [0, 1]) {
+    final day = today.add(Duration(days: dayOffset));
+    for (final def in _bucketDefs) {
+      final (label, startHour, endHour) = def;
+      final start = DateTime(day.year, day.month, day.day, startHour);
+      final end = endHour == 24
+          ? DateTime(day.year, day.month, day.day).add(const Duration(days: 1))
+          : DateTime(day.year, day.month, day.day, endHour);
+      if (!start.isBefore(now) && start.isBefore(windowEnd)) {
+        buckets.add(_TimeBucket(label: label, start: start, end: end, isTomorrow: dayOffset == 1));
+      }
+    }
+  }
+  return buckets;
+}
+
+String _formatTime(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 class _CreateRequestForm extends ConsumerStatefulWidget {
   const _CreateRequestForm();
@@ -79,6 +132,13 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   bool _submitting = false;
   String? _error;
 
+  late final List<_TimeBucket> _buckets = _generateBuckets(DateTime.now());
+  final Set<int> _selectedBucketIndices = {};
+  bool _nowSelected = false;
+  bool _detailedMode = false;
+  DateTime? _customEarliest;
+  DateTime? _customLatest;
+
   List<int> _groupSizeOptions(ActivityType type) {
     final min = type.defaultMinParticipants ?? 2;
     final max = type.defaultMaxParticipants ?? min;
@@ -86,11 +146,75 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     return [for (var v = min; v <= max; v += step) v];
   }
 
+  void _toggleBucket(int index) {
+    setState(() {
+      _nowSelected = false;
+      if (_selectedBucketIndices.contains(index)) {
+        _selectedBucketIndices.remove(index);
+      } else {
+        _selectedBucketIndices.add(index);
+      }
+    });
+  }
+
+  void _selectNow() {
+    setState(() {
+      _nowSelected = true;
+      _selectedBucketIndices.clear();
+    });
+  }
+
+  Future<void> _pickCustomTime({required bool isEarliest}) async {
+    final now = DateTime.now();
+    final initial = (isEarliest ? _customEarliest : _customLatest) ?? now;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(now) ? now : initial,
+      firstDate: now,
+      lastDate: now.add(const Duration(hours: 24)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+    if (time == null || !mounted) return;
+    final picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    setState(() {
+      _nowSelected = false;
+      _selectedBucketIndices.clear();
+      if (isEarliest) {
+        _customEarliest = picked;
+      } else {
+        _customLatest = picked;
+      }
+    });
+  }
+
+  /// 「多選收斂為單一連續區間」（UI_PLAN §7）：取所選桶中最早的起始～最晚的
+  /// 結束，即使中間有沒選到的桶也一樣收斂成一段連續時間。
+  (DateTime, DateTime)? _resolveWindow() {
+    final now = DateTime.now();
+    if (_nowSelected) {
+      return (now, now.add(const Duration(minutes: 30)));
+    }
+    if (_detailedMode) {
+      if (_customEarliest == null || _customLatest == null) return null;
+      return (_customEarliest!, _customLatest!);
+    }
+    if (_selectedBucketIndices.isEmpty) return null;
+    final selected = _selectedBucketIndices.map((i) => _buckets[i]).toList();
+    final earliest = selected.map((b) => b.start).reduce((a, b) => a.isBefore(b) ? a : b);
+    final latest = selected.map((b) => b.end).reduce((a, b) => a.isAfter(b) ? a : b);
+    // 防呆夾在 now()+24h 內——正常情況下桶本身已經過濾過，這裡只防呼叫
+    // 這支函式的當下距離畫面產生桶清單的當下已經過了一段時間的邊界誤差。
+    final cap = now.add(const Duration(hours: 24));
+    return (earliest, latest.isAfter(cap) ? cap : latest);
+  }
+
   Future<void> _submit() async {
     final type = _selectedType;
     final campus = _selectedCampus;
     final headcount = _selectedHeadcount;
-    if (type == null || campus == null || headcount == null) {
+    final window = _resolveWindow();
+    if (type == null || campus == null || headcount == null || window == null) {
       setState(() => _error = '請完成所有選擇');
       return;
     }
@@ -102,19 +226,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
 
     final client = ref.read(supabaseClientProvider);
     try {
-      final now = DateTime.now().toUtc();
+      final (earliest, latest) = window;
       final request = await createRequest(
         client,
         activityTypeId: type.id,
         campus: campus,
-        earliestStart: now,
-        latestStart: now.add(const Duration(hours: 2)),
+        earliestStart: earliest.toUtc(),
+        latestStart: latest.toUtc(),
         minParticipants: headcount,
         allowDowngrade: _allowDowngrade,
       );
       await submitRequest(client, request.id);
       if (!mounted) return;
-      context.go('/waiting-room/${request.id}');
+      context.push('/waiting-room/${request.id}');
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = '送出失敗：${e.code.name}${e.detail != null ? '（${e.detail}）' : ''}');
@@ -138,6 +262,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         data: (user) {
           if (user == null) return const LoadingIndicator();
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
+          final window = _resolveWindow();
 
           return ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
@@ -167,7 +292,68 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 ),
               ],
               const SizedBox(height: AppSpacing.lg),
-              Text('2. 選校區', style: Theme.of(context).textTheme.titleMedium),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('2. 選時段', style: Theme.of(context).textTheme.titleMedium),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _detailedMode = !_detailedMode;
+                      _nowSelected = false;
+                      _selectedBucketIndices.clear();
+                    }),
+                    child: Text(_detailedMode ? '改選時段' : '自訂時間'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              if (_detailedMode) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => _pickCustomTime(isEarliest: true),
+                        child: Text(_customEarliest == null ? '最早開始時間' : _formatTime(_customEarliest!)),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => _pickCustomTime(isEarliest: false),
+                        child: Text(_customLatest == null ? '最晚開始時間' : _formatTime(_customLatest!)),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('現在（30 分鐘內）'),
+                      selected: _nowSelected,
+                      onSelected: (_) => _selectNow(),
+                    ),
+                    for (var i = 0; i < _buckets.length; i++)
+                      ChoiceChip(
+                        label: Text(_buckets[i].displayLabel),
+                        selected: _selectedBucketIndices.contains(i),
+                        onSelected: (_) => _toggleBucket(i),
+                      ),
+                  ],
+                ),
+              ],
+              if (window != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '已選範圍：${_formatTime(window.$1)} - ${_formatTime(window.$2)}'
+                  '${window.$2.day != window.$1.day ? '（跨日）' : ''}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+              Text('3. 選校區', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: AppSpacing.sm),
               campusAsync.when(
                 loading: () => const LoadingIndicator(),
@@ -190,7 +376,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 },
               ),
               const SizedBox(height: AppSpacing.lg),
-              Text('3. 選人數', style: Theme.of(context).textTheme.titleMedium),
+              Text('4. 選人數', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: AppSpacing.sm),
               if (_selectedType == null)
                 Text('請先選活動類型', style: Theme.of(context).textTheme.bodySmall)
@@ -217,7 +403,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   },
                 ),
               const SizedBox(height: AppSpacing.lg),
-              Text('4. 人數不夠時，接受少一點人也算成局？', style: Theme.of(context).textTheme.titleMedium),
+              Text('5. 人數不夠時，接受少一點人也算成局？', style: Theme.of(context).textTheme.titleMedium),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _allowDowngrade,
