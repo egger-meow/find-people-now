@@ -6,10 +6,11 @@ import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/location.dart';
 import '../generated/supadart_header.dart'
-    show ACTIVITY_MEMBER_STATUS, ACTIVITY_STATUS, DEGREE_LEVEL, REPORT_CATEGORY;
+    show ACTIVITY_MEMBER_STATUS, ACTIVITY_STATUS, COMPLETION_RESULT, DEGREE_LEVEL, REPORT_CATEGORY;
 import '../rpc/activity_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
+import '../rpc/completion_rpc.dart';
 import '../rpc/report_rpc.dart';
 import '../rpc/user_block_rpc.dart';
 import '../theme/app_theme.dart';
@@ -48,7 +49,12 @@ String _reportCategoryLabel(REPORT_CATEGORY category) => switch (category) {
 /// UI_PLAN.md §4.1 — 單一 `MATCHED`/`ONGOING` 活動自己的兩個分頁籤（地點／
 /// 成員），從「我的活動」清單裡的一張卡片點進來，範圍只限於這一個活動實例，
 /// 不是另一層跟 進行中/已結束 平行的頁面分頁。Round 2 做了「地點」；round 3
-/// 補上「成員」（名單＋依 `source_request_id` 分組＋聯絡方式＋封鎖/檢舉）。
+/// 補上「成員」（名單＋依 `source_request_id` 分組＋聯絡方式＋封鎖/檢舉）；
+/// round 4 補上 UI_PLAN §6.3「完成確認＋再約」——`ONGOING` 時若本人還沒交過
+/// `completion_report` 顯示回報banner，交完緊接跳出再約 sheet；`COMPLETED`
+/// 之後不論當初有沒有交過回報，「成員」分頁籤都持續提供「👍 再約」按鈕（見
+/// `_MemberCard` 的 `activityStatus` 參數），不綁死在送出 completion report
+/// 那個當下才能按。
 class ActivityDetailScreen extends ConsumerWidget {
   const ActivityDetailScreen({super.key, required this.activityId});
 
@@ -76,12 +82,14 @@ class ActivityDetailScreen extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
                     child: Text(_activityStatusLabel(activity.status), style: Theme.of(context).textTheme.titleMedium),
                   ),
+                  if (activity.status == ACTIVITY_STATUS.ONGOING)
+                    _CompletionReportBanner(activityId: activity.id),
                   const TabBar(tabs: [Tab(text: '地點'), Tab(text: '成員')]),
                   Expanded(
                     child: TabBarView(
                       children: [
                         _LocationTab(activity: activity),
-                        _MembersTab(activityId: activity.id),
+                        _MembersTab(activityId: activity.id, activityStatus: activity.status),
                       ],
                     ),
                   ),
@@ -95,6 +103,285 @@ class ActivityDetailScreen extends ConsumerWidget {
   }
 }
 
+/// UI_PLAN.md §6.3 第一步「完成確認」——只在活動 `ONGOING` 且本人還沒交過
+/// `completion_report` 時顯示（RLS 限定只看得到自己交的那份，見
+/// [ownCompletionReportProvider]）。文案呼應 `COMPLETE_CONFIRMATION`
+/// 通知（docs/UI_PLAN.md §9）：「活動結束了嗎？花 10 秒回報一下」。
+class _CompletionReportBanner extends ConsumerWidget {
+  const _CompletionReportBanner({required this.activityId});
+
+  final String activityId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reportAsync = ref.watch(ownCompletionReportProvider(activityId));
+    return reportAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (error, stack) => const SizedBox.shrink(),
+      data: (report) {
+        if (report != null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+          child: AppCard(
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded),
+                const SizedBox(width: AppSpacing.sm),
+                const Expanded(child: Text('活動結束了嗎？花 10 秒回報一下')),
+                FilledButton(
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (context) => _CompletionReportSheet(activityId: activityId),
+                  ),
+                  child: const Text('回報'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// UI_PLAN.md §6.3 三選一。選「對方沒來」時展開成員複選清單（限定
+/// `JOINED` 成員，對齊 `submit_completion_report` 的 `INVALID_ABSENT_TARGET`
+/// 檢查範圍）。任一選項送出成功後，緊接跳出第二步再約 sheet（同一節文案：
+/// 「完成確認送出成功後緊接跳出」），對象是「本次回報中沒被我標記缺席的其他
+/// 成員」——`SELF_CANCELLED` 也一併適用同一條規則，SPEC 沒有特別排除這個
+/// 分支，維持三個結果分支統一行為，不特判。
+class _CompletionReportSheet extends ConsumerStatefulWidget {
+  const _CompletionReportSheet({required this.activityId});
+
+  final String activityId;
+
+  @override
+  ConsumerState<_CompletionReportSheet> createState() => _CompletionReportSheetState();
+}
+
+class _CompletionReportSheetState extends ConsumerState<_CompletionReportSheet> {
+  bool _pickingAbsent = false;
+  final Set<String> _absentIds = {};
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _submit(COMPLETION_RESULT result, {List<String> absentUserIds = const []}) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await submitCompletionReport(
+        ref.read(supabaseClientProvider),
+        activityId: widget.activityId,
+        result: result,
+        absentUserIds: absentUserIds,
+      );
+      ref.invalidate(ownCompletionReportProvider(widget.activityId));
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      final myId = ref.read(currentUserIdProvider);
+      final roster = await ref.read(activityMemberRosterProvider(widget.activityId).future);
+      final rematchTargets = roster
+          .where((m) =>
+              m.userId != myId &&
+              m.status == ACTIVITY_MEMBER_STATUS.JOINED &&
+              !absentUserIds.contains(m.userId))
+          .toList();
+      if (!mounted || rematchTargets.isEmpty) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => _RematchSheet(activityId: widget.activityId, targets: rematchTargets),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.code == ApiErrorCode.alreadyReported ? '你已經回報過了' : '回報失敗：${e.code.name}';
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_pickingAbsent) {
+      return Padding(
+        padding: EdgeInsets.only(
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          top: AppSpacing.lg,
+          bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+        ),
+        child: Consumer(
+          builder: (context, ref, _) {
+            final rosterAsync = ref.watch(activityMemberRosterProvider(widget.activityId));
+            final myId = ref.watch(currentUserIdProvider);
+            return rosterAsync.when(
+              loading: () => const SizedBox(height: 120, child: LoadingIndicator()),
+              error: (error, stack) => Text('載入失敗：$error'),
+              data: (roster) {
+                final candidates =
+                    roster.where((m) => m.userId != myId && m.status == ACTIVITY_MEMBER_STATUS.JOINED).toList();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('誰沒有出現？', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: AppSpacing.sm),
+                    if (candidates.isEmpty) const Text('沒有其他成員可以指認'),
+                    for (final m in candidates)
+                      CheckboxListTile(
+                        value: _absentIds.contains(m.userId),
+                        title: Text(m.displayName),
+                        onChanged: (checked) => setState(() {
+                          if (checked == true) {
+                            _absentIds.add(m.userId);
+                          } else {
+                            _absentIds.remove(m.userId);
+                          }
+                        }),
+                      ),
+                    if (_error != null) ...[
+                      Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      const SizedBox(height: AppSpacing.xs),
+                    ],
+                    AppButton(
+                      label: '送出',
+                      loading: _busy,
+                      onPressed: _absentIds.isEmpty
+                          ? null
+                          : () => _submit(COMPLETION_RESULT.REPORTED_ABSENT, absentUserIds: _absentIds.toList()),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('這次活動順利進行嗎？', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+          if (_error != null) ...[
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          ListTile(
+            leading: const Icon(Icons.check_circle_outline_rounded),
+            title: const Text('✅ 順利進行'),
+            onTap: _busy ? null : () => _submit(COMPLETION_RESULT.WENT_WELL),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cancel_outlined),
+            title: const Text('❌ 對方沒來'),
+            onTap: _busy ? null : () => setState(() => _pickingAbsent = true),
+          ),
+          ListTile(
+            leading: const Icon(Icons.remove_circle_outline_rounded),
+            title: const Text('⚪ 我自己取消了'),
+            onTap: _busy ? null : () => _submit(COMPLETION_RESULT.SELF_CANCELLED),
+          ),
+          if (_busy) const Padding(padding: EdgeInsets.only(top: AppSpacing.sm), child: LoadingIndicator()),
+        ],
+      ),
+    );
+  }
+}
+
+/// UI_PLAN.md §6.3 第二步「再約」——完成確認送出成功後緊接跳出，只列出這次
+/// 回報裡沒被標記缺席的其他成員（見呼叫端 `_CompletionReportSheet._submit`
+/// 的過濾邏輯）。雙向才永久保留聯絡方式，單向判定完全交給 `rematch_vote`
+/// RPC 的 `is_mutual` 回傳值，不在前端自己猜測對方是否已投（RLS 也擋著看不
+/// 到，見 [ownRematchVotesProvider]）。
+class _RematchSheet extends ConsumerStatefulWidget {
+  const _RematchSheet({required this.activityId, required this.targets});
+
+  final String activityId;
+  final List<MemberRosterEntry> targets;
+
+  @override
+  ConsumerState<_RematchSheet> createState() => _RematchSheetState();
+}
+
+class _RematchSheetState extends ConsumerState<_RematchSheet> {
+  final Set<String> _voted = {};
+  final Set<String> _busy = {};
+
+  Future<void> _vote(String toUserId) async {
+    setState(() => _busy.add(toUserId));
+    try {
+      final result = await rematchVote(
+        ref.read(supabaseClientProvider),
+        activityId: widget.activityId,
+        toUserId: toUserId,
+      );
+      ref.invalidate(ownRematchVotesProvider(widget.activityId));
+      if (!mounted) return;
+      setState(() => _voted.add(toUserId));
+      if (result.isMutual) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('雙方都按了再約，永久保留聯絡方式囉！')));
+      }
+    } on ApiException {
+      // 安靜失敗，使用者可再試一次——跟封鎖/檢舉一樣不特別解讀錯誤碼。
+    } finally {
+      if (mounted) setState(() => _busy.remove(toUserId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('要跟誰再約？', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text('雙方都按了才會永久保留聯絡方式', style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: AppSpacing.sm),
+          for (final m in widget.targets)
+            ListTile(
+              leading: CircleAvatar(
+                backgroundImage: m.avatarUrl.isEmpty ? null : NetworkImage(m.avatarUrl),
+                child: m.avatarUrl.isEmpty ? const Icon(Icons.person_rounded) : null,
+              ),
+              title: Text(m.displayName),
+              trailing: OutlinedButton(
+                onPressed: _voted.contains(m.userId) || _busy.contains(m.userId) ? null : () => _vote(m.userId),
+                child: Text(_voted.contains(m.userId) ? '已按讚' : '👍 再約'),
+              ),
+            ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(label: '完成', onPressed: () => Navigator.of(context).pop()),
+        ],
+      ),
+    );
+  }
+}
+
 class _LocationTab extends ConsumerWidget {
   const _LocationTab({required this.activity});
 
@@ -102,6 +389,7 @@ class _LocationTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final canEdit = activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
@@ -114,11 +402,11 @@ class _LocationTab extends ConsumerWidget {
         const SizedBox(height: AppSpacing.lg),
         Text('集合地點', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: AppSpacing.sm),
-        _MeetingPointSection(activityId: activity.id),
+        _MeetingPointSection(activityId: activity.id, editable: canEdit),
         const SizedBox(height: AppSpacing.lg),
         Text('見面提示（只有你看得到自己填的這份）', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: AppSpacing.sm),
-        _MeetingHintSection(activityId: activity.id),
+        _MeetingHintSection(activityId: activity.id, editable: canEdit),
       ],
     );
   }
@@ -303,9 +591,10 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
 }
 
 class _MeetingPointSection extends ConsumerStatefulWidget {
-  const _MeetingPointSection({required this.activityId});
+  const _MeetingPointSection({required this.activityId, this.editable = true});
 
   final String activityId;
+  final bool editable;
 
   @override
   ConsumerState<_MeetingPointSection> createState() => _MeetingPointSectionState();
@@ -365,14 +654,16 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          AppTextField(controller: _controller, hint: '例如：正門警衛室旁'),
-          if (_error != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          if (widget.editable) ...[
+            const SizedBox(height: AppSpacing.sm),
+            AppTextField(controller: _controller, hint: '例如：正門警衛室旁'),
+            if (_error != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            AppButton(label: '更新集合地點', loading: _busy, onPressed: _submit),
           ],
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(label: '更新集合地點', loading: _busy, onPressed: _submit),
         ],
       ),
     );
@@ -380,9 +671,10 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
 }
 
 class _MeetingHintSection extends ConsumerStatefulWidget {
-  const _MeetingHintSection({required this.activityId});
+  const _MeetingHintSection({required this.activityId, this.editable = true});
 
   final String activityId;
+  final bool editable;
 
   @override
   ConsumerState<_MeetingHintSection> createState() => _MeetingHintSectionState();
@@ -446,6 +738,14 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
     if (_loading) {
       return const AppCard(child: LoadingIndicator());
     }
+    if (!widget.editable) {
+      return AppCard(
+        child: Text(
+          _controller.text.isEmpty ? '（沒有填見面提示）' : _controller.text,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+    }
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -467,9 +767,10 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
 /// 來的」，每張卡片點開後顯示聯絡方式（依 `get_activity_contacts` 的
 /// 24h/再約規則決定是否可見）＋封鎖／檢舉入口。
 class _MembersTab extends ConsumerWidget {
-  const _MembersTab({required this.activityId});
+  const _MembersTab({required this.activityId, required this.activityStatus});
 
   final String activityId;
+  final ACTIVITY_STATUS activityStatus;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -499,7 +800,7 @@ class _MembersTab extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.xs),
                 ],
                 for (final member in group) ...[
-                  _MemberCard(member: member),
+                  _MemberCard(activityId: activityId, activityStatus: activityStatus, member: member),
                   const SizedBox(height: AppSpacing.sm),
                 ],
               ],
@@ -511,9 +812,16 @@ class _MembersTab extends ConsumerWidget {
   }
 }
 
+/// `activityStatus` 帶進來只為了 UI_PLAN §6.3「再約」按鈕：`COMPLETED` 之後
+/// 才顯示，且不綁在「剛送出完成確認」那個當下——之後任何時間點回到這個活動
+/// 都能繼續按（見 [_RematchButton]），呼應 UI_PLAN §4「COMPLETED」列的「再約
+/// 按鈕」跟第一步/第二步彈窗（`_CompletionReportSheet`/`_RematchSheet`）是
+/// 同一個底層 RPC 的兩個入口，不是兩套邏輯。
 class _MemberCard extends ConsumerStatefulWidget {
-  const _MemberCard({required this.member});
+  const _MemberCard({required this.activityId, required this.activityStatus, required this.member});
 
+  final String activityId;
+  final ACTIVITY_STATUS activityStatus;
   final MemberRosterEntry member;
 
   @override
@@ -596,6 +904,10 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                   ],
                 ),
               ),
+              if (!isSelf && widget.activityStatus == ACTIVITY_STATUS.COMPLETED && !isCancelled) ...[
+                _RematchButton(activityId: widget.activityId, toUserId: member.userId),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               if (!isSelf) Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded),
             ],
           ),
@@ -619,6 +931,56 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 卡片標題列上的常駐「👍 再約」按鈕，狀態來自 [ownRematchVotesProvider]
+/// （RLS 只放行自己投出去的票，見該 provider 的說明）。跟展開/收合的手勢
+/// 共用同一張 `AppCard`，但按鈕本身的 `OutlinedButton` 會吃掉自己的點擊，不
+/// 會誤觸卡片的展開/收合。
+class _RematchButton extends ConsumerStatefulWidget {
+  const _RematchButton({required this.activityId, required this.toUserId});
+
+  final String activityId;
+  final String toUserId;
+
+  @override
+  ConsumerState<_RematchButton> createState() => _RematchButtonState();
+}
+
+class _RematchButtonState extends ConsumerState<_RematchButton> {
+  bool _busy = false;
+
+  Future<void> _vote() async {
+    setState(() => _busy = true);
+    try {
+      final result = await rematchVote(
+        ref.read(supabaseClientProvider),
+        activityId: widget.activityId,
+        toUserId: widget.toUserId,
+      );
+      ref.invalidate(ownRematchVotesProvider(widget.activityId));
+      if (!mounted) return;
+      if (result.isMutual) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('雙方都按了再約，永久保留聯絡方式囉！')));
+      }
+    } on ApiException {
+      // 安靜失敗，使用者可再試一次。
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final votesAsync = ref.watch(ownRematchVotesProvider(widget.activityId));
+    final voted = votesAsync.value?.contains(widget.toUserId) ?? false;
+    return OutlinedButton(
+      onPressed: voted || _busy ? null : _vote,
+      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+      child: Text(voted ? '已再約' : '👍 再約'),
     );
   }
 }

@@ -213,12 +213,26 @@ void main() {
       expect(types, isNotEmpty);
       final coffeeId = types.firstWhere((t) => t.name == '咖啡').id;
 
+      // earliestStart is deliberately 1 hour out, not `now()`: the matching
+      // engine derives the resulting Activity's start_time from
+      // greatest(earliest_start, ...) across accumulated members, and
+      // fn_start_activities() sweeps every MATCHED activity system-wide with
+      // start_time <= now() (not scoped to this test). A `now()` earliest
+      // start makes the freshly-created activity sweep-eligible the instant
+      // it exists, so a concurrent test file's fn_start_activities() call can
+      // flip it to ONGOING before this test gets to propose/vote a location
+      // itself — breaking propose_activity_location's `status = 'MATCHED'`
+      // requirement. Starting 1 hour out keeps it MATCHED until step 10
+      // explicitly backdates start_time to unlock it.
+      final earliestStart = DateTime.now().toUtc().add(const Duration(hours: 1));
+      final latestStart = DateTime.now().toUtc().add(const Duration(hours: 3));
+
       final requestA = await createRequest(
         clientA,
         activityTypeId: coffeeId,
         campus: testCampus,
-        earliestStart: DateTime.now().toUtc(),
-        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
+        earliestStart: earliestStart,
+        latestStart: latestStart,
         minParticipants: 2,
       );
       await submitRequest(clientA, requestA.id);
@@ -229,8 +243,8 @@ void main() {
         clientB,
         activityTypeId: coffeeId,
         campus: testCampus,
-        earliestStart: DateTime.now().toUtc(),
-        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
+        earliestStart: earliestStart,
+        latestStart: latestStart,
         minParticipants: 2,
       );
       await submitRequest(clientB, requestB.id);

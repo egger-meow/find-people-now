@@ -5,6 +5,7 @@ import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
 import '../generated/activity_meeting_point_update.dart';
+import '../generated/completion_report.dart';
 import '../generated/location.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_MEMBER_STATUS, DEGREE_LEVEL, SCHOOL;
 import '../rpc/activity_rpc.dart';
@@ -145,4 +146,26 @@ final activityMemberRosterProvider =
       reliabilityTier: profile?.reliabilityTier ?? ReliabilityTier.unknown,
     );
   }).toList();
+});
+
+/// UI_PLAN.md §6.3「完成確認」——`completion_report` RLS 只放行
+/// `reporter_id = auth.uid()`（非歸因原則，見 SPEC §12.1.2），所以這支查詢
+/// 天然只會拿到「我自己交過的那份」，用來判斷要不要顯示回報彈窗。
+final ownCompletionReportProvider =
+    FutureProvider.family<CompletionReport?, String>((ref, activityId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client.from('completion_report').select().eq('activity_id', activityId);
+  return rows.isEmpty ? null : CompletionReport.fromJson(rows.first);
+});
+
+/// UI_PLAN.md §6.3「再約」——`rematch_vote` RLS 只放行
+/// `from_user_id = auth.uid()`（同一非歸因原則，見 SPEC §12.1.2：不暴露對方
+/// 是否已經投給我），所以這支查詢天然只回傳「我自己投出去的那些」，用來讓
+/// UI 判斷某個對象是否已經按過讚（不代表雙向成立，雙向判定完全交給
+/// `rematch_vote` RPC 回傳的 `is_mutual`）。
+final ownRematchVotesProvider =
+    FutureProvider.family<Set<String>, String>((ref, activityId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client.from('rematch_vote').select().eq('activity_id', activityId);
+  return rows.map((r) => r['to_user_id'] as String).toSet();
 });

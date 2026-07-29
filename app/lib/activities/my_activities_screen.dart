@@ -28,8 +28,10 @@ String _activityStatusLabel(ACTIVITY_STATUS status) => switch (status) {
 
 /// UI_PLAN.md §4「我的活動」清單殼——round 1：REQUESTING/PENDING_CONFIRMATION/
 /// EXPIRED/CANCELLED 四種狀態的完整卡片；round 2：MATCHED/ONGOING 的卡片
-/// 可點入單一活動的地點分頁籤（見 activity_detail_screen.dart）。COMPLETED
-/// 的完成確認/再約流程、以及地點以外的成員分頁籤，留給後續幾輪。
+/// 可點入單一活動的地點分頁籤；round 3 補上成員分頁籤；round 4 補上
+/// COMPLETED（完成確認彈窗＋再約按鈕，見 activity_detail_screen.dart）—— 連帶
+/// 讓 CANCELLED 也能點進去（同一個畫面，地點/見面提示的編輯欄位會依狀態隱藏
+/// 唯讀顯示，純粹只是能不能再看歷史紀錄的問題，沒有理由單獨排除）。
 class MyActivitiesScreen extends StatelessWidget {
   const MyActivitiesScreen({super.key});
 
@@ -139,10 +141,11 @@ class _ActivityListEntry extends StatelessWidget {
   }
 }
 
-/// MATCHED/ONGOING 的 Activity 可點入 `/activity/:id`（`ActivityDetailScreen`，
-/// UI_PLAN §4.1，round 2：地點分頁籤；成員分頁籤下一輪才會做）。
-/// COMPLETED/CANCELLED 這輪只做到「清單抓得到、分頁分對」，完成確認/再約
-/// 流程留給後續幾輪，所以不做可點擊的導覽。
+/// 每個 Activity 狀態都可點入 `/activity/:id`（`ActivityDetailScreen`，
+/// UI_PLAN §4.1/§6.3）：MATCHED/ONGOING 兩個分頁籤可編輯；COMPLETED 額外有
+/// 完成確認 banner（若未回報）＋成員分頁籤的再約按鈕；CANCELLED 純唯讀顯示
+/// 歷史紀錄（地點/見面提示編輯欄位依 `canEdit` 隱藏，見
+/// activity_detail_screen.dart 的 `_LocationTab`）。
 class _PlaceholderActivityCard extends StatelessWidget {
   const _PlaceholderActivityCard({required this.activity});
 
@@ -150,9 +153,8 @@ class _PlaceholderActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING;
     return AppCard(
-      onTap: isActive ? () => context.go('/activity/${activity.id}') : null,
+      onTap: () => context.go('/activity/${activity.id}'),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -169,7 +171,7 @@ class _PlaceholderActivityCard extends StatelessWidget {
               ],
             ),
           ),
-          if (isActive) const Icon(Icons.chevron_right_rounded),
+          const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );
