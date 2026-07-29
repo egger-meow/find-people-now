@@ -248,6 +248,14 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# signInWithOtp(email: ...) sends this template. The GoTrue default only embeds
+# {{ .ConfirmationURL }} (a magic link), with no numeric code — but our login UI
+# (otp_login_screen.dart) asks the user to type a 6-digit code, so the template
+# must include {{ .Token }} or no code is ever sent.
+[auth.email.template.magic_link]
+subject = "你的驗證碼"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
