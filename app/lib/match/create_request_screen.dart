@@ -4,11 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../generated/activity_type.dart';
-import '../generated/supadart_header.dart' show REQUEST_STATUS;
+import '../generated/supadart_header.dart' show REQUEST_STATUS, SCHOOL;
+import '../rpc/activity_type_rpc.dart';
 import '../rpc/api_exception.dart';
+import '../rpc/location_rpc.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_text_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
 
@@ -254,6 +257,86 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     }
   }
 
+  /// 反饋：現有活動類型只有官方預設的固定清單可選，使用者想新增卻找不到入口
+  /// ——後端其實早就有 `propose_activity_type` RPC（PENDING → admin 審核，比照
+  /// `search_activity_type` 只回傳 `status='APPROVED'`，見
+  /// `20260724120250_rpc_activity_type_and_location.sql`），只是從沒被任何畫面
+  /// 呼叫過。這裡補上入口——送出後不會馬上出現在清單裡（還在審核中），所以
+  /// 明確告知使用者這一輪先照現有類型選，等審核過再回來選新的。
+  Future<void> _proposeActivityType() async {
+    final controller = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('提議新活動類型'),
+        content: AppTextField(controller: controller, label: '類型名稱', autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('送出')),
+        ],
+      ),
+    );
+    if (submitted != true || !mounted) return;
+    final name = controller.text.trim();
+    if (name.isEmpty) return;
+
+    final client = ref.read(supabaseClientProvider);
+    try {
+      await proposeActivityType(client, name);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已送出「$name」，審核通過後才會出現在清單中')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final message = e.code == ApiErrorCode.duplicateTypeName ? '這個類型已經存在了' : '送出失敗：${e.code.name}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  /// 反饋：地點跟活動類型一樣——`propose_location` RPC 早就存在（PENDING →
+  /// admin 審核），但沒有任何畫面呼叫過。地點的 catalog 是 (school, campus,
+  /// name) 三元組，`school` 直接用使用者自己的學校，不用讓使用者重選。
+  Future<void> _proposeLocation(SCHOOL school) async {
+    final nameController = TextEditingController();
+    final campusController = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('提議新地點'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(controller: nameController, label: '地點名稱', autofocus: true),
+            const SizedBox(height: AppSpacing.sm),
+            AppTextField(controller: campusController, label: '校區（例如：光復）'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('送出')),
+        ],
+      ),
+    );
+    if (submitted != true || !mounted) return;
+    final name = nameController.text.trim();
+    final campus = campusController.text.trim();
+    if (name.isEmpty || campus.isEmpty) return;
+
+    final client = ref.read(supabaseClientProvider);
+    try {
+      await proposeLocation(client, name: name, school: school, campus: campus);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已送出「$name」，審核通過後才會出現在清單中')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final message = e.code == ApiErrorCode.duplicateLocationName ? '這個地點已經存在了' : '送出失敗：${e.code.name}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final typesAsync = ref.watch(activityTypesProvider);
@@ -299,6 +382,15 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
+              const SizedBox(height: AppSpacing.xs),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _proposeActivityType,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('沒有你要的類型？提議新增'),
+                ),
+              ),
               const SizedBox(height: AppSpacing.lg),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -382,6 +474,15 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     ],
                   );
                 },
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _proposeLocation(user.school),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('沒有你要的地點？提議新增'),
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               Text('4. 選人數（願意接受的範圍）', style: Theme.of(context).textTheme.titleMedium),

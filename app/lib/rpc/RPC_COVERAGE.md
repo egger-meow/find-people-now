@@ -794,6 +794,27 @@ as `getActivityMemberProfiles()` in `lib/rpc/activity_rpc.dart`:
    field-non-duplication check). `supabase test db` passes clean (22 files,
    205 assertions, no regressions).
 
+## UI update: `propose_activity_type`/`propose_location` wired into `create_request_screen.dart`
+
+Found during manual testing feedback (敢不敢揪 round): both RPCs, their Dart
+wrappers (`proposeActivityType()`/`proposeLocation()`), and their pgTAP
+coverage (`05_propose_location.test.sql` etc.) already existed — but no
+screen ever called them. The activity-type chip list and campus chip list in
+`create_request_screen.dart` only ever showed the existing `APPROVED` catalog
+(`search_activity_type` / `campusOptionsProvider`'s distinct-campus query),
+with no way for a user to suggest a new one. Not a backend gap, purely a
+missing UI entry point — no migration or SPEC.md change needed.
+
+Added two `TextButton`s ("沒有你要的類型/地點？提議新增") under step 1 and
+step 3 of the form, each opening a dialog and calling the existing RPC
+wrapper. Both submissions land as `status='PENDING'` and are **not**
+immediately selectable for the current request — `search_activity_type` and
+`active_locations_select` both filter to `APPROVED` only — so the dialogs and
+the confirmation `SnackBar` explicitly say "審核通過後才會出現在清單中"
+rather than implying instant availability. `DUPLICATE_TYPE_NAME`/
+`DUPLICATE_LOCATION_NAME` are mapped to a friendlier message; other
+`ApiException`s fall back to showing the raw error code.
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all
