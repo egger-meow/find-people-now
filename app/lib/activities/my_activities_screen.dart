@@ -108,7 +108,7 @@ class _ActivityListEntry extends StatelessWidget {
       switch (request.status) {
         case REQUEST_STATUS.REQUESTING:
           return AppCard(
-            onTap: () => context.go('/waiting-room/${request.id}'),
+            onTap: () => context.push('/waiting-room/${request.id}'),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -154,7 +154,7 @@ class _PlaceholderActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      onTap: () => context.go('/activity/${activity.id}'),
+      onTap: () => context.push('/activity/${activity.id}'),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [

@@ -390,24 +390,28 @@ class _LocationTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canEdit = activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING;
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      children: [
-        Text('活動地點', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppSpacing.sm),
-        if (activity.activityLocationId != null)
-          _LockedLocationCard(activity: activity)
-        else
-          _LocationVoting(activity: activity),
-        const SizedBox(height: AppSpacing.lg),
-        Text('集合地點', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppSpacing.sm),
-        _MeetingPointSection(activityId: activity.id, editable: canEdit),
-        const SizedBox(height: AppSpacing.lg),
-        Text('見面提示（只有你看得到自己填的這份）', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppSpacing.sm),
-        _MeetingHintSection(activityId: activity.id, editable: canEdit),
-      ],
+    return RefreshIndicator(
+      onRefresh: () async =>
+          ref.invalidate(approvedLocationsProvider((activity.school, activity.campus))),
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: [
+          Text('活動地點', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          if (activity.activityLocationId != null)
+            _LockedLocationCard(activity: activity)
+          else
+            _LocationVoting(activity: activity),
+          const SizedBox(height: AppSpacing.lg),
+          Text('集合地點', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          _MeetingPointSection(activityId: activity.id, editable: canEdit),
+          const SizedBox(height: AppSpacing.lg),
+          Text('見面提示（只有你看得到自己填的這份）', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          _MeetingHintSection(activityId: activity.id, editable: canEdit),
+        ],
+      ),
     );
   }
 }
@@ -725,6 +729,8 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
         activityId: widget.activityId,
         hint: _controller.text.trim(),
       );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已更新見面提示')));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = '更新失敗：${e.code.name}');
