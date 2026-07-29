@@ -1,11 +1,11 @@
 {
-    "name": "find_people_now",
-    "short_name": "find_people_now",
+    "name": "敢不敢揪",
+    "short_name": "敢不敢揪",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0B1410",
+    "theme_color": "#2FB380",
+    "description": "校園裡有人正在做事，而你隨時可以加入。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
