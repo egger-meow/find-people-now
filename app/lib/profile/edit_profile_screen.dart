@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/loading_indicator.dart';
+import 'avatar_upload.dart';
 
 /// UI_PLAN.md §8.1「我的」的完整編輯頁——跟 auth/complete_profile_screen.dart
 /// 的最小註冊 gate 不是同一個畫面，但底層共用同一個 `complete_profile` RPC：
@@ -39,6 +40,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   String _avatarUrl = '';
   bool _initialized = false;
   bool _loading = false;
+  bool _uploadingAvatar = false;
   String? _error;
 
   @override
@@ -56,6 +58,21 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void _rerollAvatar() {
     final seed = '${_displayNameController.text.trim()}-${DateTime.now().millisecondsSinceEpoch}';
     setState(() => _avatarUrl = 'https://api.dicebear.com/9.x/thumbs/png?seed=${Uri.encodeComponent(seed)}');
+  }
+
+  Future<void> _uploadAvatar() async {
+    final userId = ref.read(currentUserIdProvider);
+    if (userId == null) return;
+    setState(() => _uploadingAvatar = true);
+    try {
+      final url = await pickAndUploadAvatar(ref.read(supabaseClientProvider), userId);
+      if (url != null && mounted) setState(() => _avatarUrl = url);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '上傳頭像失敗，請稍後再試');
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -133,13 +150,32 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 Center(
                   child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundImage: _avatarUrl.isEmpty ? null : NetworkImage(_avatarUrl),
-                        child: _avatarUrl.isEmpty ? const Icon(Icons.person_rounded, size: 40) : null,
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 40,
+                            backgroundImage: _avatarUrl.isEmpty ? null : NetworkImage(_avatarUrl),
+                            child: _avatarUrl.isEmpty ? const Icon(Icons.person_rounded, size: 40) : null,
+                          ),
+                          if (_uploadingAvatar)
+                            const CircularProgressIndicator(strokeWidth: 2.4),
+                        ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      TextButton(onPressed: _rerollAvatar, child: const Text('換一個頭像')),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            onPressed: _uploadingAvatar ? null : _uploadAvatar,
+                            child: const Text('上傳照片'),
+                          ),
+                          TextButton(
+                            onPressed: _uploadingAvatar ? null : _rerollAvatar,
+                            child: const Text('隨機頭像'),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
