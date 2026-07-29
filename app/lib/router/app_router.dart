@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../activities/activity_detail_screen.dart';
 import '../activities/my_activities_screen.dart';
 import '../auth/auth_providers.dart';
 import '../auth/complete_profile_screen.dart';
@@ -37,7 +38,9 @@ class GoRouterRefreshStream extends ChangeNotifier {
 ///   /waiting-room/:id    — 等待室（UI_PLAN §3）
 ///   /my-activities       — 我的活動 round 1（UI_PLAN §4，REQUESTING/
 ///                          PENDING_CONFIRMATION/EXPIRED/CANCELLED；
-///                          MATCHED/ONGOING/COMPLETED 留到後續幾輪）
+///                          COMPLETED 完成確認/再約留到後續幾輪）
+///   /activity/:id        — 單一活動詳情，round 2：地點分頁籤（UI_PLAN
+///                          §4.1 Tab 1）；成員分頁籤留到下一輪
 final goRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = GoRouterRefreshStream(
     ref.watch(supabaseClientProvider).auth.onAuthStateChange,
@@ -80,6 +83,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/my-activities', builder: (context, state) => const MyActivitiesScreen()),
+      GoRoute(
+        path: '/activity/:activityId',
+        builder: (context, state) => ActivityDetailScreen(
+          activityId: state.pathParameters['activityId']!,
+        ),
+      ),
     ],
   );
 });

@@ -26,10 +26,10 @@ String _activityStatusLabel(ACTIVITY_STATUS status) => switch (status) {
       ACTIVITY_STATUS.CANCELLED => '已取消',
     };
 
-/// UI_PLAN.md §4「我的活動」— round 1：REQUESTING/PENDING_CONFIRMATION/
-/// EXPIRED/CANCELLED 四種狀態的完整卡片 + 兩個分頁殼。MATCHED/ONGOING/
-/// COMPLETED 這輪只證明清單抓得到、放對分頁（見 _PlaceholderActivityCard），
-/// 「地點」「成員」分頁籤與完成確認流程留給後續幾輪（見拆分方案）。
+/// UI_PLAN.md §4「我的活動」清單殼——round 1：REQUESTING/PENDING_CONFIRMATION/
+/// EXPIRED/CANCELLED 四種狀態的完整卡片；round 2：MATCHED/ONGOING 的卡片
+/// 可點入單一活動的地點分頁籤（見 activity_detail_screen.dart）。COMPLETED
+/// 的完成確認/再約流程、以及地點以外的成員分頁籤，留給後續幾輪。
 class MyActivitiesScreen extends StatelessWidget {
   const MyActivitiesScreen({super.key});
 
@@ -139,8 +139,10 @@ class _ActivityListEntry extends StatelessWidget {
   }
 }
 
-/// MATCHED/ONGOING/COMPLETED/CANCELLED 的 Activity——這輪只做到「清單抓得到、
-/// 分頁分對」，兩個分頁籤（地點/成員）與完成確認流程留給後續幾輪。
+/// MATCHED/ONGOING 的 Activity 可點入 `/activity/:id`（`ActivityDetailScreen`，
+/// UI_PLAN §4.1，round 2：地點分頁籤；成員分頁籤下一輪才會做）。
+/// COMPLETED/CANCELLED 這輪只做到「清單抓得到、分頁分對」，完成確認/再約
+/// 流程留給後續幾輪，所以不做可點擊的導覽。
 class _PlaceholderActivityCard extends StatelessWidget {
   const _PlaceholderActivityCard({required this.activity});
 
@@ -148,20 +150,26 @@ class _PlaceholderActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isActive = activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING;
     return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      onTap: isActive ? () => context.go('/activity/${activity.id}') : null,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(_activityStatusLabel(activity.status), style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            '${activity.school.name} · ${activity.campus}',
-            style: Theme.of(context).textTheme.bodySmall,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_activityStatusLabel(activity.status), style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '${activity.school.name} · ${activity.campus}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
-          if (activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text('地點/成員分頁籤下一輪才會做', style: Theme.of(context).textTheme.bodySmall),
-          ],
+          if (isActive) const Icon(Icons.chevron_right_rounded),
         ],
       ),
     );
