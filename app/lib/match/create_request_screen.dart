@@ -9,7 +9,6 @@ import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
-import '../widgets/app_card.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
 
@@ -26,7 +25,16 @@ class CreateRequestScreen extends ConsumerWidget {
     final activeRequest = ref.watch(myActiveRequestProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('找人一起做點事')),
+      appBar: AppBar(
+        title: const Text('找人一起做點事'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.event_note_rounded),
+            tooltip: '我的活動',
+            onPressed: () => context.go('/my-activities'),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: activeRequest.when(
           loading: () => const LoadingIndicator(),
@@ -44,19 +52,11 @@ class CreateRequestScreen extends ConsumerWidget {
               });
               return const LoadingIndicator(label: '你已經有進行中的配對，正在帶你過去…');
             }
-            // MATCHED/ONGOING — 「我的活動」畫面留到下一輪，這裡先給一個不會
-            // 卡住使用者的過渡訊息。
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: AppCard(
-                  child: Text(
-                    '你的活動已經成團了！\n「我的活動」畫面下一輪才會做，這裡先不重複顯示配對表單。',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            );
+            // MATCHED/ONGOING — 「我的活動」round 1 已經接手這個過渡點。
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go('/my-activities');
+            });
+            return const LoadingIndicator(label: '你的活動已經成團了，正在帶你去「我的活動」…');
           },
         ),
       ),

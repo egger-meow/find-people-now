@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../activities/my_activities_screen.dart';
 import '../auth/auth_providers.dart';
 import '../auth/complete_profile_screen.dart';
 import '../auth/otp_login_screen.dart';
@@ -29,11 +30,14 @@ class GoRouterRefreshStream extends ChangeNotifier {
   }
 }
 
-/// UI_PLAN.md §1 導覽結構的最小切片（本輪只做配對頁＋等待室）：
-///   /login              — OTP 登入（本輪新增的必要 gate）
-///   /complete-profile    — 最小完善個人資料（同上，create_request 的硬性前置）
+/// UI_PLAN.md §1 導覽結構的最小切片（尚未做完整 4-tab 底部導覽，逐輪疊加路由）：
+///   /login              — OTP 登入
+///   /complete-profile    — 最小完善個人資料（create_request 的硬性前置）
 ///   /match               — 配對頁填表（UI_PLAN §2）
 ///   /waiting-room/:id    — 等待室（UI_PLAN §3）
+///   /my-activities       — 我的活動 round 1（UI_PLAN §4，REQUESTING/
+///                          PENDING_CONFIRMATION/EXPIRED/CANCELLED；
+///                          MATCHED/ONGOING/COMPLETED 留到後續幾輪）
 final goRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = GoRouterRefreshStream(
     ref.watch(supabaseClientProvider).auth.onAuthStateChange,
@@ -75,6 +79,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           requestId: state.pathParameters['requestId']!,
         ),
       ),
+      GoRoute(path: '/my-activities', builder: (context, state) => const MyActivitiesScreen()),
     ],
   );
 });

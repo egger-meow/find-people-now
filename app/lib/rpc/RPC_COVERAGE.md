@@ -710,6 +710,48 @@ New migration `20260724124700_seniority_reminder_rpc.sql`:
    domain skip, unparseable-format skip, and one real `set_config`-simulated
    end-to-end call through the `check_enrollment_reminder` RPC.
 
+## v1.22 update: `get_pending_confirmation_candidate_info` — SPEC §12.1.3 "安全資訊卡" had no backing RPC
+
+Found while scoping "我的活動" round 1 (not a pgcrypto/search_path-style
+"implemented but never exercised" bug — this one genuinely didn't exist).
+SPEC.md §12.1.3 (defined back in v1.4) requires a "安全資訊卡" for
+`PENDING_CONFIRMATION`: the other party's `display_name`/`avatar_url`/
+`school`/`department`/`degree_level`/Reliability tier/completed activity
+count. `get_pending_confirmation_status` (§4.1) only ever returned
+`{ pending_confirmation_id, status, confirm_window_expire_at }`, and
+`pending_confirmation` itself has RLS enabled with no SELECT policy at all
+(ERD design note 16) — there was no path to this data.
+
+New migration `20260724125600_pending_confirmation_candidate_info.sql` adds
+**`get_pending_confirmation_candidate_info(pending_confirmation_id)`**
+(`SECURITY DEFINER`), wrapped as `getPendingConfirmationCandidateInfo()` in
+`lib/rpc/confirmation_rpc.dart`:
+
+1. Same authorization as `respond_pending_confirmation` (§4.2) — caller must
+   own `request_a` or `request_b`, else `FORBIDDEN` detail
+   `NOT_PARTY_TO_CONFIRMATION`; unknown id → `NOT_FOUND` detail
+   `PENDING_CONFIRMATION_NOT_FOUND` (same codes as 4.1/4.2).
+2. Returns the **other** party's info — verified symmetric against a real
+   local instance before writing any pgTAP (see the RLS/manual-probe note
+   below): party A's call returns party B's profile and vice versa.
+3. Reuses existing helpers for the derived fields — `fn_reliability_tier`
+   (already callable for any `user_id`, not just `auth.uid()`, same as
+   `get_my_reliability` already relies on) and a direct `ATTENDED`-event
+   count from `user_reliability_event`, same event type `fn_is_new_user`
+   checks — no new "what counts as completed" definition invented.
+4. Deliberately does **not** touch `user_a_response`/`user_b_response` — the
+   §12.1.2 symmetric non-attribution guarantee 4.1 already provides is
+   unaffected; this RPC only adds profile fields.
+5. Verified twice against a real local `supabase start` instance before any
+   test was written: first a manual `docker exec psql` probe (`set local
+   role authenticated` + `set_config('request.jwt.claim.sub', ...)`, same
+   technique as `05_propose_location.test.sql`/`19_waiting_room_realtime_rls.test.sql`)
+   confirming both directions return the counterpart's real data and a
+   stranger/bogus-id call raises the right codes, then formalized as
+   `supabase/tests/database/21_pending_confirmation_candidate_info.test.sql`
+   (9 pgTAP assertions). `supabase test db` passes clean (21 files, 197
+   assertions, no regressions).
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

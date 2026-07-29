@@ -165,6 +165,12 @@
 > 3. 🟢 **機率性提醒，不是硬性擋門**：即使判斷為已超過年限，仍允許使用者繼續使用——`complete_profile` 註冊流程中，若超過門檻，前端跳出一次性確認訊息（提醒使用者若已畢業請注意在校生身份是社群互信基礎），使用者確認後即可繼續，不阻擋流程。
 > 4. 🟢 **新增 `rpc: check_enrollment_reminder(p_degree_level)`**：回傳布林值，由 `fn_seniority_reminder_needed(email, degree_level)` 計算（`fn_parse_nycu_enrollment_year(email)` 負責解析入學年，兩者皆為 plain SQL/PL/pgSQL function，方便 pgTAP 直接測）。**不新增任何欄位持久化判斷結果**——入學年（信箱）、`degree_level`、目前日期都已存在，註冊當下即時計算即可；只在註冊當下檢查一次，不需要之後反覆重新檢查。
 
+> **v1.22 變更紀錄**（補上第 12.1.3 節「安全資訊卡」從未有對應 RPC 的落差；「我的活動」前端 round 1 盤點時發現）：
+> 1. 🔴 **落差性質**：第 12.1.3 節（`PENDING_CONFIRMATION` 安全資訊卡，v1.4 起定案）明確要求展示對方的頭像、姓名、`school`、`department`、`degree_level`、Reliability 等級、已完成活動次數，但 API.md §4 唯一的專用讀取 RPC `get_pending_confirmation_status`（4.1）只回傳 `{ pending_confirmation_id, status, confirm_window_expire_at }`——這不是一個被拿掉或降級的功能，是文件定案後從未真正補上對應資料源的既有缺口，`pending_confirmation` 表本身 RLS 又刻意不開 SELECT policy（ERD 設計備註 16），前端沒有任何路徑能拿到這份資料。
+> 2. 🟢 **新增 `rpc: get_pending_confirmation_candidate_info(pending_confirmation_id)`（第 4 節新增 4.3）**：專用受控讀取 RPC（`SECURITY DEFINER`），權限判準與 4.2 `respond_pending_confirmation` 完全相同（呼叫者須為 `request_a`/`request_b` 其中一方的 owner，否則 `FORBIDDEN` detail `NOT_PARTY_TO_CONFIRMATION`）。回傳**對方**（非呼叫者自己）的 `display_name`/`avatar_url`/`school`/`department`/`degree_level`/`reliability_tier`/`completed_activity_count`，前四項直接讀 `app_user`、後兩項複用既有的 `fn_reliability_tier(user_id)`（已支援查任意 `user_id`，不只 `auth.uid()`，`get_my_reliability` 本來就是這樣用它）；`completed_activity_count` 定義為 `user_reliability_event` 裡該使用者的 `ATTENDED` 事件筆數，與 `fn_is_new_user` 判斷「是否完成過活動」用的同一個事件類型，口徑一致不另創定義。
+> 3. 🟢 **刻意不回傳對方的 `pending_confirmation` 回應明細**：這支 RPC 只暴露安全資訊卡需要的個人資料欄位，第 12.1.2 節的對稱不歸因原則（誰確認、誰拒絕、誰超時）完全不受影響，仍然只能透過 4.1 查到整體 `status`，這支新 RPC 不查詢、也不回傳 `user_a_response`/`user_b_response`。
+> 4. 🟢 **範圍限定**：`required_total`／實際撮合人數 `> 2` 的多人局，前端不會、也不該呼叫這支 RPC——第 11 節既有規則（配對成功前不展示對方任何資訊）不變，這支 RPC 的呼叫時機限定在 `PENDING_CONFIRMATION` 這個中間態本身。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）

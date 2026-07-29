@@ -56,11 +56,16 @@ final myReliabilityProvider = FutureProvider<MyReliability>((ref) async {
   return getMyReliability(client);
 });
 
-/// UI_PLAN.md §2.2 送出前預先攔截：使用者已有 `REQUESTING`/`MATCHED` 中的活動
-/// 時，一進配對頁就該直接導去該活動，不重新顯示表單。`match_request.status`
-/// 沒有 `ONGOING` 這個值（那是 `activity.status` 的值，見
-/// generated/supadart_header.dart 的 REQUEST_STATUS enum）——配對成立
+/// UI_PLAN.md §2.2 送出前預先攔截：使用者已有 `REQUESTING`/`PENDING_CONFIRMATION`/
+/// `MATCHED` 中的活動時，一進配對頁就該直接導去該活動，不重新顯示表單。
+/// `match_request.status` 沒有 `ONGOING` 這個值（那是 `activity.status` 的
+/// 值，見 generated/supadart_header.dart 的 REQUEST_STATUS enum）——配對成立
 /// (`MATCHED`) 之後衍生出的 `activity` 進行到哪個階段跟 Request 本身無關。
+///
+/// `PENDING_CONFIRMATION` 一開始漏在篩選條件外（見「我的活動」round 1 探測
+/// 紀錄）：這代表卡在小人數安全確認中的使用者若導去 `/match`，會看到空白
+/// 表單而不是被導去對應畫面——不是後端缺口，是這裡的篩選條件沒跟上
+/// `PENDING_CONFIRMATION` 這個中間態，round 1 補上。
 /// Only ever one active row per owner (§6 單一 REQUESTING 唯一索引 — see
 /// docs/API.md §10), so `.maybeSingle()` is safe here, not an
 /// oversimplification.
@@ -72,7 +77,7 @@ final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
       .from('match_request')
       .select()
       .eq('owner_id', userId)
-      .inFilter('status', ['REQUESTING', 'MATCHED']);
+      .inFilter('status', ['REQUESTING', 'PENDING_CONFIRMATION', 'MATCHED']);
   if (rows.isEmpty) return null;
   return MatchRequest.fromJson(rows.first);
 });

@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../generated/supadart_header.dart' show PENDING_CONFIRMATION_STATUS;
+import '../generated/supadart_header.dart'
+    show DEGREE_LEVEL, PENDING_CONFIRMATION_STATUS, SCHOOL;
+import 'auth_profile_rpc.dart' show ReliabilityTier;
 import 'rpc_client.dart';
 
 class PendingConfirmationStatus {
@@ -70,5 +72,62 @@ Future<void> respondPendingConfirmation(
       'p_confirm': confirm,
     },
     decode: (_) {},
+  );
+}
+
+class PendingConfirmationCandidateInfo {
+  final String displayName;
+  final String avatarUrl;
+  final SCHOOL school;
+  final String? department;
+  final DEGREE_LEVEL degreeLevel;
+  final ReliabilityTier reliabilityTier;
+  final int completedActivityCount;
+
+  PendingConfirmationCandidateInfo({
+    required this.displayName,
+    required this.avatarUrl,
+    required this.school,
+    required this.department,
+    required this.degreeLevel,
+    required this.reliabilityTier,
+    required this.completedActivityCount,
+  });
+}
+
+/// docs/API.md §4.3 — `rpc: get_pending_confirmation_candidate_info(pending_confirmation_id)`
+/// (v1.22, migration 20260724125600). Returns the *other* party's SPEC
+/// §12.1.3 "安全資訊卡" fields — this RPC didn't exist until this round; see
+/// SPEC.md's v1.22 changelog entry for why (§12.1.3 was defined in v1.4 but
+/// `get_pending_confirmation_status` never carried counterpart profile data,
+/// and `pending_confirmation` itself has RLS enabled with no SELECT policy).
+///
+/// Same authorization as [respondPendingConfirmation]: caller must be the
+/// owner of `request_a` or `request_b`, else `FORBIDDEN` detail
+/// `NOT_PARTY_TO_CONFIRMATION`. Deliberately does not expose
+/// `user_a_response`/`user_b_response` — the symmetric non-attribution
+/// guarantee [getPendingConfirmationStatus] provides is unaffected.
+Future<PendingConfirmationCandidateInfo> getPendingConfirmationCandidateInfo(
+  SupabaseClient client,
+  String pendingConfirmationId,
+) {
+  return callRpc<PendingConfirmationCandidateInfo>(
+    client,
+    'get_pending_confirmation_candidate_info',
+    params: {'p_pending_confirmation_id': pendingConfirmationId},
+    decode: (data) {
+      final json = data as Map<String, dynamic>;
+      return PendingConfirmationCandidateInfo(
+        displayName: json['display_name'] as String,
+        avatarUrl: json['avatar_url'] as String,
+        school: SCHOOL.values.byName(json['school'] as String),
+        department: json['department'] as String?,
+        degreeLevel: DEGREE_LEVEL.values.byName(json['degree_level'] as String),
+        reliabilityTier: ReliabilityTier.fromValue(
+          json['reliability_tier'] as String?,
+        ),
+        completedActivityCount: json['completed_activity_count'] as int,
+      );
+    },
   );
 }

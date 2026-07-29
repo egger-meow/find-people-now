@@ -231,9 +231,10 @@ class _AnonymousAvatar extends StatelessWidget {
   }
 }
 
-/// 狀態離開 REQUESTING 之後的過渡訊息——PENDING_CONFIRMATION/MATCHED/ONGOING
-/// 對應的畫面（安全確認彈窗、我的活動）留到下一輪，這裡先給明確、不卡住的
-/// 文字回饋，證明 Realtime 訂閱真的收到了狀態變化（UI_PLAN §3 技術要求）。
+/// 狀態離開 REQUESTING 之後的過渡訊息——PENDING_CONFIRMATION/MATCHED 現在由
+/// 「我的活動」round 1 接手（見 lib/activities/），這裡只負責證明 Realtime
+/// 訂閱真的收到了狀態變化（UI_PLAN §3 技術要求）並把使用者導過去；ONGOING
+/// 分頁籤本身（地點/成員）仍留到後續幾輪。
 class _TransitionedState extends StatelessWidget {
   const _TransitionedState({required this.status});
 
@@ -241,12 +242,12 @@ class _TransitionedState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final message = switch (status) {
-      REQUEST_STATUS.PENDING_CONFIRMATION => '配對到人了！小人數安全確認畫面下一輪才會做。',
-      REQUEST_STATUS.MATCHED => '配對成功！「我的活動」畫面下一輪才會做。',
-      REQUEST_STATUS.EXPIRED => '這次配對沒有成立，別擔心，可以重新發起新的邀約。',
-      REQUEST_STATUS.CANCELLED => '這個配對已經取消了。',
-      _ => '狀態已變更：${status.name}',
+    final (message, destination, buttonLabel) = switch (status) {
+      REQUEST_STATUS.PENDING_CONFIRMATION => ('配對到人了！去「我的活動」完成小人數安全確認。', '/my-activities', '前往我的活動'),
+      REQUEST_STATUS.MATCHED => ('配對成功！去「我的活動」看詳情。', '/my-activities', '前往我的活動'),
+      REQUEST_STATUS.EXPIRED => ('這次配對沒有成立，別擔心，可以重新發起新的邀約。', '/match', '回配對頁'),
+      REQUEST_STATUS.CANCELLED => ('這個配對已經取消了。', '/match', '回配對頁'),
+      _ => ('狀態已變更：${status.name}', '/match', '回配對頁'),
     };
     return Center(
       child: Padding(
@@ -256,7 +257,7 @@ class _TransitionedState extends StatelessWidget {
           children: [
             AppCard(child: Text(message, textAlign: TextAlign.center)),
             const SizedBox(height: AppSpacing.lg),
-            AppButton(label: '回配對頁', onPressed: () => context.go('/match')),
+            AppButton(label: buttonLabel, onPressed: () => context.go(destination)),
           ],
         ),
       ),
