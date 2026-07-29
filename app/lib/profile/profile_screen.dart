@@ -34,9 +34,28 @@ String _tierLabel(ReliabilityTier tier) => switch (tier) {
       ReliabilityTier.unknown => '—',
     };
 
+Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('登出？'),
+      content: const Text('登出後需要重新驗證信箱才能再次登入。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('登出')),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  // authStateProvider 會觸發 router 的 refreshListenable 自動導回 /login
+  // （見 app_router.dart 開頭註解、_DeleteAccountSectionState._delete 的同款用法），
+  // 這裡不需要、也不應該手動導覽。
+  await ref.read(supabaseClientProvider).auth.signOut();
+}
+
 /// UI_PLAN.md §8.1「我的」——個人資料卡（可編輯，見 edit_profile_screen.dart）、
 /// 可信度徽章、聯絡方式、帳號刪除入口（Apple/Google 上架硬性規定，位置需明顯
-/// 好找）、反饋/QA 連結、常駐說明入口（§11.2）。
+/// 好找）、反饋/QA 連結、常駐說明入口（§11.2）、登出。
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -109,6 +128,12 @@ class ProfileScreen extends ConsumerWidget {
                           title: const Text('使用說明'),
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: () => context.push('/help'),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.logout_rounded),
+                          title: const Text('登出'),
+                          onTap: () => _confirmSignOut(context, ref),
                         ),
                       ],
                     ),
