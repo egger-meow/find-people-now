@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/school_labels.dart';
 import '../generated/activity.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS;
 import '../theme/app_theme.dart';
@@ -165,7 +166,7 @@ class _PlaceholderActivityCard extends StatelessWidget {
                 Text(_activityStatusLabel(activity.status), style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  '${activity.school.name} · ${activity.campus}',
+                  '${schoolLabel(activity.school)} · ${activity.campus}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],

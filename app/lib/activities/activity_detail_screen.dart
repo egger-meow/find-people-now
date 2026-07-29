@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
+import '../data/school_labels.dart';
 import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/location.dart';
@@ -900,7 +901,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     Text(
-                      '${member.school.name} · ${member.department ?? '未填科系'} · ${_degreeLabel(member.degreeLevel)}',
+                      '${schoolLabel(member.school)} · ${member.department ?? '未填科系'} · ${_degreeLabel(member.degreeLevel)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(

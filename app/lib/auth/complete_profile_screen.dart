@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/school_labels.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart';
 import '../profile/avatar_upload.dart';
@@ -10,6 +11,7 @@ import '../rpc/auth_profile_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/department_field.dart';
 import 'auth_providers.dart';
 
 /// 完善個人資料 gate——OTP 登入完成後、能進配對頁前的必經畫面
@@ -208,7 +210,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
               },
             ),
             const SizedBox(height: AppSpacing.md),
-            AppTextField(controller: _departmentController, label: '科系（選填）'),
+            DepartmentField(
+              controller: _departmentController,
+              school: schoolFromEmail(ref.watch(supabaseClientProvider).auth.currentUser?.email),
+            ),
             const SizedBox(height: AppSpacing.md),
             AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
             const SizedBox(height: AppSpacing.md),

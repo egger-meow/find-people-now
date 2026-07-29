@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
+import '../data/school_labels.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL, PENDING_CONFIRMATION_STATUS;
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
@@ -145,7 +146,7 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
                   children: [
                     Text(candidate.displayName, style: Theme.of(context).textTheme.titleSmall),
                     Text(
-                      '${candidate.school.name} · ${candidate.department ?? '未填科系'} · ${_degreeLabel(candidate.degreeLevel)}',
+                      '${schoolLabel(candidate.school)} · ${candidate.department ?? '未填科系'} · ${_degreeLabel(candidate.degreeLevel)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(

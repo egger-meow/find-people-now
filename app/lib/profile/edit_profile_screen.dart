@@ -10,6 +10,7 @@ import '../rpc/auth_profile_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/department_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'avatar_upload.dart';
 
@@ -195,7 +196,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                AppTextField(controller: _departmentController, label: '科系（選填）'),
+                DepartmentField(controller: _departmentController, school: user.school),
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
                 const SizedBox(height: AppSpacing.md),

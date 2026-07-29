@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../account_deletion.dart';
 import '../auth/auth_providers.dart';
+import '../data/school_labels.dart';
 import '../generated/app_user.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart' show myAppUserProvider, myReliabilityProvider;
@@ -147,7 +148,7 @@ class _ProfileHeaderCard extends StatelessWidget {
                 Text(user.displayName, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  '${user.school.name} · ${user.department ?? '未填科系'} · ${_degreeLabel(user.degreeLevel)}',
+                  '${schoolLabel(user.school)} · ${user.department ?? '未填科系'} · ${_degreeLabel(user.degreeLevel)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
