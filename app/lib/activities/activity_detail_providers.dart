@@ -6,7 +6,9 @@ import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
 import '../generated/activity_meeting_point_update.dart';
 import '../generated/location.dart';
-import '../generated/supadart_header.dart' show SCHOOL;
+import '../generated/supadart_header.dart' show ACTIVITY_MEMBER_STATUS, DEGREE_LEVEL, SCHOOL;
+import '../rpc/activity_rpc.dart';
+import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
 
 /// UI_PLAN.md §4.1「地點」分頁籤的資料層——單一活動的詳情，family 以
 /// `activityId` 區分，避免跟「我的活動」清單層（[myActivityListProvider]）
@@ -76,4 +78,71 @@ final activityMeetingPointUpdatesStreamProvider =
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         return list;
       });
+});
+
+/// UI_PLAN.md §4.1 Tab 2「成員」的資料層——合併三個來源，依 `userId` 對齊：
+/// 1. `activity_member` 直讀（RLS 已放行同活動成員互看，見
+///    `my_activity_members_select`）：`source_request_id`（分組用）+ `status`。
+/// 2. `get_activity_contacts`：`display_name`/`avatar_url`（無條件回傳）+
+///    `contacts`（依 24h/再約規則決定 null 與否）。
+/// 3. `get_activity_member_profiles`（v1.23，這輪新增）：
+///    `school`/`department`/`degree_level`/可信度等級——`get_activity_contacts`
+///    沒有的欄位，`app_user` RLS 又擋掉直讀其他成員，見 SPEC.md v1.23。
+///
+/// 不用 Realtime：成員名單/聯絡方式不像地點投票有「即時得票數」的明確需求
+/// （UI_PLAN §4.1 只有 Tab 1 提到即時），下拉刷新已足夠。
+class MemberRosterEntry {
+  final String userId;
+  final String sourceRequestId;
+  final ACTIVITY_MEMBER_STATUS status;
+  final String displayName;
+  final String avatarUrl;
+  final ActivityContactDetails? contacts;
+  final SCHOOL school;
+  final String? department;
+  final DEGREE_LEVEL degreeLevel;
+  final ReliabilityTier reliabilityTier;
+
+  MemberRosterEntry({
+    required this.userId,
+    required this.sourceRequestId,
+    required this.status,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.contacts,
+    required this.school,
+    required this.department,
+    required this.degreeLevel,
+    required this.reliabilityTier,
+  });
+}
+
+final activityMemberRosterProvider =
+    FutureProvider.family<List<MemberRosterEntry>, String>((ref, activityId) async {
+  final client = ref.watch(supabaseClientProvider);
+
+  final memberRows = await client.from('activity_member').select().eq('activity_id', activityId);
+  final contacts = await getActivityContacts(client, activityId);
+  final profiles = await getActivityMemberProfiles(client, activityId);
+
+  final contactByUser = {for (final m in contacts.members) m.userId: m};
+  final profileByUser = {for (final p in profiles) p.userId: p};
+
+  return memberRows.map((row) {
+    final userId = row['user_id'] as String;
+    final contact = contactByUser[userId];
+    final profile = profileByUser[userId];
+    return MemberRosterEntry(
+      userId: userId,
+      sourceRequestId: row['source_request_id'] as String,
+      status: ACTIVITY_MEMBER_STATUS.values.byName(row['status'] as String),
+      displayName: contact?.displayName ?? '（無法載入）',
+      avatarUrl: contact?.avatarUrl ?? '',
+      contacts: contact?.contacts,
+      school: profile?.school ?? SCHOOL.NYCU,
+      department: profile?.department,
+      degreeLevel: profile?.degreeLevel ?? DEGREE_LEVEL.UNDERGRAD,
+      reliabilityTier: profile?.reliabilityTier ?? ReliabilityTier.unknown,
+    );
+  }).toList();
 });

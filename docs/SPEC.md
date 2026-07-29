@@ -171,6 +171,12 @@
 > 3. 🟢 **刻意不回傳對方的 `pending_confirmation` 回應明細**：這支 RPC 只暴露安全資訊卡需要的個人資料欄位，第 12.1.2 節的對稱不歸因原則（誰確認、誰拒絕、誰超時）完全不受影響，仍然只能透過 4.1 查到整體 `status`，這支新 RPC 不查詢、也不回傳 `user_a_response`/`user_b_response`。
 > 4. 🟢 **範圍限定**：`required_total`／實際撮合人數 `> 2` 的多人局，前端不會、也不該呼叫這支 RPC——第 11 節既有規則（配對成功前不展示對方任何資訊）不變，這支 RPC 的呼叫時機限定在 `PENDING_CONFIRMATION` 這個中間態本身。
 
+> **v1.23 變更紀錄**（補上第 4.1 節「成員」分頁籤成員名單缺少 `school`/`department`/`degree_level`/可信度等級的落差；「我的活動」前端 round 3 盤點時發現）：
+> 1. 🔴 **落差性質**：UI_PLAN §4.1 Tab 2 明確要求成員名單顯示「頭像、顯示名稱、學制、科系、可信度等級小標籤」，但 API.md §6.2 `get_activity_contacts` 只回傳 `display_name`/`avatar_url`/`role`/被時效或再約條件閘門的 `contacts`——不含 `school`/`department`/`degree_level`/可信度等級。`app_user` 的 `own_profile_select` RLS policy（`id = auth.uid()`）又只允許查自己，前端沒有任何路徑能直接讀到其他成員的這些欄位，跟 v1.22 那次是同一種「文件定案後從未真正補上資料源」的既有缺口。
+> 2. 🟢 **新增 `rpc: get_activity_member_profiles(activity_id)`（第 6 節新增 6.1.1）**：`SECURITY DEFINER`，權限判準與 6.2 `get_activity_contacts` 相同（呼叫者須為該活動 `JOINED` 成員，否則 `NOT_ACTIVITY_MEMBER`）。回傳該活動**所有**成員（不論 `JOINED`/`CANCELLED`，跟 6.2 一樣不過濾，由呼叫端自行用 `role`/`status` 判斷）的 `user_id`/`school`/`department`/`degree_level`/`reliability_tier`，後者複用 v1.22 已建立的 `fn_reliability_tier(user_id)`。
+> 3. 🟢 **刻意不重複 `display_name`/`avatar_url`/`contacts`**：6.2 `get_activity_contacts` 已經無條件（不受 24h/再約閘門限制）回傳這兩欄給所有成員，這支新 RPC 只補「6.2 沒有、且沒有其他路徑能拿到」的欄位，前端依 `user_id` 合併兩支 RPC 的結果組出完整名單，不做兩支 RPC 間的欄位重複——維持「新增的東西剛好補上缺的那塊」的既有原則（同 v1.22 條 3 的精神）。
+> 4. 🟢 **不受聯絡方式的時效/再約閘門限制**：`school`/`department`/`degree_level`/可信度等級屬於一般個人資料，比照 6.2 對 `display_name`/`avatar_url` 的處理，配對成立後即無條件對全體成員可見，不比照 `contacts` 欄位額外加時效判斷。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）

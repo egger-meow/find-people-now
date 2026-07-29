@@ -4,7 +4,8 @@ import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
 import '../generated/activity_meeting_point_update.dart';
 import '../generated/activity_member.dart';
-import '../generated/supadart_header.dart' show RELIABILITY_EVENT_TYPE;
+import '../generated/supadart_header.dart' show DEGREE_LEVEL, RELIABILITY_EVENT_TYPE, SCHOOL;
+import 'auth_profile_rpc.dart' show ReliabilityTier;
 import 'rpc_client.dart';
 
 class ActivityContactEntry {
@@ -125,6 +126,54 @@ Future<CancelActivityParticipationResult> cancelActivityParticipation(
           json['event_type'] as String,
         ),
       );
+    },
+  );
+}
+
+class ActivityMemberProfile {
+  final String userId;
+  final SCHOOL school;
+  final String? department;
+  final DEGREE_LEVEL degreeLevel;
+  final ReliabilityTier reliabilityTier;
+
+  ActivityMemberProfile({
+    required this.userId,
+    required this.school,
+    required this.department,
+    required this.degreeLevel,
+    required this.reliabilityTier,
+  });
+}
+
+/// docs/API.md §6.1.1 — `rpc: get_activity_member_profiles(activity_id)`
+/// (v1.23). Fills the gap `get_activity_contacts` leaves: that RPC returns
+/// `display_name`/`avatar_url`/`contacts` for every member unconditionally,
+/// but never `school`/`department`/`degree_level`/reliability tier, and
+/// `app_user`'s RLS blocks reading another member's row directly. Callers
+/// merge this by `userId` with [getActivityContacts]'s member list — this
+/// RPC deliberately does not repeat `display_name`/`avatar_url`/`contacts`.
+/// Includes every member regardless of `status` (JOINED/CANCELLED), same as
+/// `getActivityContacts`.
+Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
+  SupabaseClient client,
+  String activityId,
+) {
+  return callRpc<List<ActivityMemberProfile>>(
+    client,
+    'get_activity_member_profiles',
+    params: {'p_activity_id': activityId},
+    decode: (data) {
+      final list = (data as List).cast<Map<String, dynamic>>();
+      return list.map((m) {
+        return ActivityMemberProfile(
+          userId: m['user_id'] as String,
+          school: SCHOOL.values.byName(m['school'] as String),
+          department: m['department'] as String?,
+          degreeLevel: DEGREE_LEVEL.values.byName(m['degree_level'] as String),
+          reliabilityTier: ReliabilityTier.fromValue(m['reliability_tier'] as String?),
+        );
+      }).toList();
     },
   );
 }

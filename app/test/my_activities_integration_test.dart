@@ -89,7 +89,30 @@ Future<String> _psqlScalar(String sql) async {
   if (res.exitCode != 0) {
     throw Exception('psql failed: ${res.stderr}\nsql: $sql');
   }
-  return (res.stdout as String).trim();
+  // `-t` suppresses SELECT headers/footers but not an INSERT/UPDATE
+  // completion tag (e.g. "INSERT 0 1") that psql still appends after an
+  // `insert ... returning` result — only the first line is the actual value.
+  return (res.stdout as String).trim().split('\n').first.trim();
+}
+
+/// `fn_run_matching_engine()` sweeps *every* `(activity_type_id, school,
+/// campus)` group with `REQUESTING` rows in one call, not just the group
+/// this test cares about (see supabase/migrations/20260724123000_matching_engine_nway.sql:217-221
+/// — it loops over `select distinct activity_type_id, school, campus`).
+/// `flutter test` runs every file in this directory concurrently by
+/// default, so when multiple integration test files each have a matchable
+/// pair sitting in `match_request` at the same moment, one file's call can
+/// resolve another file's group (and vice versa) — asserting an exact
+/// `fn_run_matching_engine()` return value is inherently racy. Poll for the
+/// actual expected outcome instead, retrying the engine call if a
+/// concurrently-running file's call raced ahead of this one.
+Future<void> _runMatchingEngineUntil(Future<bool> Function() isReady) async {
+  for (var attempt = 0; attempt < 10; attempt++) {
+    await _psqlScalar('select fn_run_matching_engine();');
+    if (await isReady()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  fail('matching engine did not resolve the expected group in time');
 }
 
 /// The exact query `myMatchRequestsProvider` issues (lib/activities/
@@ -169,7 +192,19 @@ void main() {
         contactLine: 'ma_b_line',
       );
 
-      const testCampus = '光復';
+      // 自己的校區字串（不用共用的 '光復'）——matching engine 依
+      // (activity_type_id, school, campus) 分組掃描 REQUESTING 池，這個測試會
+      // 在送出 REQUESTING 後、呼叫 matching engine 前檢查「還是 REQUESTING」，
+      // 若跟其他測試檔共用同一組，對方的 engine 呼叫可能搶先把這裡的 request
+      // 撈走合併，造成這個檢查點就已經變成 PENDING_CONFIRMATION（曾實際觀察到
+      // 這個 race，不是純理論風險）。這裡不需要真的 location（沒有地點投票
+      // 流程），但 create_request 仍要求該 (school, campus) 至少有一筆
+      // APPROVED location，所以還是要種一筆。
+      final testCampus = 'MAT測試區$stamp';
+      await _psqlScalar('''
+        insert into location (school, campus, name, status, is_active)
+        values ('NYCU', '$testCampus', 'MAT測試地點$stamp', 'APPROVED', true);
+      ''');
 
       // Both are brand-new users with zero ATTENDED history, so
       // min_participants=2 would trip NEW_USER_LOW_HEADCOUNT at submit_request
@@ -235,8 +270,14 @@ void main() {
       //    PENDING_CONFIRMATION (same real 2-person path
       //    activity_location_voting_smoke_test.dart already covers).
       // -----------------------------------------------------------------
-      final matchCount = await _psqlScalar('select fn_run_matching_engine();');
-      expect(matchCount, '1', reason: 'expected exactly one merge to fire');
+      await _runMatchingEngineUntil(() async {
+        try {
+          final s = await getPendingConfirmationStatus(clientA, requestA.id);
+          return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
+        } on ApiException {
+          return false;
+        }
+      });
 
       final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
       expect(statusForA.status, PENDING_CONFIRMATION_STATUS.PENDING);

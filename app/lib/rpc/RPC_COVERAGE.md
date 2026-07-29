@@ -752,6 +752,48 @@ New migration `20260724125600_pending_confirmation_candidate_info.sql` adds
    (9 pgTAP assertions). `supabase test db` passes clean (21 files, 197
    assertions, no regressions).
 
+## v1.23 update: `get_activity_member_profiles` — UI_PLAN §4.1 Tab 2 member list had no source for school/department/degree_level/reliability tier
+
+Found while scoping "我的活動" round 3 (same class of gap as v1.22, not a
+pgcrypto/search_path-style latent bug — this genuinely never existed).
+UI_PLAN.md §4.1 Tab 2 requires the member list to show 頭像/顯示名稱/學制/
+科系/可信度等級 for every member. `get_activity_contacts` (§6.2) returns
+`display_name`/`avatar_url`/`role`/`contacts` for every member
+unconditionally — but never `school`/`department`/`degree_level`/reliability
+tier. `app_user`'s `own_profile_select` RLS (`id = auth.uid()`) blocks a
+direct PostgREST read of another member's row, so there was no path to this
+data at all.
+
+New migration `20260724125700_activity_member_profiles.sql` adds
+**`get_activity_member_profiles(activity_id)`** (`SECURITY DEFINER`), wrapped
+as `getActivityMemberProfiles()` in `lib/rpc/activity_rpc.dart`:
+
+1. Same authorization as `get_activity_contacts` (§6.2) — caller must be a
+   `JOINED` member of the activity, else `NOT_ACTIVITY_MEMBER`; unknown
+   activity id → `NOT_FOUND` detail `ACTIVITY_NOT_FOUND`.
+2. Returns **every** member regardless of `status` (`JOINED`/`CANCELLED`),
+   matching `get_activity_contacts`'s no-filter behavior — the two RPCs'
+   member sets always stay in sync, no risk of one showing a member the
+   other omits.
+3. Reuses `fn_reliability_tier(user_id)` — same helper `get_my_reliability`
+   and v1.22's `get_pending_confirmation_candidate_info` already call for an
+   arbitrary `user_id`, no new definition invented.
+4. Deliberately does **not** repeat `display_name`/`avatar_url`/`contacts` —
+   `get_activity_contacts` already owns those unconditionally; the client
+   merges both RPCs' results by `user_id` to build the full roster. Kept the
+   new RPC's blast radius to exactly the missing fields, same principle as
+   v1.22's addition.
+5. Verified twice against a real local `supabase start` instance before any
+   test was written: first a manual `docker exec psql` probe (`set local
+   role authenticated` + `set_config('request.jwt.claim.sub', ...)`, same
+   technique as v1.22's probe) confirming a real JOINED member sees both
+   members' real profile data and a stranger call raises
+   `NOT_ACTIVITY_MEMBER`, then formalized as
+   `supabase/tests/database/22_activity_member_profiles.test.sql` (8 pgTAP
+   assertions, including a CANCELLED-member-still-listed case and a
+   field-non-duplication check). `supabase test db` passes clean (22 files,
+   205 assertions, no regressions).
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

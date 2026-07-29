@@ -88,7 +88,27 @@ Future<String> _psqlScalar(String sql) async {
   if (res.exitCode != 0) {
     throw Exception('psql failed: ${res.stderr}\nsql: $sql');
   }
-  return (res.stdout as String).trim();
+  // `-t` suppresses SELECT headers/footers but not an INSERT/UPDATE
+  // completion tag (e.g. "INSERT 0 1") that psql still appends after an
+  // `insert ... returning` result — only the first line is the actual value.
+  return (res.stdout as String).trim().split('\n').first.trim();
+}
+
+/// `fn_run_matching_engine()` sweeps *every* `(activity_type_id, school,
+/// campus)` group with `REQUESTING` rows in one call, not just this test's
+/// own campus (see supabase/migrations/20260724123000_matching_engine_nway.sql:217-221
+/// — it loops over `select distinct activity_type_id, school, campus`).
+/// `flutter test` runs every file in this directory concurrently, so even
+/// with a unique campus per file, one file's call can also resolve another
+/// file's unrelated group in the same sweep — asserting an exact return
+/// value is racy. Poll for the actual expected outcome instead.
+Future<void> _runMatchingEngineUntil(Future<bool> Function() isReady) async {
+  for (var attempt = 0; attempt < 10; attempt++) {
+    await _psqlScalar('select fn_run_matching_engine();');
+    if (await isReady()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  fail('matching engine did not resolve the expected group in time');
 }
 
 /// The exact query `activityMeetingPointUpdatesStreamProvider` issues
@@ -189,12 +209,18 @@ void main() {
         contactLine: 'ad_b_line',
       );
 
-      const testCampus = '光復';
-      final locationId = await _psqlScalar(
-        "select id from location where school='NYCU' and campus='$testCampus' "
-        "and name='Flutter 驗證測試地點' limit 1;",
-      );
-      expect(locationId, isNotEmpty, reason: 'run the location seed first (see app/README.md)');
+      // 自己的校區字串（不用共用的 '光復'）——matching engine 是依
+      // (activity_type_id, school, campus) 分組掃描 REQUESTING 池，多個測試
+      // 檔平行執行時若共用同一組會互相撈到對方剛建立的 request，
+      // 造成「expected exactly one merge to fire」斷言不穩。自己種一筆這個
+      // 校區專屬的 location，不依賴 app/README.md 記載的手動種子步驟。
+      final testCampus = 'ADT測試區$stamp';
+      final locationId = await _psqlScalar('''
+        insert into location (school, campus, name, status, is_active)
+        select 'NYCU', '$testCampus', 'ADT測試地點$stamp', 'APPROVED', true
+        returning id;
+      ''');
+      expect(locationId, isNotEmpty);
 
       // Seed ATTENDED history so min_participants=2 doesn't trip
       // NEW_USER_LOW_HEADCOUNT (same fixture pattern as the other two
@@ -234,8 +260,14 @@ void main() {
       );
       await submitRequest(clientB, requestB.id);
 
-      final matchCount = await _psqlScalar('select fn_run_matching_engine();');
-      expect(matchCount, '1', reason: 'expected exactly one merge to fire');
+      await _runMatchingEngineUntil(() async {
+        try {
+          final s = await getPendingConfirmationStatus(clientA, requestA.id);
+          return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
+        } on ApiException {
+          return false;
+        }
+      });
 
       final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
       final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
@@ -322,11 +354,21 @@ void main() {
       expect(option.locationId, locationId);
       await voteActivityLocation(clientB, activityId: activityId, locationId: locationId);
 
+      // fn_start_activities() sweeps every ready activity system-wide in one
+      // call, not scoped to this activityId — under concurrent test-file
+      // execution a different file's call can lock this one first, leaving
+      // this call's own return count at 0. Poll the target row directly.
       await _psqlScalar(
         "update activity set start_time = now() - interval '1 minute' where id='$activityId';",
       );
-      final startedCount = await _psqlScalar('select fn_start_activities();');
-      expect(int.parse(startedCount), greaterThanOrEqualTo(1));
+      var locked = false;
+      for (var attempt = 0; attempt < 10 && !locked; attempt++) {
+        await _psqlScalar('select fn_start_activities();');
+        final row = await clientA.from('activity').select().eq('id', activityId).single();
+        locked = row['activity_location_id'] != null;
+        if (!locked) await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      expect(locked, isTrue, reason: 'fn_start_activities did not lock the activity in time');
 
       final lockedRow = await clientA.from('activity').select().eq('id', activityId).single();
       final lockedActivity = Activity.fromJson(lockedRow);
@@ -336,7 +378,7 @@ void main() {
       final approved = await _approvedLocationsQuery(clientA, lockedActivity.school, lockedActivity.campus);
       final lockedMatch = approved.where((l) => l.id == lockedActivity.activityLocationId);
       expect(lockedMatch, isNotEmpty, reason: '_LockedLocationCard must be able to resolve the name');
-      expect(lockedMatch.single.name, 'Flutter 驗證測試地點');
+      expect(lockedMatch.single.name, 'ADT測試地點$stamp');
       // ignore: avoid_print
       print('[approvedLocationsProvider lookup] resolved locked location name="${lockedMatch.single.name}"');
 

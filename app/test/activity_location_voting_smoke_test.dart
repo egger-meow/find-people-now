@@ -35,6 +35,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:find_people_now/generated/activity.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
+import 'package:find_people_now/rpc/api_exception.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/activity_rpc.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
@@ -89,7 +90,30 @@ Future<String> _psqlScalar(String sql) async {
   if (res.exitCode != 0) {
     throw Exception('psql failed: ${res.stderr}\nsql: $sql');
   }
-  return (res.stdout as String).trim();
+  // `-t` suppresses SELECT headers/footers but not an INSERT/UPDATE
+  // completion tag (e.g. "INSERT 0 1") that psql still appends after an
+  // `insert ... returning` result — only the first line is the actual value.
+  return (res.stdout as String).trim().split('\n').first.trim();
+}
+
+/// `fn_run_matching_engine()` sweeps *every* `(activity_type_id, school,
+/// campus)` group with `REQUESTING` rows in one call, not just the group
+/// this test cares about (see supabase/migrations/20260724123000_matching_engine_nway.sql:217-221
+/// — it loops over `select distinct activity_type_id, school, campus`).
+/// `flutter test` runs every file in this directory concurrently by
+/// default, so when multiple integration test files each have a matchable
+/// pair sitting in `match_request` at the same moment, one file's call can
+/// resolve another file's group (and vice versa) — asserting an exact
+/// `fn_run_matching_engine()` return value is inherently racy. Poll for the
+/// actual expected outcome instead, retrying the engine call if a
+/// concurrently-running file's call raced ahead of this one.
+Future<void> _runMatchingEngineUntil(Future<bool> Function() isReady) async {
+  for (var attempt = 0; attempt < 10; attempt++) {
+    await _psqlScalar('select fn_run_matching_engine();');
+    if (await isReady()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  fail('matching engine did not resolve the expected group in time');
 }
 
 void main() {
@@ -217,8 +241,14 @@ void main() {
       // see docs/API.md §9). Total merged size = 1 (A) + 1 (B) = 2 <= 2, so
       // commit_match creates a pending_confirmation instead of an Activity —
       // both sides must respond_pending_confirmation(confirm: true) below.
-      final matchCount = await _psqlScalar('select fn_run_matching_engine();');
-      expect(matchCount, '1', reason: 'expected exactly one merge to fire');
+      await _runMatchingEngineUntil(() async {
+        try {
+          final s = await getPendingConfirmationStatus(clientA, requestA.id);
+          return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
+        } on ApiException {
+          return false;
+        }
+      });
 
       // 5. Each side independently reads its own pending confirmation status
       // through the real RPC (not raw SQL) — mirrors how a client would
@@ -320,11 +350,24 @@ void main() {
       // 10. Backdate start_time and trigger fn_start_activities (same
       // pg_cron-only-function escape hatch as step 4) -> the single
       // candidate should get locked and the activity should flip ONGOING.
+      // fn_start_activities(), like fn_run_matching_engine(), sweeps every
+      // ready activity system-wide in one call (not scoped to this test's
+      // activityId) — under concurrent test-file execution a different
+      // file's call can lock *this* activity first, leaving this call's own
+      // returned count at 0 even though the target activity is already
+      // correctly locked. Poll the target row directly instead of asserting
+      // on the return count.
       await _psqlScalar(
         "update activity set start_time = now() - interval '1 minute' where id='$activityId';",
       );
-      final startedCount = await _psqlScalar('select fn_start_activities();');
-      expect(int.parse(startedCount), greaterThanOrEqualTo(1));
+      var locked = false;
+      for (var attempt = 0; attempt < 10 && !locked; attempt++) {
+        await _psqlScalar('select fn_start_activities();');
+        final row = await clientB.from('activity').select().eq('id', activityId).single();
+        locked = row['activity_location_id'] != null;
+        if (!locked) await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      expect(locked, isTrue, reason: 'fn_start_activities did not lock the activity in time');
 
       final lockedRow = await clientB.from('activity').select().eq('id', activityId).single();
       final lockedActivity = Activity.fromJson(lockedRow);
