@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
+import '../data/school_labels.dart';
+import '../generated/match_request.dart';
 import '../generated/supadart_header.dart' show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
@@ -67,6 +69,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                 return ListView(
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   children: [
+                    _RequestInfoCard(request: request),
+                    const SizedBox(height: AppSpacing.md),
                     AppCard(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -80,7 +84,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    Text('目前房間成員（${members.length} 人）', style: Theme.of(context).textTheme.titleMedium),
+                    Text('目前房間成員（${members.length} / ${request.minParticipants} 人成立）',
+                      style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: AppSpacing.sm),
                     Wrap(
                       spacing: AppSpacing.sm,
@@ -226,6 +231,98 @@ class _AnonymousAvatar extends StatelessWidget {
           isOwner ? Icons.star_rounded : Icons.person_rounded,
           color: isSelf ? scheme.onPrimaryContainer : scheme.onSecondaryContainer,
         ),
+      ),
+    );
+  }
+}
+
+String _formatTime(DateTime t) => '${t.toLocal().hour.toString().padLeft(2, '0')}:${t.toLocal().minute.toString().padLeft(2, '0')}';
+
+/// 反饋：「房間資訊也太少，至少顯示活動資訊吧，然後目前最少幾人成立之類的」
+/// ——把 Request 上已有的活動類型、時間範圍、人數門檻顯示出來，讓等待中的
+/// 成員知道自己在等什麼。
+class _RequestInfoCard extends ConsumerWidget {
+  const _RequestInfoCard({required this.request});
+
+  final MatchRequest request;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final typeAsync = ref.watch(activityTypeByIdProvider(request.activityTypeId));
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 活動類型名稱
+          Row(
+            children: [
+              Icon(Icons.category_rounded, size: 20, color: scheme.primary),
+              const SizedBox(width: AppSpacing.sm),
+              typeAsync.when(
+                loading: () => Text('載入中…', style: textTheme.titleMedium),
+                error: (_, _) => Text('（未知活動）', style: textTheme.titleMedium),
+                data: (type) => Text(
+                  type?.name ?? '（未知活動）',
+                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // 時間範圍
+          Row(
+            children: [
+              Icon(Icons.schedule_rounded, size: 20, color: scheme.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                '${_formatTime(request.earliestStart)} ~ ${_formatTime(request.latestStart)}',
+                style: textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          // 人數門檻
+          Row(
+            children: [
+              Icon(Icons.group_rounded, size: 20, color: scheme.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                request.maxParticipants != null
+                    ? '${request.minParticipants}~${request.maxParticipants} 人成團'
+                    : '至少 ${request.minParticipants} 人成團',
+                style: textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          if (request.allowDowngrade) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Icon(Icons.tune_rounded, size: 20, color: scheme.tertiary),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  '允許人數調整',
+                  style: textTheme.bodySmall?.copyWith(color: scheme.tertiary),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          // 校區
+          Row(
+            children: [
+              Icon(Icons.location_on_rounded, size: 20, color: scheme.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                '${schoolLabel(request.school)} ${request.campus}',
+                style: textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

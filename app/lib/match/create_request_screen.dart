@@ -33,6 +33,11 @@ class CreateRequestScreen extends ConsumerWidget {
         title: const Text('找人一起做點事'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.link_rounded),
+            tooltip: '輸入邀請碼加入房間',
+            onPressed: () => _showJoinByTokenDialog(context, ref),
+          ),
+          IconButton(
             icon: const Icon(Icons.help_outline_rounded),
             tooltip: '使用說明',
             onPressed: () => context.push('/help'),
@@ -70,6 +75,75 @@ class CreateRequestScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// 反饋：配對頁沒有以邀請碼加入房間的入口。
+  /// UI_PLAN §3 提到「邀請朋友」按鈕產生連結/邀請碼，但收到邀請碼的人需要
+  /// 一個地方輸入——這裡在配對頁提供入口，呼叫 `join_request_by_token` RPC。
+  static Future<void> _showJoinByTokenDialog(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController();
+    String? errorText;
+
+    Future<void> attemptJoin(BuildContext dialogContext, StateSetter setDialogState) async {
+      final token = controller.text.trim();
+      if (token.isEmpty) {
+        setDialogState(() => errorText = '請輸入邀請碼');
+        return;
+      }
+      try {
+        final request = await joinRequestByToken(ref.read(supabaseClientProvider), token);
+        if (!dialogContext.mounted) return;
+        Navigator.of(dialogContext).pop(true);
+        if (context.mounted) context.push('/waiting-room/${request.id}');
+      } on ApiException catch (e) {
+        final message = switch (e.code) {
+          ApiErrorCode.inviteLinkExpired => '邀請碼不存在或已失效，請向朋友要一個新的',
+          ApiErrorCode.requestFull => '這個房間已經滿了',
+          ApiErrorCode.alreadyRequesting => '你已經有進行中的配對了',
+          _ => '加入失敗：${e.code.name}',
+        };
+        setDialogState(() => errorText = message);
+      }
+    }
+
+    final joined = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('輸入邀請碼'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('把朋友分享給你的邀請碼貼在這裡，就可以加入他們的房間。'),
+              const SizedBox(height: AppSpacing.md),
+              AppTextField(
+                controller: controller,
+                label: '邀請碼',
+                hint: '貼上邀請碼',
+                autofocus: true,
+                errorText: errorText,
+                onSubmitted: (_) => attemptJoin(dialogContext, setDialogState),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => attemptJoin(dialogContext, setDialogState),
+              child: const Text('加入'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (joined == true) {
+      // Invalidate active request so next time the screen rebuilds, it
+      // picks up the new membership.
+      ref.invalidate(myActiveRequestProvider);
+    }
   }
 }
 

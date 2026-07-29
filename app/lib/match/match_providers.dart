@@ -118,6 +118,15 @@ final requestMembersStreamProvider = StreamProvider.family<List<RequestMember>, 
       });
 });
 
+/// 等待室需要顯示該 Request 對應的活動類型名稱（反饋：房間資訊太少）。
+/// `activity_type` 表的 RLS 已經有公開 SELECT（status='APPROVED'），直接用
+/// PostgREST 查即可。
+final activityTypeByIdProvider = FutureProvider.family<ActivityType?, String>((ref, typeId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final row = await client.from('activity_type').select().eq('id', typeId).maybeSingle();
+  return row == null ? null : ActivityType.fromJson(row);
+});
+
 /// REQUESTING 以後（PENDING_CONFIRMATION／MATCHED／ONGOING）不再是等待室的
 /// 狀態——等待室畫面看到這些值就該依 UI_PLAN §4 導去對應畫面（本輪只做
 /// REQUESTING 這一段，其餘狀態先顯示過渡訊息，見 waiting_room_screen.dart）。
