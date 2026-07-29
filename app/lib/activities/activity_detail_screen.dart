@@ -12,6 +12,7 @@ import '../rpc/activity_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
 import '../rpc/completion_rpc.dart';
+import '../rpc/location_rpc.dart';
 import '../rpc/report_rpc.dart';
 import '../rpc/user_block_rpc.dart';
 import '../theme/app_theme.dart';
@@ -498,6 +499,43 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
     }
   }
 
+  /// 反饋：「地點是在投票環節設定的吧，投票地點的時候可以新增」——原本
+  /// `propose_location`（送新地點給 admin 審核）被放在建立配對表單那一步，但
+  /// 那時候使用者連隊友是誰都還不知道，太早決定「這裡缺一個地點」。地點的
+  /// 需求是配對成立、開始選地點投票時才會真的浮現，入口移來這裡才合理。
+  /// 跟 [_openProposeSheet] 不同：那邊是從既有已核准地點裡挑一個當候選，這裡
+  /// 是「這個校區根本沒有我要的地點」時，送一筆全新的申請給 admin 審核。
+  Future<void> _proposeNewLocation() async {
+    final nameController = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('提議新地點'),
+        content: AppTextField(controller: nameController, label: '地點名稱', autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('送出')),
+        ],
+      ),
+    );
+    if (submitted != true || !mounted) return;
+    final name = nameController.text.trim();
+    if (name.isEmpty) return;
+
+    final client = ref.read(supabaseClientProvider);
+    try {
+      await proposeLocation(client, name: name, school: widget.activity.school, campus: widget.activity.campus);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已送出「$name」，審核通過後才能投給這裡')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final message = e.code == ApiErrorCode.duplicateLocationName ? '這個地點已經存在了' : '送出失敗：${e.code.name}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
   Future<void> _openProposeSheet(List<Location> allLocations, Set<String> proposedIds) async {
     final candidates = allLocations.where((l) => !proposedIds.contains(l.id)).toList();
     final picked = await showModalBottomSheet<String>(
@@ -589,6 +627,11 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                   ),
           icon: const Icon(Icons.add_location_alt_outlined),
           label: const Text('提案新地點'),
+        ),
+        TextButton.icon(
+          onPressed: _busy ? null : _proposeNewLocation,
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('沒有你要的地點？提議新增到清單'),
         ),
       ],
     );

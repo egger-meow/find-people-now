@@ -4,13 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../generated/activity_type.dart';
-import '../generated/supadart_header.dart' show REQUEST_STATUS, SCHOOL;
+import '../generated/supadart_header.dart' show REQUEST_STATUS;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/api_exception.dart';
-import '../rpc/location_rpc.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
@@ -21,6 +21,11 @@ import 'match_providers.dart';
 /// 這裡是第一版實作——`create_request` 早已直接收 `p_earliest_start`/
 /// `p_latest_start` 原始時間戳（v1.16），這裡的桶邏輯只是前端換算，不影響
 /// RPC 呼叫本身。
+///
+/// 反饋：原本 5 個標號區塊（選類型/選時段/選校區/選人數/降級開關）視覺density
+/// 太高，「像在填 Google Form」。改成卡片式、更快決策的排版——校區在 MVP
+/// 單校區假設下（見 match_providers.dart 的 [campusOptionsProvider] 註解）
+/// 只有一個選項時直接顯示，不再讓使用者多一步選擇。
 class CreateRequestScreen extends ConsumerWidget {
   const CreateRequestScreen({super.key});
 
@@ -151,20 +156,27 @@ class CreateRequestScreen extends ConsumerWidget {
 /// 00:00。桶本身跟日期無關，實際 [DateTime] 由 [_generateBuckets] 依「今天」
 /// 「明天」兩個候選日展開。
 const _bucketDefs = [
-  ('早上', 6, 12),
-  ('中午', 12, 14),
-  ('下午', 14, 18),
-  ('傍晚', 18, 20),
-  ('晚上', 20, 24),
+  ('早上', 6, 12, Icons.wb_twilight_rounded),
+  ('中午', 12, 14, Icons.wb_sunny_rounded),
+  ('下午', 14, 18, Icons.light_mode_rounded),
+  ('傍晚', 18, 20, Icons.brightness_4_rounded),
+  ('晚上', 20, 24, Icons.nightlight_round),
 ];
 
 class _TimeBucket {
-  _TimeBucket({required this.label, required this.start, required this.end, required this.isTomorrow});
+  _TimeBucket({
+    required this.label,
+    required this.start,
+    required this.end,
+    required this.isTomorrow,
+    required this.icon,
+  });
 
   final String label;
   final DateTime start;
   final DateTime end;
   final bool isTomorrow;
+  final IconData icon;
 
   String get displayLabel => isTomorrow ? '明天 $label' : label;
 }
@@ -179,13 +191,13 @@ List<_TimeBucket> _generateBuckets(DateTime now) {
   for (final dayOffset in [0, 1]) {
     final day = today.add(Duration(days: dayOffset));
     for (final def in _bucketDefs) {
-      final (label, startHour, endHour) = def;
+      final (label, startHour, endHour, icon) = def;
       final start = DateTime(day.year, day.month, day.day, startHour);
       final end = endHour == 24
           ? DateTime(day.year, day.month, day.day).add(const Duration(days: 1))
           : DateTime(day.year, day.month, day.day, endHour);
       if (!start.isBefore(now) && start.isBefore(windowEnd)) {
-        buckets.add(_TimeBucket(label: label, start: start, end: end, isTomorrow: dayOffset == 1));
+        buckets.add(_TimeBucket(label: label, start: start, end: end, isTomorrow: dayOffset == 1, icon: icon));
       }
     }
   }
@@ -193,6 +205,49 @@ List<_TimeBucket> _generateBuckets(DateTime now) {
 }
 
 String _formatTime(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+/// 活動類型沒有 icon 欄位（純文字、使用者可提案新增，見 SPEC §…propose_activity_type），
+/// 這裡用關鍵字比對給常見類型一個圖示，比純文字卡片更有「App」感；比對不到
+/// 就用通用的 [Icons.groups_rounded]，不影響任何未來新增的類型能不能選。
+IconData _activityTypeIcon(String name) {
+  final n = name.toLowerCase();
+  const table = <String, IconData>{
+    '籃球': Icons.sports_basketball_rounded,
+    '排球': Icons.sports_volleyball_rounded,
+    '羽球': Icons.sports_tennis_rounded,
+    '網球': Icons.sports_tennis_rounded,
+    '桌球': Icons.sports_tennis_rounded,
+    '足球': Icons.sports_soccer_rounded,
+    '棒球': Icons.sports_baseball_rounded,
+    '咖啡': Icons.local_cafe_rounded,
+    '散步': Icons.directions_walk_rounded,
+    '慢跑': Icons.directions_run_rounded,
+    '跑步': Icons.directions_run_rounded,
+    '讀書': Icons.menu_book_rounded,
+    '唸書': Icons.menu_book_rounded,
+    '自習': Icons.menu_book_rounded,
+    '健身': Icons.fitness_center_rounded,
+    '重訓': Icons.fitness_center_rounded,
+    '桌遊': Icons.casino_rounded,
+    '遊戲': Icons.sports_esports_rounded,
+    '電影': Icons.movie_rounded,
+    '唱歌': Icons.mic_rounded,
+    'ktv': Icons.mic_rounded,
+    '腳踏車': Icons.directions_bike_rounded,
+    '單車': Icons.directions_bike_rounded,
+    '吃飯': Icons.restaurant_rounded,
+    '晚餐': Icons.restaurant_rounded,
+    '午餐': Icons.restaurant_rounded,
+    '早餐': Icons.free_breakfast_rounded,
+    '逛街': Icons.storefront_rounded,
+    '爬山': Icons.terrain_rounded,
+    '游泳': Icons.pool_rounded,
+  };
+  for (final entry in table.entries) {
+    if (n.contains(entry.key)) return entry.value;
+  }
+  return Icons.groups_rounded;
+}
 
 class _CreateRequestForm extends ConsumerStatefulWidget {
   const _CreateRequestForm();
@@ -368,54 +423,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     }
   }
 
-  /// 反饋：地點跟活動類型一樣——`propose_location` RPC 早就存在（PENDING →
-  /// admin 審核），但沒有任何畫面呼叫過。地點的 catalog 是 (school, campus,
-  /// name) 三元組，`school` 直接用使用者自己的學校，不用讓使用者重選。
-  Future<void> _proposeLocation(SCHOOL school) async {
-    final nameController = TextEditingController();
-    final campusController = TextEditingController();
-    final submitted = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('提議新地點'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppTextField(controller: nameController, label: '地點名稱', autofocus: true),
-            const SizedBox(height: AppSpacing.sm),
-            AppTextField(controller: campusController, label: '校區（例如：光復）'),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('送出')),
-        ],
-      ),
-    );
-    if (submitted != true || !mounted) return;
-    final name = nameController.text.trim();
-    final campus = campusController.text.trim();
-    if (name.isEmpty || campus.isEmpty) return;
-
-    final client = ref.read(supabaseClientProvider);
-    try {
-      await proposeLocation(client, name: name, school: school, campus: campus);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已送出「$name」，審核通過後才會出現在清單中')),
-      );
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      final message = e.code == ApiErrorCode.duplicateLocationName ? '這個地點已經存在了' : '送出失敗：${e.code.name}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final typesAsync = ref.watch(activityTypesProvider);
     final userAsync = ref.watch(myAppUserProvider);
     final reliabilityAsync = ref.watch(myReliabilityProvider);
+    final textTheme = Theme.of(context).textTheme;
 
     return typesAsync.when(
       loading: () => const LoadingIndicator(),
@@ -431,45 +444,40 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
           return ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              Text('1. 選活動類型', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: AppSpacing.sm),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
+              Text('今天想找人一起做什麼？',
+                  style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: AppSpacing.md),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                mainAxisSpacing: AppSpacing.sm,
+                crossAxisSpacing: AppSpacing.sm,
+                childAspectRatio: 1.6,
                 children: [
                   for (final type in types)
-                    ChoiceChip(
-                      label: Text(type.name),
+                    _OptionCard(
+                      icon: _activityTypeIcon(type.name),
+                      label: type.name,
                       selected: _selectedType?.id == type.id,
-                      onSelected: (_) => setState(() {
+                      onTap: () => setState(() {
                         _selectedType = type;
                         _selectedMinHeadcount = null;
                         _selectedMaxHeadcount = null;
                       }),
                     ),
+                  _AddOptionCard(label: '提議新增', onTap: _proposeActivityType),
                 ],
               ),
               if (_selectedType?.description != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _selectedType!.description!,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(_selectedType!.description!, style: textTheme.bodySmall),
               ],
-              const SizedBox(height: AppSpacing.xs),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _proposeActivityType,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('沒有你要的類型？提議新增'),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.xl),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('2. 選時段', style: Theme.of(context).textTheme.titleMedium),
+                  Text('什麼時候？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
                   TextButton(
                     onPressed: () => setState(() {
                       _detailedMode = !_detailedMode;
@@ -504,16 +512,18 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   spacing: AppSpacing.sm,
                   runSpacing: AppSpacing.sm,
                   children: [
-                    ChoiceChip(
-                      label: const Text('現在（30 分鐘內）'),
+                    _TimeChip(
+                      icon: Icons.flash_on_rounded,
+                      label: '現在',
                       selected: _nowSelected,
-                      onSelected: (_) => _selectNow(),
+                      onTap: _selectNow,
                     ),
                     for (var i = 0; i < _buckets.length; i++)
-                      ChoiceChip(
-                        label: Text(_buckets[i].displayLabel),
+                      _TimeChip(
+                        icon: _buckets[i].icon,
+                        label: _buckets[i].displayLabel,
                         selected: _selectedBucketIndices.contains(i),
-                        onSelected: (_) => _toggleBucket(i),
+                        onTap: () => _toggleBucket(i),
                       ),
                   ],
                 ),
@@ -523,107 +533,124 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 Text(
                   '已選範圍：${_formatTime(window.$1)} - ${_formatTime(window.$2)}'
                   '${window.$2.day != window.$1.day ? '（跨日）' : ''}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: textTheme.bodySmall,
                 ),
               ],
-              const SizedBox(height: AppSpacing.lg),
-              Text('3. 選校區', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.xl),
               campusAsync.when(
                 loading: () => const LoadingIndicator(),
                 error: (error, stack) => Text('載入校區失敗：$error'),
                 data: (campuses) {
-                  if (campuses.isNotEmpty && _selectedCampus == null) {
+                  if (campuses.isEmpty) {
+                    return Text('這個學校目前還沒有已核准的地點，請聯絡管理員',
+                        style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.error));
+                  }
+                  if (_selectedCampus == null || !campuses.contains(_selectedCampus)) {
                     _selectedCampus = campuses.first;
                   }
-                  return Wrap(
-                    spacing: AppSpacing.sm,
+                  // MVP 單校區假設（見 campusOptionsProvider 註解）：只有一個
+                  // 選項時直接帶入顯示，不再讓使用者多一步選擇；反饋：地點清單
+                  // 不該把測試/內部資料攤在使用者面前，這裡也不再列出任何原始
+                  // 地點名稱，只顯示校區。
+                  if (campuses.length == 1) {
+                    return Row(
+                      children: [
+                        Icon(Icons.location_on_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text('校區：${campuses.first}', style: textTheme.titleSmall),
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final campus in campuses)
-                        ChoiceChip(
-                          label: Text(campus),
-                          selected: _selectedCampus == campus,
-                          onSelected: (_) => setState(() => _selectedCampus = campus),
-                        ),
+                      Text('去哪個校區？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        children: [
+                          for (final campus in campuses)
+                            _TimeChip(
+                              icon: Icons.location_on_rounded,
+                              label: campus,
+                              selected: _selectedCampus == campus,
+                              onTap: () => setState(() => _selectedCampus = campus),
+                            ),
+                        ],
+                      ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: AppSpacing.xs),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => _proposeLocation(user.school),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('沒有你要的地點？提議新增'),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Text('4. 選人數（願意接受的範圍）', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.xl),
+              Text('找幾個人？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: AppSpacing.sm),
               if (_selectedType == null)
-                Text('請先選活動類型', style: Theme.of(context).textTheme.bodySmall)
+                Text('請先選活動類型', style: textTheme.bodySmall)
               else
                 reliabilityAsync.when(
                   loading: () => const LoadingIndicator(),
                   error: (error, stack) => Text('載入可信度失敗：$error'),
                   data: (reliability) {
                     final options = _groupSizeOptions(_selectedType!);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('至少', style: Theme.of(context).textTheme.bodySmall),
-                        const SizedBox(height: AppSpacing.xs),
-                        Wrap(
-                          spacing: AppSpacing.sm,
-                          children: [
-                            for (final n in options)
-                              ChoiceChip(
-                                label: Text('$n 人'),
-                                selected: _selectedMinHeadcount == n,
-                                // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
-                                onSelected: (n <= 2 && reliability.isNewUser)
-                                    ? null
-                                    : (_) => setState(() {
-                                          _selectedMinHeadcount = n;
-                                          // 最多不能小於最少——若原本選的最多比新的
-                                          // 最少還小，直接清掉讓使用者重選。
-                                          if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
-                                            _selectedMaxHeadcount = null;
-                                          }
-                                        }),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text('至多', style: Theme.of(context).textTheme.bodySmall),
-                        const SizedBox(height: AppSpacing.xs),
-                        if (_selectedMinHeadcount == null)
-                          Text('請先選「至少」人數', style: Theme.of(context).textTheme.bodySmall)
-                        else
+                    return AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('至少', style: textTheme.bodySmall),
+                          const SizedBox(height: AppSpacing.xs),
                           Wrap(
                             spacing: AppSpacing.sm,
                             children: [
                               for (final n in options)
-                                if (n >= _selectedMinHeadcount!)
-                                  ChoiceChip(
-                                    label: Text('$n 人'),
-                                    selected: _selectedMaxHeadcount == n,
-                                    onSelected: (_) => setState(() => _selectedMaxHeadcount = n),
-                                  ),
+                                ChoiceChip(
+                                  label: Text('$n 人'),
+                                  selected: _selectedMinHeadcount == n,
+                                  // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
+                                  onSelected: (n <= 2 && reliability.isNewUser)
+                                      ? null
+                                      : (_) => setState(() {
+                                            _selectedMinHeadcount = n;
+                                            // 最多不能小於最少——若原本選的最多比新的
+                                            // 最少還小，直接清掉讓使用者重選。
+                                            if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
+                                              _selectedMaxHeadcount = null;
+                                            }
+                                          }),
+                                ),
                             ],
                           ),
-                      ],
+                          const SizedBox(height: AppSpacing.md),
+                          Text('至多', style: textTheme.bodySmall),
+                          const SizedBox(height: AppSpacing.xs),
+                          if (_selectedMinHeadcount == null)
+                            Text('請先選「至少」人數', style: textTheme.bodySmall)
+                          else
+                            Wrap(
+                              spacing: AppSpacing.sm,
+                              children: [
+                                for (final n in options)
+                                  if (n >= _selectedMinHeadcount!)
+                                    ChoiceChip(
+                                      label: Text('$n 人'),
+                                      selected: _selectedMaxHeadcount == n,
+                                      onSelected: (_) => setState(() => _selectedMaxHeadcount = n),
+                                    ),
+                              ],
+                            ),
+                        ],
+                      ),
                     );
                   },
                 ),
               const SizedBox(height: AppSpacing.lg),
-              Text('5. 人數不夠時，接受少一點人也算成局？', style: Theme.of(context).textTheme.titleMedium),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _allowDowngrade,
-                onChanged: (v) => setState(() => _allowDowngrade = v),
-                title: const Text('允許人數調整'),
+              AppCard(
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _allowDowngrade,
+                  onChanged: (v) => setState(() => _allowDowngrade = v),
+                  title: const Text('人數不夠時，接受少一點人也算成局？'),
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: AppSpacing.sm),
@@ -634,6 +661,132 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// 選擇型大卡片——活動類型步驟用，比 [ChoiceChip] 更大的觸控面積跟視覺重量，
+/// 呼應「像 Tinder / Uber 那種快速決策」的反饋。
+class _OptionCard extends StatelessWidget {
+  const _OptionCard({required this.icon, required this.label, required this.selected, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: selected ? Border.all(color: scheme.primary, width: 2) : null,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 28, color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 活動類型格子最後一格：虛線邊框的「提議新增」入口，取代原本另外一行的
+/// 文字連結——跟其他選項並排在同一個 grid 裡，密度感一致。
+class _AddOptionCard extends StatelessWidget {
+  const _AddOptionCard({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: scheme.outlineVariant, style: BorderStyle.solid),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_rounded, size: 28, color: scheme.onSurfaceVariant),
+              const SizedBox(height: AppSpacing.xs),
+              Text(label, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: scheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 時段／校區步驟用的較小型選擇卡——維持多選/單選皆可的既有互動邏輯，只是
+/// 從純文字 [ChoiceChip] 換成帶 icon 的版本。
+class _TimeChip extends StatelessWidget {
+  const _TimeChip({required this.icon, required this.label, required this.selected, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                    ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

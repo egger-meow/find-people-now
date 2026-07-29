@@ -53,6 +53,28 @@ Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
   await ref.read(supabaseClientProvider).auth.signOut();
 }
 
+/// 分區標題——反饋 v2：原本 6 個各自獨立的 [AppCard] 疊在一起「太像後台表單」，
+/// 改成幾個有標題的分組，同組內容用 [Divider] 隔開、共用一個 [AppCard]。
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
 /// UI_PLAN.md §8.1「我的」——個人資料卡（可編輯，見 edit_profile_screen.dart）、
 /// 可信度徽章、聯絡方式、帳號刪除入口（Apple/Google 上架硬性規定，位置需明顯
 /// 好找）、反饋/QA 連結、常駐說明入口（§11.2）、登出。
@@ -66,7 +88,7 @@ class ProfileScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('我的'),
+        title: const Text('帳戶'),
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline_rounded),
@@ -105,13 +127,31 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _MoreInfoCard(user: user),
-                  const SizedBox(height: AppSpacing.sm),
-                  _ContactsCard(user: user),
-                  const SizedBox(height: AppSpacing.sm),
-                  const _ThemeModeCard(),
                   const SizedBox(height: AppSpacing.lg),
+                  const _SectionLabel('設定'),
+                  AppCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(AppSpacing.md),
+                          child: _ThemeModeSection(),
+                        ),
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          child: _MoreInfoSection(user: user),
+                        ),
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          child: _ContactsSection(user: user),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _SectionLabel('說明與回饋'),
                   AppCard(
                     padding: EdgeInsets.zero,
                     child: Column(
@@ -129,13 +169,16 @@ class ProfileScreen extends ConsumerWidget {
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: () => context.push('/help'),
                         ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(Icons.logout_rounded),
-                          title: const Text('登出'),
-                          onTap: () => _confirmSignOut(context, ref),
-                        ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  AppCard(
+                    padding: EdgeInsets.zero,
+                    child: ListTile(
+                      leading: const Icon(Icons.logout_rounded),
+                      title: const Text('登出'),
+                      onTap: () => _confirmSignOut(context, ref),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
@@ -191,21 +234,23 @@ class _ProfileHeaderCard extends StatelessWidget {
 }
 
 /// 性別欄位刻意折疊在這裡，不與頭像/名字平起平坐（UI_PLAN §8.1）。
-class _MoreInfoCard extends StatefulWidget {
-  const _MoreInfoCard({required this.user});
+/// 反饋 v2：不再自己包一層 [AppCard]——現在跟其他「設定」子項共用外層一個
+/// 卡片、用 [Divider] 分隔，減少畫面上一堆獨立色塊的感覺。
+class _MoreInfoSection extends StatefulWidget {
+  const _MoreInfoSection({required this.user});
 
   final AppUser user;
 
   @override
-  State<_MoreInfoCard> createState() => _MoreInfoCardState();
+  State<_MoreInfoSection> createState() => _MoreInfoSectionState();
 }
 
-class _MoreInfoCardState extends State<_MoreInfoCard> {
+class _MoreInfoSectionState extends State<_MoreInfoSection> {
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    return InkWell(
       onTap: () => setState(() => _expanded = !_expanded),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,8 +276,8 @@ class _MoreInfoCardState extends State<_MoreInfoCard> {
   }
 }
 
-class _ContactsCard extends StatelessWidget {
-  const _ContactsCard({required this.user});
+class _ContactsSection extends StatelessWidget {
+  const _ContactsSection({required this.user});
 
   final AppUser user;
 
@@ -243,46 +288,42 @@ class _ContactsCard extends StatelessWidget {
       if (user.contactLine?.isNotEmpty == true) 'LINE: ${user.contactLine}',
       if (user.contactDiscord?.isNotEmpty == true) 'Discord: ${user.contactDiscord}',
     ];
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('聯絡方式', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          if (lines.isEmpty)
-            const Text('還沒有留下任何聯絡方式')
-          else
-            for (final line in lines) Text(line, style: Theme.of(context).textTheme.bodyMedium),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('聯絡方式', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: AppSpacing.sm),
+        if (lines.isEmpty)
+          const Text('還沒有留下任何聯絡方式')
+        else
+          for (final line in lines) Text(line, style: Theme.of(context).textTheme.bodyMedium),
+      ],
     );
   }
 }
 
 /// 反饋：「我的資訊頁 要加 白/暗 模式(預設一樣跟系統)」。
-class _ThemeModeCard extends ConsumerWidget {
-  const _ThemeModeCard();
+class _ThemeModeSection extends ConsumerWidget {
+  const _ThemeModeSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('外觀', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          SegmentedButton<ThemeMode>(
-            segments: [
-              for (final m in ThemeMode.values)
-                ButtonSegment(value: m, label: Text(_themeModeLabel(m))),
-            ],
-            selected: {mode},
-            onSelectionChanged: (selected) =>
-                ref.read(themeModeProvider.notifier).setThemeMode(selected.first),
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('外觀', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: AppSpacing.sm),
+        SegmentedButton<ThemeMode>(
+          segments: [
+            for (final m in ThemeMode.values)
+              ButtonSegment(value: m, label: Text(_themeModeLabel(m))),
+          ],
+          selected: {mode},
+          onSelectionChanged: (selected) =>
+              ref.read(themeModeProvider.notifier).setThemeMode(selected.first),
+        ),
+      ],
     );
   }
 }

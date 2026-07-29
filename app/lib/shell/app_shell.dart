@@ -36,7 +36,7 @@ class AppShell extends ConsumerWidget {
               const NavigationDestination(
                 icon: Icon(Icons.event_note_outlined),
                 selectedIcon: Icon(Icons.event_note_rounded),
-                label: '我的活動',
+                label: '活動',
               ),
               NavigationDestination(
                 icon: Badge(
@@ -51,7 +51,7 @@ class AppShell extends ConsumerWidget {
                 ),
                 label: '通知',
               ),
-              const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: '我的'),
+              const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: '帳戶'),
             ],
           ),
         ),
