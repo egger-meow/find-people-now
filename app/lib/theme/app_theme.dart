@@ -8,6 +8,16 @@ abstract final class AppColors {
   static const seedGreen = Color(0xFF2FB380);
   static const skyBlue = Color(0xFF4FB8E8);
   static const warmYellow = Color(0xFFFFC94D);
+
+  /// 反饋：黑底配原本的 [seedGreen]（偏霧的薄荷綠）在暗色模式下「很醜/噁心」，
+  /// 「黑色至少要搭螢光綠」。單純把 [neonGreen] 拿去當 `ColorScheme.fromSeed`
+  /// 的 seed 沒用——M3 的 tonal palette 演算法對暗色 scheme 的 primary 一律
+  /// 收斂到偏淡、偏灰的高 tone 值（約 tone 80），不管 seed 多飽和，算出來的
+  /// primary 幾乎都長得差不多（試過，兩者色票視覺上幾乎沒差）。要真的螢光，
+  /// 必須繞過 tonal 演算法，直接把這個色值蓋回 `colorScheme.primary`（見下方
+  /// `_build`），不能只調 seed。淺色模式維持原本品牌綠，沒人反應那邊有問題。
+  static const neonGreen = Color(0xFF39FF14);
+  static const neonGreenOn = Color(0xFF041B0A);
 }
 
 abstract final class AppRadius {
@@ -37,12 +47,23 @@ abstract final class AppTheme {
   static ThemeData dark = _build(Brightness.dark);
 
   static ThemeData _build(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
+    var scheme = ColorScheme.fromSeed(
       seedColor: AppColors.seedGreen,
       brightness: brightness,
       secondary: AppColors.skyBlue,
       tertiary: AppColors.warmYellow,
     );
+    if (brightness == Brightness.dark) {
+      // 直接蓋掉 tonal 演算法算出來的 primary/primaryContainer，換成真正
+      // 飽和的螢光綠——見上面 [AppColors.neonGreen] 的註解，這是唯一能讓
+      // 暗色模式主色實際「亮」起來的做法。
+      scheme = scheme.copyWith(
+        primary: AppColors.neonGreen,
+        onPrimary: AppColors.neonGreenOn,
+        primaryContainer: AppColors.neonGreen,
+        onPrimaryContainer: AppColors.neonGreenOn,
+      );
+    }
 
     return ThemeData(
       useMaterial3: true,

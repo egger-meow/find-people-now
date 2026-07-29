@@ -10,8 +10,15 @@ import '../match/match_providers.dart' show myAppUserProvider, myReliabilityProv
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
 import '../theme/app_theme.dart';
+import '../theme/theme_providers.dart';
 import '../widgets/app_card.dart';
 import '../widgets/loading_indicator.dart';
+
+String _themeModeLabel(ThemeMode mode) => switch (mode) {
+      ThemeMode.system => '跟隨系統',
+      ThemeMode.light => '亮色',
+      ThemeMode.dark => '暗色',
+    };
 
 String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
       DEGREE_LEVEL.UNDERGRAD => '大學部',
@@ -82,6 +89,8 @@ class ProfileScreen extends ConsumerWidget {
                   _MoreInfoCard(user: user),
                   const SizedBox(height: AppSpacing.sm),
                   _ContactsCard(user: user),
+                  const SizedBox(height: AppSpacing.sm),
+                  const _ThemeModeCard(),
                   const SizedBox(height: AppSpacing.lg),
                   AppCard(
                     padding: EdgeInsets.zero,
@@ -218,6 +227,34 @@ class _ContactsCard extends StatelessWidget {
             const Text('還沒有留下任何聯絡方式')
           else
             for (final line in lines) Text(line, style: Theme.of(context).textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+/// 反饋：「我的資訊頁 要加 白/暗 模式(預設一樣跟系統)」。
+class _ThemeModeCard extends ConsumerWidget {
+  const _ThemeModeCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('外觀', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          SegmentedButton<ThemeMode>(
+            segments: [
+              for (final m in ThemeMode.values)
+                ButtonSegment(value: m, label: Text(_themeModeLabel(m))),
+            ],
+            selected: {mode},
+            onSelectionChanged: (selected) =>
+                ref.read(themeModeProvider.notifier).setThemeMode(selected.first),
+          ),
         ],
       ),
     );
