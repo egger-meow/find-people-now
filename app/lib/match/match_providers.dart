@@ -94,13 +94,28 @@ final matchRequestStreamProvider = StreamProvider.family<MatchRequest?, String>(
 });
 
 /// 等待室成員頭像列（UI_PLAN §3）背後的資料——即時反應人數變化。
+///
+/// 依 `id` 去重（`LinkedHashMap` 保留最後一次出現的順序/內容）：反饋回報過
+/// 等待室一度出現「兩個我」——實際查過本機 DB，同一個 request 底下並沒有
+/// 殘留的重複列（`create_request` 只 insert 一次 owner 列，`join_request_by_token`
+/// 對既有列是 `on conflict ... do update`，不會插入第二列），所以不是後端資料
+/// 真的重複。比較可能是 `.stream()` 在初始快照與 realtime 事件交錯時，客戶端
+/// 曾經短暫拿到同一列兩次——這裡直接防禦性去重，不管實際觸發時機為何都能
+/// 保證畫面上每個成員只出現一次。
 final requestMembersStreamProvider = StreamProvider.family<List<RequestMember>, String>((ref, requestId) {
   final client = ref.watch(supabaseClientProvider);
   return client
       .from('request_member')
       .stream(primaryKey: ['id'])
       .eq('request_id', requestId)
-      .map((rows) => rows.map(RequestMember.fromJson).toList());
+      .map((rows) {
+        final byId = <String, RequestMember>{};
+        for (final row in rows) {
+          final member = RequestMember.fromJson(row);
+          byId[member.id] = member;
+        }
+        return byId.values.toList();
+      });
 });
 
 /// REQUESTING 以後（PENDING_CONFIRMATION／MATCHED／ONGOING）不再是等待室的

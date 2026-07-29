@@ -127,7 +127,12 @@ class _CreateRequestForm extends ConsumerStatefulWidget {
 class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   ActivityType? _selectedType;
   String? _selectedCampus;
-  int? _selectedHeadcount;
+  // UI_PLAN.md §2.1 步驟 4：人數是「接受範圍」（min~max），不是單一數字——
+  // create_request RPC 本來就吃 min/max 兩個參數（docs/API.md §3.1），先前這裡
+  // 只收單一數字塞進 minParticipants、maxParticipants 永遠傳 null，跟規格不符
+  // （反饋：「人數不是選接受範圍嗎 怎麼變選一個數字」）。
+  int? _selectedMinHeadcount;
+  int? _selectedMaxHeadcount;
   bool _allowDowngrade = false;
   bool _submitting = false;
   String? _error;
@@ -212,9 +217,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   Future<void> _submit() async {
     final type = _selectedType;
     final campus = _selectedCampus;
-    final headcount = _selectedHeadcount;
+    final min = _selectedMinHeadcount;
+    final max = _selectedMaxHeadcount;
     final window = _resolveWindow();
-    if (type == null || campus == null || headcount == null || window == null) {
+    if (type == null || campus == null || min == null || max == null || window == null) {
       setState(() => _error = '請完成所有選擇');
       return;
     }
@@ -233,7 +239,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         campus: campus,
         earliestStart: earliest.toUtc(),
         latestStart: latest.toUtc(),
-        minParticipants: headcount,
+        minParticipants: min,
+        maxParticipants: max,
         allowDowngrade: _allowDowngrade,
       );
       await submitRequest(client, request.id);
@@ -279,7 +286,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       selected: _selectedType?.id == type.id,
                       onSelected: (_) => setState(() {
                         _selectedType = type;
-                        _selectedHeadcount = null;
+                        _selectedMinHeadcount = null;
+                        _selectedMaxHeadcount = null;
                       }),
                     ),
                 ],
@@ -376,7 +384,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 },
               ),
               const SizedBox(height: AppSpacing.lg),
-              Text('4. 選人數', style: Theme.of(context).textTheme.titleMedium),
+              Text('4. 選人數（願意接受的範圍）', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: AppSpacing.sm),
               if (_selectedType == null)
                 Text('請先選活動類型', style: Theme.of(context).textTheme.bodySmall)
@@ -386,17 +394,49 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   error: (error, stack) => Text('載入可信度失敗：$error'),
                   data: (reliability) {
                     final options = _groupSizeOptions(_selectedType!);
-                    return Wrap(
-                      spacing: AppSpacing.sm,
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final n in options)
-                          ChoiceChip(
-                            label: Text('$n 人'),
-                            selected: _selectedHeadcount == n,
-                            // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
-                            onSelected: (n <= 2 && reliability.isNewUser)
-                                ? null
-                                : (_) => setState(() => _selectedHeadcount = n),
+                        Text('至少', style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          children: [
+                            for (final n in options)
+                              ChoiceChip(
+                                label: Text('$n 人'),
+                                selected: _selectedMinHeadcount == n,
+                                // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
+                                onSelected: (n <= 2 && reliability.isNewUser)
+                                    ? null
+                                    : (_) => setState(() {
+                                          _selectedMinHeadcount = n;
+                                          // 最多不能小於最少——若原本選的最多比新的
+                                          // 最少還小，直接清掉讓使用者重選。
+                                          if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
+                                            _selectedMaxHeadcount = null;
+                                          }
+                                        }),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text('至多', style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(height: AppSpacing.xs),
+                        if (_selectedMinHeadcount == null)
+                          Text('請先選「至少」人數', style: Theme.of(context).textTheme.bodySmall)
+                        else
+                          Wrap(
+                            spacing: AppSpacing.sm,
+                            children: [
+                              for (final n in options)
+                                if (n >= _selectedMinHeadcount!)
+                                  ChoiceChip(
+                                    label: Text('$n 人'),
+                                    selected: _selectedMaxHeadcount == n,
+                                    onSelected: (_) => setState(() => _selectedMaxHeadcount = n),
+                                  ),
+                            ],
                           ),
                       ],
                     );
