@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +8,12 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_text_field.dart';
 import 'auth_providers.dart';
+
+/// 反饋：驗證碼信件可能延遲或漏收，卡在「重新輸入信箱」這條路太重（要整個
+/// 重填一次）——加一個原地重新傳送的選項。跟伺服器端 `max_frequency = "1s"`
+/// （config.toml）分開設一個更保守的前端冷卻秒數，純粹是防止使用者手滑連點
+/// 造成信箱被灌爆，不是在補伺服器端沒做的節流。
+const _resendCooldown = Duration(seconds: 30);
 
 /// docs/SPEC.md §2：學校專屬網域信箱（`@nycu.edu.tw` / `@nthu.edu.tw`）+ OTP。
 /// 最小可用登入畫面——這輪的必要 gate，不是後續輪次要打磨的畫面；沒有做
@@ -30,13 +38,34 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
 
   bool _otpSent = false;
   bool _loading = false;
+  bool _resending = false;
   String? _error;
+  Timer? _cooldownTimer;
+  int _cooldownSeconds = 0;
 
   @override
   void dispose() {
     _emailController.dispose();
     _codeController.dispose();
+    _cooldownTimer?.cancel();
     super.dispose();
+  }
+
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldownSeconds = _resendCooldown.inSeconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownSeconds <= 1) {
+        timer.cancel();
+        setState(() => _cooldownSeconds = 0);
+      } else {
+        setState(() => _cooldownSeconds -= 1);
+      }
+    });
   }
 
   Future<void> _sendOtp() async {
@@ -56,12 +85,34 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
         _otpSent = true;
         _loading = false;
       });
+      _startCooldown();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = '驗證信寄送失敗，請稍後再試';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    final email = _emailController.text.trim();
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
+    try {
+      await ref.read(supabaseClientProvider).auth.signInWithOtp(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已重新寄送驗證碼')),
+      );
+      _startCooldown();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '重新寄送失敗，請稍後再試');
+    } finally {
+      if (mounted) setState(() => _resending = false);
     }
   }
 
@@ -139,7 +190,11 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                 loading: _loading,
                 onPressed: _otpSent ? _verifyOtp : _sendOtp,
               ),
-              if (_otpSent)
+              if (_otpSent) ...[
+                TextButton(
+                  onPressed: (_loading || _resending || _cooldownSeconds > 0) ? null : _resendOtp,
+                  child: Text(_cooldownSeconds > 0 ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）' : '重新傳送驗證碼'),
+                ),
                 TextButton(
                   onPressed: _loading
                       ? null
@@ -147,9 +202,12 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                             _otpSent = false;
                             _codeController.clear();
                             _error = null;
+                            _cooldownTimer?.cancel();
+                            _cooldownSeconds = 0;
                           }),
                   child: const Text('重新輸入信箱'),
                 ),
+              ],
             ],
           ),
         ),
