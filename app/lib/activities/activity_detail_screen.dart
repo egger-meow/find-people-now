@@ -130,8 +130,12 @@ class _CompletionReportBanner extends ConsumerWidget {
               children: [
                 const Icon(Icons.info_outline_rounded),
                 const SizedBox(width: AppSpacing.sm),
-                const Expanded(child: Text('活動結束了嗎？花 10 秒回報一下')),
+                const Expanded(
+                  child: Text('活動結束了嗎？花 10 秒回報一下', maxLines: 2, overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(width: AppSpacing.sm),
                 FilledButton(
+                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                   onPressed: () => showModalBottomSheet<void>(
                     context: context,
                     isScrollControlled: true,
