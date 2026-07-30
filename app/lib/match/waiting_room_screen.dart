@@ -84,8 +84,18 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    Text('目前房間成員（${members.length} / ${request.minParticipants} 人成立）',
-                      style: Theme.of(context).textTheme.titleMedium),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '目前房間成員（${members.length} / ${request.minParticipants} 人成立）',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        const _MatchingPulse(),
+                      ],
+                    ),
                     const SizedBox(height: AppSpacing.sm),
                     Wrap(
                       spacing: AppSpacing.sm,
@@ -214,6 +224,51 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 }
 
+/// 反饋：「房間下面有個配對中...之類的interactive感」——等待室原本除了倒數
+/// 計時外沒有任何持續變化的元素，靜態到讓人懷疑畫面是不是卡住了。這裡加一顆
+/// 呼吸閃爍的小圓點＋文字，純粹是「這個畫面還活著、系統還在背景幫你找人」的
+/// 視覺回饋，不代表任何真實的配對引擎狀態（背景排程本身的節奏見
+/// CLAUDE.md「Background jobs」一節）。
+class _MatchingPulse extends StatefulWidget {
+  const _MatchingPulse();
+
+  @override
+  State<_MatchingPulse> createState() => _MatchingPulseState();
+}
+
+class _MatchingPulseState extends State<_MatchingPulse> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1000),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FadeTransition(
+          opacity: _controller.drive(CurveTween(curve: Curves.easeInOut)),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Text('配對中…', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.primary)),
+      ],
+    );
+  }
+}
+
 class _AnonymousAvatar extends StatelessWidget {
   const _AnonymousAvatar({required this.isSelf, required this.isOwner});
 
@@ -261,12 +316,16 @@ class _RequestInfoCard extends ConsumerWidget {
             children: [
               Icon(Icons.category_rounded, size: 20, color: scheme.primary),
               const SizedBox(width: AppSpacing.sm),
-              typeAsync.when(
-                loading: () => Text('載入中…', style: textTheme.titleMedium),
-                error: (_, _) => Text('（未知活動）', style: textTheme.titleMedium),
-                data: (type) => Text(
-                  type?.name ?? '（未知活動）',
-                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              Expanded(
+                child: typeAsync.when(
+                  loading: () => Text('載入中…', style: textTheme.titleMedium),
+                  error: (_, _) => Text('（未知活動）', style: textTheme.titleMedium),
+                  data: (type) => Text(
+                    type?.name ?? '（未知活動）',
+                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],
@@ -277,9 +336,11 @@ class _RequestInfoCard extends ConsumerWidget {
             children: [
               Icon(Icons.schedule_rounded, size: 20, color: scheme.primary),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                '${_formatTime(request.earliestStart)} ~ ${_formatTime(request.latestStart)}',
-                style: textTheme.bodyMedium,
+              Expanded(
+                child: Text(
+                  '${_formatTime(request.earliestStart)} ~ ${_formatTime(request.latestStart)}',
+                  style: textTheme.bodyMedium,
+                ),
               ),
             ],
           ),
@@ -289,11 +350,13 @@ class _RequestInfoCard extends ConsumerWidget {
             children: [
               Icon(Icons.group_rounded, size: 20, color: scheme.primary),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                request.maxParticipants != null
-                    ? '${request.minParticipants}~${request.maxParticipants} 人成團'
-                    : '至少 ${request.minParticipants} 人成團',
-                style: textTheme.bodyMedium,
+              Expanded(
+                child: Text(
+                  request.maxParticipants != null
+                      ? '${request.minParticipants}~${request.maxParticipants} 人成團'
+                      : '至少 ${request.minParticipants} 人成團',
+                  style: textTheme.bodyMedium,
+                ),
               ),
             ],
           ),
@@ -303,9 +366,11 @@ class _RequestInfoCard extends ConsumerWidget {
               children: [
                 Icon(Icons.tune_rounded, size: 20, color: scheme.tertiary),
                 const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '允許人數調整',
-                  style: textTheme.bodySmall?.copyWith(color: scheme.tertiary),
+                Expanded(
+                  child: Text(
+                    '允許人數調整',
+                    style: textTheme.bodySmall?.copyWith(color: scheme.tertiary),
+                  ),
                 ),
               ],
             ),
@@ -316,9 +381,13 @@ class _RequestInfoCard extends ConsumerWidget {
             children: [
               Icon(Icons.location_on_rounded, size: 20, color: scheme.primary),
               const SizedBox(width: AppSpacing.sm),
-              Text(
-                '${schoolLabel(request.school)} ${request.campus}',
-                style: textTheme.bodyMedium,
+              Expanded(
+                child: Text(
+                  '${schoolLabel(request.school)} ${request.campus}',
+                  style: textTheme.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),

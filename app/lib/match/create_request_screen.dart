@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
+import '../generated/activity.dart';
 import '../generated/activity_type.dart';
-import '../generated/supadart_header.dart' show REQUEST_STATUS;
+import '../generated/supadart_header.dart' show ACTIVITY_STATUS;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
@@ -59,23 +60,30 @@ class CreateRequestScreen extends ConsumerWidget {
           loading: () => const LoadingIndicator(),
           error: (error, stack) => Center(child: Text('載入失敗：$error')),
           data: (request) {
-            if (request == null) {
-              return const _CreateRequestForm();
-            }
-            if (request.status == REQUEST_STATUS.REQUESTING) {
-              // UI_PLAN §2.2 送出前預先攔截 — 已有進行中的 Request 就直接導去
-              // 等待室，不重新顯示表單。用 post-frame callback 避免在 build
-              // 中途觸發導覽。
+            if (request != null) {
+              // UI_PLAN §2.2 送出前預先攔截 — 還在找人流程中（REQUESTING/
+              // PENDING_CONFIRMATION）的 Request 就直接導去等待室，不重新
+              // 顯示表單。用 post-frame callback 避免在 build 中途觸發導覽。
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (context.mounted) context.push('/waiting-room/${request.id}');
               });
               return const LoadingIndicator(label: '你已經有進行中的配對，正在帶你過去…');
             }
-            // MATCHED/ONGOING — 「我的活動」round 1 已經接手這個過渡點。
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) context.go('/my-activities');
-            });
-            return const LoadingIndicator(label: '你的活動已經成團了，正在帶你去「我的活動」…');
+            // 反饋：使用者目前有 MATCHED/ONGOING 活動時，配對頁該直接告知
+            // 「當前有活動，無法建立新配對」，而不是讓使用者填完整張表單才在
+            // 送出當下收到 ACTIVE_ACTIVITY_IN_PROGRESS 錯誤（見
+            // match_providers.dart 的 [myActiveActivityProvider] 註解）。
+            final activeActivity = ref.watch(myActiveActivityProvider);
+            return activeActivity.when(
+              loading: () => const LoadingIndicator(),
+              error: (error, stack) => Center(child: Text('載入失敗：$error')),
+              data: (activity) {
+                if (activity != null) {
+                  return _ActiveActivityBlock(activity: activity);
+                }
+                return const _CreateRequestForm();
+              },
+            );
           },
         ),
       ),
@@ -149,6 +157,47 @@ class CreateRequestScreen extends ConsumerWidget {
       // picks up the new membership.
       ref.invalidate(myActiveRequestProvider);
     }
+  }
+}
+
+/// 反饋：「如果有活動 active 或成立，配對頁直接灰掉，寫當前有活動，使用者
+/// 無法建立新活動」——取代原本「已經有活動就整頁自動導走」的做法，改成配對頁
+/// 本身顯示明確、不可互動的狀態卡，並提供前往該活動的入口。
+class _ActiveActivityBlock extends StatelessWidget {
+  const _ActiveActivityBlock({required this.activity});
+
+  final Activity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final statusLabel = activity.status == ACTIVITY_STATUS.ONGOING ? '進行中' : '已成團，等待開始';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_busy_rounded, size: 48, color: scheme.onSurfaceVariant),
+            const SizedBox(height: AppSpacing.md),
+            Text('你目前有進行中的活動', style: textTheme.titleLarge, textAlign: TextAlign.center),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              '狀態：$statusLabel — 活動結束前無法建立新配對',
+              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            AppButton(
+              label: '前往這個活動',
+              onPressed: () => context.push('/activity/${activity.id}'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -557,7 +606,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       children: [
                         Icon(Icons.location_on_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: AppSpacing.sm),
-                        Text('校區：${campuses.first}', style: textTheme.titleSmall),
+                        Expanded(
+                          child: Text(
+                            '校區：${campuses.first}',
+                            style: textTheme.titleSmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ],
                     );
                   }

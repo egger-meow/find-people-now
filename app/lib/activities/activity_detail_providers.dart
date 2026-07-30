@@ -103,6 +103,7 @@ class MemberRosterEntry {
   final String? department;
   final DEGREE_LEVEL degreeLevel;
   final ReliabilityTier reliabilityTier;
+  final String? meetingHint;
 
   MemberRosterEntry({
     required this.userId,
@@ -115,6 +116,7 @@ class MemberRosterEntry {
     required this.department,
     required this.degreeLevel,
     required this.reliabilityTier,
+    required this.meetingHint,
   });
 }
 
@@ -144,6 +146,7 @@ final activityMemberRosterProvider =
       department: profile?.department,
       degreeLevel: profile?.degreeLevel ?? DEGREE_LEVEL.UNDERGRAD,
       reliabilityTier: profile?.reliabilityTier ?? ReliabilityTier.unknown,
+      meetingHint: row['meeting_hint'] as String?,
     );
   }).toList();
 });

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
@@ -366,12 +367,18 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
           const SizedBox(height: AppSpacing.sm),
           for (final m in widget.targets)
             ListTile(
-              leading: CircleAvatar(
-                backgroundImage: m.avatarUrl.isEmpty ? null : NetworkImage(m.avatarUrl),
-                child: m.avatarUrl.isEmpty ? const Icon(Icons.person_rounded) : null,
+              contentPadding: EdgeInsets.zero,
+              leading: SizedBox(
+                width: 40,
+                height: 40,
+                child: CircleAvatar(
+                  backgroundImage: m.avatarUrl.isEmpty ? null : NetworkImage(m.avatarUrl),
+                  child: m.avatarUrl.isEmpty ? const Icon(Icons.person_rounded) : null,
+                ),
               ),
-              title: Text(m.displayName),
+              title: Text(m.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: OutlinedButton(
+                style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                 onPressed: _voted.contains(m.userId) || _busy.contains(m.userId) ? null : () => _vote(m.userId),
                 child: Text(_voted.contains(m.userId) ? '已按讚' : '👍 再約'),
               ),
@@ -409,7 +416,12 @@ class _LocationTab extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           _MeetingPointSection(activityId: activity.id, editable: canEdit),
           const SizedBox(height: AppSpacing.lg),
-          Text('見面提示（只有你看得到自己填的這份）', style: Theme.of(context).textTheme.titleSmall),
+          // 反饋：「見面提示只有自己看得到自己填的這份，什麼意思，那個不是給
+          // 別人看的嗎」——原本的文案講反了。RLS 上 activity_member 對同一活動
+          // 全體成員互相可見（my_activity_members_select），這裡填的提示就是
+          // 給對方認出你用的（見 SPEC.md §9.2「穿紅色外套，帶著筆電」的例子），
+          // 只是「編輯欄位」本身當然只能編輯自己那一則。
+          Text('見面提示（讓對方認出你，同組成員都看得到）', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: AppSpacing.sm),
           _MeetingHintSection(activityId: activity.id, editable: canEdit),
         ],
@@ -614,6 +626,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
             ),
             const SizedBox(height: AppSpacing.xs),
           ],
+        const SizedBox(height: AppSpacing.sm),
         if (_error != null) ...[
           Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           const SizedBox(height: AppSpacing.xs),
@@ -628,6 +641,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
           icon: const Icon(Icons.add_location_alt_outlined),
           label: const Text('提案新地點'),
         ),
+        const SizedBox(height: AppSpacing.xs),
         TextButton.icon(
           onPressed: _busy ? null : _proposeNewLocation,
           icon: const Icon(Icons.add_rounded, size: 18),
@@ -965,6 +979,17 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
             const SizedBox(height: AppSpacing.sm),
             const Divider(height: 1),
             const SizedBox(height: AppSpacing.sm),
+            if (member.meetingHint?.isNotEmpty == true) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.face_retouching_natural_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(child: Text(member.meetingHint!, style: Theme.of(context).textTheme.bodyMedium)),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
             _MemberContactSection(contacts: member.contacts),
             const SizedBox(height: AppSpacing.sm),
             Row(
@@ -1048,17 +1073,48 @@ class _MemberContactSection extends StatelessWidget {
         style: Theme.of(context).textTheme.bodySmall,
       );
     }
-    final lines = <String>[
-      if (contacts!.contactIg != null) 'IG: ${contacts!.contactIg}',
-      if (contacts!.contactLine != null) 'LINE: ${contacts!.contactLine}',
-      if (contacts!.contactDiscord != null) 'Discord: ${contacts!.contactDiscord}',
+    final lines = <(String label, String value)>[
+      if (contacts!.contactIg != null) ('IG', contacts!.contactIg!),
+      if (contacts!.contactLine != null) ('LINE', contacts!.contactLine!),
+      if (contacts!.contactDiscord != null) ('Discord', contacts!.contactDiscord!),
     ];
     if (lines.isEmpty) {
       return Text('對方沒有留下聯絡方式', style: Theme.of(context).textTheme.bodySmall);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [for (final line in lines) Text(line, style: Theme.of(context).textTheme.bodyMedium)],
+      children: [for (final (label, value) in lines) _ContactLine(label: label, value: value)],
+    );
+  }
+}
+
+/// 反饋：「看別人聯絡方式，要可以一鍵複製比較方便」。
+class _ContactLine extends StatelessWidget {
+  const _ContactLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text('$label: $value', style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            tooltip: '複製',
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已複製 $label')));
+            },
+          ),
+        ],
+      ),
     );
   }
 }

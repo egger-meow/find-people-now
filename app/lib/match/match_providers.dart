@@ -1,11 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
+import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/app_user.dart';
 import '../generated/match_request.dart';
 import '../generated/request_member.dart';
-import '../generated/supadart_header.dart' show REQUEST_STATUS, SCHOOL;
+import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/auth_profile_rpc.dart';
 
@@ -56,19 +57,17 @@ final myReliabilityProvider = FutureProvider<MyReliability>((ref) async {
   return getMyReliability(client);
 });
 
-/// UI_PLAN.md §2.2 送出前預先攔截：使用者已有 `REQUESTING`/`PENDING_CONFIRMATION`/
-/// `MATCHED` 中的活動時，一進配對頁就該直接導去該活動，不重新顯示表單。
-/// `match_request.status` 沒有 `ONGOING` 這個值（那是 `activity.status` 的
-/// 值，見 generated/supadart_header.dart 的 REQUEST_STATUS enum）——配對成立
-/// (`MATCHED`) 之後衍生出的 `activity` 進行到哪個階段跟 Request 本身無關。
+/// UI_PLAN.md §2.2 送出前預先攔截：使用者已有 `REQUESTING`/`PENDING_CONFIRMATION`
+/// 中的配對流程時，一進配對頁就該直接導去等待室，不重新顯示表單。
 ///
-/// `PENDING_CONFIRMATION` 一開始漏在篩選條件外（見「我的活動」round 1 探測
-/// 紀錄）：這代表卡在小人數安全確認中的使用者若導去 `/match`，會看到空白
-/// 表單而不是被導去對應畫面——不是後端缺口，是這裡的篩選條件沒跟上
-/// `PENDING_CONFIRMATION` 這個中間態，round 1 補上。
-/// Only ever one active row per owner (§6 單一 REQUESTING 唯一索引 — see
-/// docs/API.md §10), so `.maybeSingle()` is safe here, not an
-/// oversimplification.
+/// 反饋修復（三台裝置測試，配對業一直卡死/灰掉）：這裡原本把 `MATCHED` 也算
+/// 進「有進行中配對」——但 STATE_MACHINE.md 明講「配對成功時 MatchRequest
+/// 定格在 MATCHED...之後不再回頭改 MatchRequest」，`match_request.status` 一旦
+/// 變成 MATCHED 就永遠停在那裡，即使衍生出的 `activity` 早就 COMPLETED 好幾天
+/// 了也一樣。拿它當「現在有沒有進行中配對」的依據，等於使用者只要配對成功
+/// 過一次，這裡就永久回傳非 null，永遠被擋在配對頁外面。「現在是否真的有進行
+/// 中活動」改由 [myActiveActivityProvider] 直接查 `activity.status`，不能重用
+/// 這張表的 MATCHED。
 final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return null;
@@ -77,9 +76,36 @@ final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
       .from('match_request')
       .select()
       .eq('owner_id', userId)
-      .inFilter('status', ['REQUESTING', 'PENDING_CONFIRMATION', 'MATCHED']);
+      .inFilter('status', ['REQUESTING', 'PENDING_CONFIRMATION']);
   if (rows.isEmpty) return null;
   return MatchRequest.fromJson(rows.first);
+});
+
+/// 「現在是否有進行中的活動」（`MATCHED`/`ONGOING`）——直接鏡射
+/// `create_request` RPC 自己的 `ACTIVE_ACTIVITY_IN_PROGRESS` 檢查
+/// （supabase/migrations/20260724120300_rpc_match_request.sql:180-188：
+/// `activity_member.status = 'JOINED'` join `activity.status in
+/// ('MATCHED','ONGOING')`），讓配對頁能在使用者送出表單「之前」就先擋下來、
+/// 顯示清楚的原因，而不是等 RPC 丟錯誤碼才知道。跟 [myActiveRequestProvider]
+/// 分開查是因為 `match_request.status` 不會反映活動後續進度（見上方註解）。
+final myActiveActivityProvider = FutureProvider<Activity?>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return null;
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('activity_member')
+      .select('activity:activity_id(*)')
+      .eq('user_id', userId)
+      .eq('status', 'JOINED');
+  final activities = rows
+      .map((r) => r['activity'])
+      .whereType<Map<String, dynamic>>()
+      .map(Activity.fromJson)
+      .where((a) => a.status == ACTIVITY_STATUS.MATCHED || a.status == ACTIVITY_STATUS.ONGOING)
+      .toList();
+  if (activities.isEmpty) return null;
+  activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return activities.first;
 });
 
 /// UI_PLAN.md §3 技術要求 — Realtime 訂閱單一 Request 的狀態變化，取代靜態
