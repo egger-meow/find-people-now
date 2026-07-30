@@ -89,7 +89,10 @@ class _ActivityList extends ConsumerWidget {
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   itemCount: filtered.length,
                   separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-                  itemBuilder: (context, index) => _ActivityListEntry(item: filtered[index]),
+                  itemBuilder: (context, index) => _ActivityListEntry(
+                    key: ValueKey(filtered[index].id),
+                    item: filtered[index],
+                  ),
                 ),
         );
       },
@@ -98,7 +101,7 @@ class _ActivityList extends ConsumerWidget {
 }
 
 class _ActivityListEntry extends StatelessWidget {
-  const _ActivityListEntry({required this.item});
+  const _ActivityListEntry({super.key, required this.item});
 
   final MyActivityListItem item;
 

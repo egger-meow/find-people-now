@@ -101,7 +101,11 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                       spacing: AppSpacing.sm,
                       children: [
                         for (final member in members)
-                          _AnonymousAvatar(isSelf: member.userId == userId, isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER),
+                          _AnonymousAvatar(
+                            key: ValueKey(member.id),
+                            isSelf: member.userId == userId,
+                            isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
+                          ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -270,7 +274,7 @@ class _MatchingPulseState extends State<_MatchingPulse> with SingleTickerProvide
 }
 
 class _AnonymousAvatar extends StatelessWidget {
-  const _AnonymousAvatar({required this.isSelf, required this.isOwner});
+  const _AnonymousAvatar({super.key, required this.isSelf, required this.isOwner});
 
   final bool isSelf;
   final bool isOwner;

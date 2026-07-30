@@ -181,8 +181,22 @@ select is(
   '重跑一次不應對同一個 (activity, lead_minutes) 重複發送，應回傳 0'
 );
 
+-- 反饋（2026-07-30 supabase test db 重跑發現）：這裡原本是全表 count(*)，不像
+-- 上面每一則都有 scope 到自己的 activity_id。20260724125500_
+-- schedule_background_jobs.sql 把 fn_remind_upcoming_activities() 掛上
+-- pg_cron 之後，本機資料庫裡累積的其他真實活動（來自其他 flutter test 檔案
+-- 的 fixture）只要 start_time 剛好落進提醒窗，背景 cron 就會真的插入額外的
+-- ACTIVITY_UPCOMING 列，讓這個全表 count 混進本測試 fixtures 以外的資料而
+-- 失敗——跟其餘七則斷言一樣 scope 到本測試自己的四個 fixture activity_id。
 select is(
-  (select count(*)::int from notification where event_type = 'ACTIVITY_UPCOMING'),
+  (select count(*)::int from notification
+    where event_type = 'ACTIVITY_UPCOMING'
+      and (payload->>'activity_id')::uuid in (
+        select act1_id from fixtures union all
+        select act2_id from fixtures union all
+        select act3_id from fixtures union all
+        select act4_id from fixtures
+      )),
   3,
   '重跑後 ACTIVITY_UPCOMING 通知總數仍應是 3，沒有重複'
 );

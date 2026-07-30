@@ -367,6 +367,7 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
           const SizedBox(height: AppSpacing.sm),
           for (final m in widget.targets)
             ListTile(
+              key: ValueKey(m.userId),
               contentPadding: EdgeInsets.zero,
               leading: SizedBox(
                 width: 40,
@@ -602,6 +603,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
         else
           for (final option in options) ...[
             AppCard(
+              key: ValueKey(option.id),
               child: Row(
                 children: [
                   Expanded(
@@ -864,7 +866,12 @@ class _MembersTab extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.xs),
                 ],
                 for (final member in group) ...[
-                  _MemberCard(activityId: activityId, activityStatus: activityStatus, member: member),
+                  _MemberCard(
+                    key: ValueKey(member.userId),
+                    activityId: activityId,
+                    activityStatus: activityStatus,
+                    member: member,
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                 ],
               ],
@@ -882,7 +889,7 @@ class _MembersTab extends ConsumerWidget {
 /// 按鈕」跟第一步/第二步彈窗（`_CompletionReportSheet`/`_RematchSheet`）是
 /// 同一個底層 RPC 的兩個入口，不是兩套邏輯。
 class _MemberCard extends ConsumerStatefulWidget {
-  const _MemberCard({required this.activityId, required this.activityStatus, required this.member});
+  const _MemberCard({super.key, required this.activityId, required this.activityStatus, required this.member});
 
   final String activityId;
   final ACTIVITY_STATUS activityStatus;
