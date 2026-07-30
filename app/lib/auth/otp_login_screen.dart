@@ -157,8 +157,15 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
               Icon(Icons.groups_2_rounded, size: 56, color: Theme.of(context).colorScheme.primary),
               const SizedBox(height: AppSpacing.md),
               Text(
-                '校園裡有人正在做事，\n而你隨時可以加入。',
-                style: Theme.of(context).textTheme.headlineSmall,
+                '敢不敢揪',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '找到現在也想一起的人。',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
               const SizedBox(height: AppSpacing.xl),
               AppTextField(
