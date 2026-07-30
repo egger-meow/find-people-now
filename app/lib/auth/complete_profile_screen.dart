@@ -137,6 +137,14 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = '送出失敗：${e.code.name}');
+    } catch (e) {
+      // callRpc 只把 PostgrestException 轉成 ApiException（見
+      // lib/rpc/rpc_client.dart）——網路逾時/斷線等其他例外原本不會被上面那個
+      // catch 接住，會一路往上丟到框架的 onError，使用者只看到按鈕的
+      // loading spinner 閃一下就恢復、畫面上完全沒有任何回饋（「按了完成註冊
+      // 沒反應」）。這裡補一個兜底 catch，至少確保任何失敗都有訊息可看。
+      if (!mounted) return;
+      setState(() => _error = '送出失敗，請檢查網路連線後再試一次');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
