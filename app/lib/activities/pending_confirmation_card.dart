@@ -175,7 +175,33 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _busy ? null : () => _respond(false),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          final confirmDecline = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('這次先不要？'),
+                              content: const Text(
+                                '拒絕此候選配對後，系統將實施 30 分鐘配對冷卻期（這段期間暫時無法發起新配對邀約）。\n\n'
+                                '此操作屬於前置安全確認，不會記錄失信事件，也不會扣減您的信譽評分。',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(false),
+                                  child: const Text('再想想'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.of(context).pop(true),
+                                  child: const Text('確定拒絕'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmDecline == true) {
+                            _respond(false);
+                          }
+                        },
                   child: const Text('這次先不要'),
                 ),
               ),

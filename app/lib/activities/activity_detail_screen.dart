@@ -8,7 +8,8 @@ import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/location.dart';
 import '../generated/supadart_header.dart'
-    show ACTIVITY_MEMBER_STATUS, ACTIVITY_STATUS, COMPLETION_RESULT, DEGREE_LEVEL, REPORT_CATEGORY;
+    show ACTIVITY_MEMBER_STATUS, ACTIVITY_STATUS, COMPLETION_RESULT, DEGREE_LEVEL, RELIABILITY_EVENT_TYPE, REPORT_CATEGORY;
+import '../match/match_providers.dart' show myActiveActivityProvider, myAppUserProvider;
 import '../rpc/activity_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
@@ -22,6 +23,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'activity_detail_providers.dart';
+import 'my_activities_providers.dart';
 
 String _activityStatusLabel(ACTIVITY_STATUS status) => switch (status) {
       ACTIVITY_STATUS.MATCHED => '已成團，等待開始',
@@ -63,12 +65,100 @@ class ActivityDetailScreen extends ConsumerWidget {
 
   final String activityId;
 
+  Future<void> _showCancelDialog(BuildContext context, WidgetRef ref, Activity activity) async {
+    final now = DateTime.now();
+    final isEarlyCancel = activity.startTime.difference(now).inMinutes >= 60;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isEarlyCancel ? '確定要退出活動？' : '⚠️ 確定要退出活動？'),
+        content: Text(
+          isEarlyCancel
+              ? '距離活動開始還有 1 小時以上。\n\n'
+                '取消參加屬於正常行程變更（Early Cancel），不會觸發 30 分鐘配對冷卻，也不會扣減您的信譽評分。'
+              : '距離活動開始已不足 1 小時（或活動進行中）。\n\n'
+                '⚠️ 退出將被記錄為 Late Cancel，並觸發 30 分鐘配對冷卻期（期間無法發起新配對），同時會影響您的信譽評分與可信度等級。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: isEarlyCancel ? null : Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('確定退出'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final client = ref.read(supabaseClientProvider);
+      final result = await cancelActivityParticipation(client, activity.id);
+      if (!context.mounted) return;
+
+      ref.invalidate(myActivityListProvider);
+      ref.invalidate(myActiveActivityProvider);
+      ref.invalidate(myAppUserProvider);
+
+      final msg = result.eventType == RELIABILITY_EVENT_TYPE.EARLY_CANCEL
+          ? '已退出活動（Early Cancel，無冷卻）'
+          : '已退出活動（Late Cancel，已觸發 30 分鐘冷卻）';
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      Navigator.of(context).pop();
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('退出活動失敗：${e.code.name}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activityAsync = ref.watch(activityStreamProvider(activityId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('活動詳情')),
+      appBar: AppBar(
+        title: const Text('活動詳情'),
+        actions: [
+          activityAsync.maybeWhen(
+            data: (activity) {
+              if (activity == null) return const SizedBox.shrink();
+              if (activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING) {
+                return PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'cancel') {
+                      _showCancelDialog(context, ref, activity);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem<String>(
+                      value: 'cancel',
+                      child: Row(
+                        children: [
+                          Icon(Icons.exit_to_app_rounded, color: Colors.red),
+                          SizedBox(width: AppSpacing.sm),
+                          Text('退出活動', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return const SizedBox.shrink();
+            },
+            orElse: () => const SizedBox.shrink(),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: activityAsync.when(
           loading: () => const LoadingIndicator(),

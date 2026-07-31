@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
 
@@ -489,10 +490,44 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
           if (user == null) return const LoadingIndicator();
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
           final window = _resolveWindow();
+          final isCooldown = user.nextRequestAllowedAt != null && user.nextRequestAllowedAt!.isAfter(DateTime.now());
 
           return ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
+              if (isCooldown) ...[
+                AppCard(
+                  child: Row(
+                    children: [
+                      Icon(Icons.hourglass_top_rounded, color: Theme.of(context).colorScheme.error),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '配對冷卻中（無法建立新配對）',
+                              style: textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                const Text('剩餘時間：'),
+                                CountdownText(
+                                  deadline: user.nextRequestAllowedAt!,
+                                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold),
+                                  expiredLabel: '已結束，刷新頁面即可發起配對',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
               Text('今天想找人一起做什麼？',
                   style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: AppSpacing.md),
@@ -712,8 +747,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 const SizedBox(height: AppSpacing.sm),
                 Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
-              const SizedBox(height: AppSpacing.lg),
-              AppButton(label: '送出，開始找人', loading: _submitting, onPressed: _submit),
+              AppButton(
+                label: isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人',
+                loading: _submitting,
+                onPressed: isCooldown ? null : _submit,
+              ),
             ],
           );
         },
