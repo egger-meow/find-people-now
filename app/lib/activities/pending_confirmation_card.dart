@@ -183,7 +183,7 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
                             builder: (context) => AlertDialog(
                               title: const Text('這次先不要？'),
                               content: const Text(
-                                '拒絕此候選配對後，系統將實施 30 分鐘配對冷卻期（這段期間暫時無法發起新配對邀約）。\n\n'
+                                '拒絕此候選配對後，系統將實施配對冷卻期（這段期間暫時無法發起新配對邀約）。\n\n'
                                 '此操作屬於前置安全確認，不會記錄失信事件，也不會扣減您的信譽評分。',
                               ),
                               actions: [

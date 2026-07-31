@@ -76,9 +76,9 @@ class ActivityDetailScreen extends ConsumerWidget {
         content: Text(
           isEarlyCancel
               ? '距離活動開始還有 1 小時以上。\n\n'
-                '取消參加屬於正常行程變更（Early Cancel），不會觸發 30 分鐘配對冷卻，也不會扣減您的信譽評分。'
+                '取消參加屬於正常行程變更（Early Cancel），不會觸發配對冷卻期，也不會扣減您的信譽評分。'
               : '距離活動開始已不足 1 小時（或活動進行中）。\n\n'
-                '⚠️ 退出將被記錄為 Late Cancel，並觸發 30 分鐘配對冷卻期（期間無法發起新配對），同時會影響您的信譽評分與可信度等級。',
+                '⚠️ 退出將被記錄為 Late Cancel，並觸發配對冷卻期（期間無法發起新配對），同時會影響您的信譽評分與可信度等級。',
         ),
         actions: [
           TextButton(
@@ -109,7 +109,7 @@ class ActivityDetailScreen extends ConsumerWidget {
 
       final msg = result.eventType == RELIABILITY_EVENT_TYPE.EARLY_CANCEL
           ? '已退出活動（Early Cancel，無冷卻）'
-          : '已退出活動（Late Cancel，已觸發 30 分鐘冷卻）';
+          : '已退出活動（Late Cancel，已觸發配對冷卻期）';
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       Navigator.of(context).pop();
