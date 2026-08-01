@@ -450,6 +450,28 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   DateTime? _customEarliest;
   DateTime? _customLatest;
 
+  // 反饋：「選完一個項目會自然滑到下一個要選的東西標題」——每個步驟選完後，
+  // 自動把畫面捲到下一步的標題，減少使用者自己往下滑找下一步的摩擦。只在
+  // 「從未選到已選」這個轉換點觸發一次，避免多選的時段桶每次切換都跳動。
+  final _timeSectionKey = GlobalKey();
+  final _campusSectionKey = GlobalKey();
+  final _headcountSectionKey = GlobalKey();
+
+  void _scrollToSection(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(ctx, duration: AppMotion.normal, curve: AppMotion.curve, alignment: 0);
+    });
+  }
+
+  void _scrollToNextAfterTime() {
+    final user = ref.read(myAppUserProvider).value;
+    if (user == null) return;
+    final campuses = ref.read(campusOptionsProvider(user.school)).value ?? const [];
+    _scrollToSection(campuses.length > 1 ? _campusSectionKey : _headcountSectionKey);
+  }
+
   List<int> _groupSizeOptions(ActivityType type) {
     final min = type.defaultMinParticipants ?? 2;
     final max = type.defaultMaxParticipants ?? min;
@@ -458,6 +480,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 
   void _toggleBucket(int index) {
+    final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = false;
       if (_selectedBucketIndices.contains(index)) {
@@ -466,13 +489,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         _selectedBucketIndices.add(index);
       }
     });
+    if (wasEmpty && _resolveWindow() != null) _scrollToNextAfterTime();
   }
 
   void _selectNow() {
+    final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = true;
       _selectedBucketIndices.clear();
     });
+    if (wasEmpty) _scrollToNextAfterTime();
   }
 
   Future<void> _pickCustomTime({required bool isEarliest}) async {
@@ -488,6 +514,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
     if (time == null || !mounted) return;
     final picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = false;
       _selectedBucketIndices.clear();
@@ -497,6 +524,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         _customLatest = picked;
       }
     });
+    if (wasEmpty && _resolveWindow() != null) _scrollToNextAfterTime();
   }
 
   /// 「多選收斂為單一連續區間」（UI_PLAN §7）：取所選桶中最早的起始～最晚的
@@ -550,6 +578,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         allowDowngrade: _allowDowngrade,
       );
       await submitRequest(client, request.id);
+      // 反饋：「配對中結果選活動畫面還是可以去選」——myActiveRequestProvider
+      // 是普通 FutureProvider，建立/送出新 Request 這裡不會自動讓它重新查詢，
+      // 使用者若之後按瀏覽器上一頁/切分頁回到配對頁，會看到過期的快取值
+      // （仍是 null），配對頁誤以為沒有進行中的配對而繼續讓你填表單。這裡
+      // 送出成功當下就讓它失效，回配對頁時保證重新查一次。
+      ref.invalidate(myActiveRequestProvider);
       if (!mounted) return;
       context.push('/waiting-room/${request.id}');
     } on ApiException catch (e) {
@@ -675,11 +709,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       icon: activityTypeIcon(type.name),
                       label: type.name,
                       selected: _selectedType?.id == type.id,
-                      onTap: () => setState(() {
-                        _selectedType = type;
-                        _selectedMinHeadcount = null;
-                        _selectedMaxHeadcount = null;
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _selectedType = type;
+                          _selectedMinHeadcount = null;
+                          _selectedMaxHeadcount = null;
+                        });
+                        _scrollToSection(_timeSectionKey);
+                      },
                     ),
                   _AddOptionCard(label: '提議新增', onTap: _proposeActivityType),
                 ],
@@ -689,19 +726,22 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 Text(_selectedType!.description!, style: textTheme.bodySmall),
               ],
               const SizedBox(height: AppSpacing.xl),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('什麼時候？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _detailedMode = !_detailedMode;
-                      _nowSelected = false;
-                      _selectedBucketIndices.clear();
-                    }),
-                    child: Text(_detailedMode ? '改選時段' : '自訂時間'),
-                  ),
-                ],
+              KeyedSubtree(
+                key: _timeSectionKey,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('什麼時候？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _detailedMode = !_detailedMode;
+                        _nowSelected = false;
+                        _selectedBucketIndices.clear();
+                      }),
+                      child: Text(_detailedMode ? '改選時段' : '自訂時間'),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: AppSpacing.sm),
               if (_detailedMode) ...[
@@ -783,29 +823,51 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       ],
                     );
                   }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('去哪個校區？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: AppSpacing.sm),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        children: [
-                          for (final campus in campuses)
-                            _TimeChip(
-                              icon: Icons.location_on_rounded,
-                              label: campus,
-                              selected: _selectedCampus == campus,
-                              onTap: () => setState(() => _selectedCampus = campus),
-                            ),
-                        ],
-                      ),
-                    ],
+                  return KeyedSubtree(
+                    key: _campusSectionKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('去哪個校區？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: AppSpacing.sm),
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          children: [
+                            for (final campus in campuses)
+                              _TimeChip(
+                                icon: Icons.location_on_rounded,
+                                label: campus,
+                                selected: _selectedCampus == campus,
+                                onTap: () {
+                                  setState(() => _selectedCampus = campus);
+                                  _scrollToSection(_headcountSectionKey);
+                                },
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
               const SizedBox(height: AppSpacing.xl),
-              Text('找幾個人？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              KeyedSubtree(
+                key: _headcountSectionKey,
+                // 反饋：「找幾個人」被誤讀成「還要再找幾個人加入」——這裡填的
+                // min/max 其實是整團的總人數（含你自己），不是「除了你以外」
+                // 要湊的人數，補一行說明避免誤會。
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('整團大約要幾個人？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '人數是整團的總人數，含你自己',
+                      style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: AppSpacing.sm),
               if (_selectedType == null)
                 Text('請先選活動類型', style: textTheme.bodySmall)
@@ -815,6 +877,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   error: (error, stack) => Text('載入可信度失敗：$error'),
                   data: (reliability) {
                     final options = _groupSizeOptions(_selectedType!);
+                    final scheme = Theme.of(context).colorScheme;
+                    final hasLockedOption = reliability.isNewUser && options.any((n) => n <= 2);
                     return AppCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -825,23 +889,46 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                             spacing: AppSpacing.sm,
                             children: [
                               for (final n in options)
-                                ChoiceChip(
-                                  label: Text('$n 人'),
-                                  selected: _selectedMinHeadcount == n,
-                                  // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
-                                  onSelected: (n <= 2 && reliability.isNewUser)
-                                      ? null
-                                      : (_) => setState(() {
-                                            _selectedMinHeadcount = n;
-                                            // 最多不能小於最少——若原本選的最多比新的
-                                            // 最少還小，直接清掉讓使用者重選。
-                                            if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
-                                              _selectedMaxHeadcount = null;
-                                            }
-                                          }),
+                                // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
+                                // 反饋：disable 但沒有任何說明，使用者不知道為什麼點不動
+                                // ——用 Tooltip（長按/hover 可看）+ 下方常駐提示文字
+                                // 兩種方式解釋原因，不用等送出才看到 NEW_USER_LOW_HEADCOUNT。
+                                Tooltip(
+                                  message: (n <= 2 && reliability.isNewUser) ? '新用戶尚未開放 2 人以下場次' : '',
+                                  triggerMode: TooltipTriggerMode.tap,
+                                  child: ChoiceChip(
+                                    label: Text('$n 人'),
+                                    selected: _selectedMinHeadcount == n,
+                                    onSelected: (n <= 2 && reliability.isNewUser)
+                                        ? null
+                                        : (_) => setState(() {
+                                              _selectedMinHeadcount = n;
+                                              // 最多不能小於最少——若原本選的最多比新的
+                                              // 最少還小，直接清掉讓使用者重選。
+                                              if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
+                                                _selectedMaxHeadcount = null;
+                                              }
+                                            }),
+                                  ),
                                 ),
                             ],
                           ),
+                          if (hasLockedOption) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.info_outline_rounded, size: 14, color: scheme.onSurfaceVariant),
+                                const SizedBox(width: AppSpacing.xs),
+                                Expanded(
+                                  child: Text(
+                                    '新用戶需要先完成一次活動、建立信譽後，才能發起 2 人以下的小型場次',
+                                    style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: AppSpacing.md),
                           Text('至多', style: textTheme.bodySmall),
                           const SizedBox(height: AppSpacing.xs),
@@ -874,9 +961,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   title: const Text('人數不夠時，接受少一點人也算成局？'),
                 ),
               ),
+              const SizedBox(height: AppSpacing.md),
               if (_error != null) ...[
-                const SizedBox(height: AppSpacing.sm),
                 Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                const SizedBox(height: AppSpacing.sm),
               ],
               AppButton(
                 label: isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人',

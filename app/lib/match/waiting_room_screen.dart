@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../activities/my_activities_providers.dart' show myActivityListProvider;
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
 import '../generated/match_request.dart';
@@ -41,6 +42,25 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 反饋：使用者回報「配對中，選活動畫面還是可以去選」/取消配對後配對頁
+    // 卡在「你已經有進行中的配對」loop——根因是 myActiveRequestProvider／
+    // myActiveActivityProvider 都是普通 FutureProvider，配對引擎（背景排程）
+    // 把狀態從 REQUESTING 轉成 PENDING_CONFIRMATION/MATCHED/EXPIRED 這種
+    // 不是使用者自己在這個畫面點出來的變化，原本完全不會讓這兩個 provider
+    // 失效。這裡直接監聽 Realtime 狀態流，一旦狀態離開 REQUESTING 就讓兩個
+    // provider 失效，不管是引擎自動撮合、還是其他成員取消/退出造成的。
+    ref.listen<AsyncValue<MatchRequest?>>(matchRequestStreamProvider(widget.requestId), (previous, next) {
+      final status = next.value?.status;
+      if (status != null && isTerminalForWaitingRoom(status)) {
+        ref.invalidate(myActiveRequestProvider);
+        ref.invalidate(myActiveActivityProvider);
+        // 反饋：配對成功後點「前往我的活動」，清單卻是空的——myActivityListProvider
+        // 同樣是快取的 FutureProvider，「我的活動」分頁在 IndexedStack 底下可能
+        // 早就 build 過一次（配對成立前），沒有東西會讓它自動重新查詢。
+        ref.invalidate(myActivityListProvider);
+      }
+    });
+
     final requestAsync = ref.watch(matchRequestStreamProvider(widget.requestId));
     final membersAsync = ref.watch(requestMembersStreamProvider(widget.requestId));
     final userId = ref.watch(currentUserIdProvider);
@@ -87,6 +107,30 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                             isSelf: member.userId == userId,
                             isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
                           ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    // 反饋：使用者誤以為這個房間只會加進自己邀請的朋友，被系統
+                    // 自動撮合的陌生人突然湊滿嚇到。這裡明講「盲配」是預設行為、
+                    // 邀請碼只是拉特定朋友進來的加分項，且提醒「朋友要盡快加入，
+                    // 不然可能等他點連結時房間已經跟別人湊滿了」。
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            '系統會同時在背景自動幫你配對其他也在等的人，不是只能靠邀請朋友湊人數。'
+                            '想約特定朋友的話，請他們盡快用邀請碼加入——如果人數在朋友加入前就湊滿，'
+                            '房間可能已經跟別人成團。',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -224,6 +268,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     setState(() => _busy = true);
     try {
       await leaveRequest(ref.read(supabaseClientProvider), requestId);
+      ref.invalidate(myActiveRequestProvider);
       if (!mounted) return;
       context.go('/match');
     } on ApiException catch (e) {
@@ -252,6 +297,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     setState(() => _busy = true);
     try {
       await cancelRequest(ref.read(supabaseClientProvider), requestId);
+      ref.invalidate(myActiveRequestProvider);
       if (!mounted) return;
       context.go('/match');
     } on ApiException catch (e) {

@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/countdown_text.dart';
+import '../match/match_providers.dart' show myActiveActivityProvider, myActiveRequestProvider;
 import '../widgets/loading_indicator.dart';
 import 'my_activities_providers.dart';
 
@@ -102,6 +103,8 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
       // Activity；拒絕 -> 這輪先重新載入這張卡片顯示「未成立」，狀態最終
       // 退回 REQUESTING 由背景任務處理，下次進頁面/下拉刷新會反映）。
       ref.invalidate(myActivityListProvider);
+      ref.invalidate(myActiveRequestProvider);
+      ref.invalidate(myActiveActivityProvider);
       await _load();
     } on ApiException catch (e) {
       if (!mounted) return;

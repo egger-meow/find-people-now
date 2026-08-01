@@ -49,29 +49,64 @@ class FeedbackScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 反饋：「反饋填入還在最下面」——原本把送出表單擺在整串 FAQ 長文之後，
+    // 使用者點進這頁多半是想直接送反饋，卻要先滑過所有 FAQ 才看得到欄位。
+    // 改成表單放最上面（主要動作優先），FAQ 收進可展開的清單、預設收合，
+    // 不再是一長串攤開的文字牆。
     return Scaffold(
       appBar: AppBar(title: const Text('反饋 / 常見問答')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            for (final (question, answer) in _entries) ...[
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(question, style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(answer, style: Theme.of(context).textTheme.bodyMedium),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
             const _FeedbackForm(),
+            const SizedBox(height: AppSpacing.lg),
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(
+                '常見問題',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  for (var i = 0; i < _entries.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
+                    _FaqTile(question: _entries[i].$1, answer: _entries[i].$2),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FaqTile extends StatelessWidget {
+  const _FaqTile({required this.question, required this.answer});
+
+  final String question;
+  final String answer;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      childrenPadding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+      title: Text(question, style: Theme.of(context).textTheme.titleSmall),
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(answer, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+      ],
     );
   }
 }
