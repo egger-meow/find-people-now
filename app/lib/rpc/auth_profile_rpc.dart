@@ -81,6 +81,35 @@ Future<MyReliability> getMyReliability(SupabaseClient client) {
   );
 }
 
+/// docs/API.md §1.7 — `rpc: get_my_badges()` (v1.29). Complements (does not
+/// replace) [ReliabilityTier]: badges are earned milestones computed from
+/// existing `user_reliability_event`/`rematch_vote`/`match_request` data,
+/// never a new persisted score. [AchievementBadge.icon]/[label] are a
+/// Dart-side presentation choice — the RPC only returns stable string codes.
+enum AchievementBadge {
+  firstActivity('FIRST_ACTIVITY', '🌱', '初次參團'),
+  punctual('PUNCTUAL', '⚡', '準時好車友'),
+  greatCompany('GREAT_COMPANY', '☕', '相談甚歡'),
+  enthusiasticOrganizer('ENTHUSIASTIC_ORGANIZER', '🏀', '熱血揪團長');
+
+  final String code;
+  final String icon;
+  final String label;
+  const AchievementBadge(this.code, this.icon, this.label);
+}
+
+Future<Set<AchievementBadge>> getMyBadges(SupabaseClient client) {
+  return callRpc<Set<AchievementBadge>>(
+    client,
+    'get_my_badges',
+    decode: (data) {
+      final rows = (data as List).cast<Map<String, dynamic>>();
+      final earnedCodes = rows.where((r) => r['earned'] as bool).map((r) => r['badge_code'] as String).toSet();
+      return AchievementBadge.values.where((b) => earnedCodes.contains(b.code)).toSet();
+    },
+  );
+}
+
 /// docs/API.md §1.5 — `rpc: delete_account()`.
 /// Only cleans up `public` schema business data and de-identifies the caller's
 /// `app_user` row (id unchanged, `deleted_at` set) — it does NOT touch

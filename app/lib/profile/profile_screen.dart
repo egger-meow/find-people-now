@@ -7,9 +7,9 @@ import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
 import '../generated/app_user.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
-import '../match/match_providers.dart' show myAppUserProvider, myReliabilityProvider;
+import '../match/match_providers.dart' show myAppUserProvider, myBadgesProvider, myReliabilityProvider;
 import '../rpc/api_exception.dart';
-import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
+import '../rpc/auth_profile_rpc.dart' show AchievementBadge, ReliabilityTier;
 import '../theme/app_theme.dart';
 import '../theme/theme_providers.dart';
 import '../widgets/app_card.dart';
@@ -75,6 +75,41 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// Achievement Badges（v1.29）——獎勵性質，補充（不取代）上方的可信度等級
+/// 卡片。已達成的徽章亮色顯示；未達成的用低透明度顯示（可以看到「還差什麼」，
+/// 但不喧賓奪主）。載入失敗/中安靜收合，不影響頁面其餘部分。
+class _BadgesSection extends ConsumerWidget {
+  const _BadgesSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final badgesAsync = ref.watch(myBadgesProvider);
+    return badgesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (error, stack) => const SizedBox.shrink(),
+      data: (earned) => AppCard(
+        child: Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.xs,
+          children: [
+            for (final badge in AchievementBadge.values)
+              Opacity(
+                opacity: earned.contains(badge) ? 1.0 : 0.35,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(badge.icon, style: const TextStyle(fontSize: 22)),
+                    Text(badge.label, style: Theme.of(context).textTheme.labelSmall),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// UI_PLAN.md §8.1「我的」——個人資料卡（可編輯，見 edit_profile_screen.dart）、
 /// 可信度徽章、聯絡方式、帳號刪除入口（Apple/Google 上架硬性規定，位置需明顯
 /// 好找）、反饋/QA 連結、常駐說明入口（§11.2）、登出。
@@ -127,6 +162,8 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const _BadgesSection(),
                   const SizedBox(height: AppSpacing.lg),
                   const _SectionLabel('設定'),
                   AppCard(
