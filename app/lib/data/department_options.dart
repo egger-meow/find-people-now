@@ -1,4 +1,4 @@
-import '../generated/supadart_header.dart' show SCHOOL;
+import '../generated/supadart_header.dart' show DEGREE_LEVEL, SCHOOL;
 
 /// 反饋：科系欄位原本是純文字輸入，使用者希望能像查得到的官網系所清單一樣
 /// 用下拉選單選，減少打錯字/用語不一致的問題。名單整理自維基百科的
@@ -77,3 +77,20 @@ const Map<SCHOOL, List<String>> departmentsBySchool = {
     '半導體研究學院', '永續學院', '台北政經學院',
   ],
 };
+
+/// 名單本身沒有逐筆標註學制（見上方註解，系所清單只是展示用，非後端資料），
+/// 用命名慣例當代理指標：「研究所」「學院」結尾的是純研究所/研究學院，沒有
+/// 學士班；其餘（多半「學系」「系」結尾）視為三個學制都招生。這是近似值，
+/// 不是每系實際招生規則的精確清單。
+bool isGraduateOnlyDepartment(String department) {
+  return department.endsWith('研究所') || department.endsWith('學院');
+}
+
+/// 依學制篩選科系清單：先選學士/碩士/博士，再篩科系（反饋：科系清單太長，
+/// 選錯學制的系所會混在一起）。碩士/博士不篩選——多數學系底下也有碩博班，
+/// 篩掉反而可能漏掉使用者要找的系所。
+List<String> departmentOptionsFor(SCHOOL? school, DEGREE_LEVEL degreeLevel) {
+  final all = departmentsBySchool[school] ?? const <String>[];
+  if (degreeLevel != DEGREE_LEVEL.UNDERGRAD) return all;
+  return [for (final department in all) if (!isGraduateOnlyDepartment(department)) department];
+}

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
+import '../data/department_options.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart' show myAppUserProvider;
 import '../rpc/api_exception.dart';
@@ -192,11 +193,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     DropdownMenuItem(value: DEGREE_LEVEL.PHD, child: Text('博士班')),
                   ],
                   onChanged: (value) {
-                    if (value != null) setState(() => _degreeLevel = value);
+                    if (value == null) return;
+                    setState(() {
+                      _degreeLevel = value;
+                      if (!departmentOptionsFor(user.school, value).contains(_departmentController.text)) {
+                        _departmentController.clear();
+                      }
+                    });
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                DepartmentField(controller: _departmentController, school: user.school),
+                DepartmentField(controller: _departmentController, school: user.school, degreeLevel: _degreeLevel),
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
                 const SizedBox(height: AppSpacing.md),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/department_options.dart';
 import '../data/school_labels.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart';
@@ -214,13 +215,21 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                 DropdownMenuItem(value: DEGREE_LEVEL.PHD, child: Text('博士班')),
               ],
               onChanged: (value) {
-                if (value != null) setState(() => _degreeLevel = value);
+                if (value == null) return;
+                setState(() {
+                  _degreeLevel = value;
+                  final school = schoolFromEmail(ref.read(supabaseClientProvider).auth.currentUser?.email);
+                  if (!departmentOptionsFor(school, value).contains(_departmentController.text)) {
+                    _departmentController.clear();
+                  }
+                });
               },
             ),
             const SizedBox(height: AppSpacing.md),
             DepartmentField(
               controller: _departmentController,
               school: schoolFromEmail(ref.watch(supabaseClientProvider).auth.currentUser?.email),
+              degreeLevel: _degreeLevel,
             ),
             const SizedBox(height: AppSpacing.md),
             AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
