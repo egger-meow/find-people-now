@@ -29,7 +29,24 @@ class NotificationsScreen extends ConsumerWidget {
           error: (error, stack) => Center(child: Text('載入失敗：$error')),
           data: (notifications) {
             if (notifications.isEmpty) {
-              return const Center(child: Text('目前沒有通知'));
+              final scheme = Theme.of(context).colorScheme;
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.notifications_none_rounded, size: 40, color: scheme.onSurfaceVariant),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        '目前沒有通知\n配對成功、活動提醒都會出現在這裡',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              );
             }
             return ListView.separated(
               padding: const EdgeInsets.all(AppSpacing.lg),

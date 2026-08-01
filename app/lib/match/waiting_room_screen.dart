@@ -69,32 +69,13 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                 return ListView(
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   children: [
-                    _RequestInfoCard(request: request),
+                    _CountdownHeroCard(deadline: request.latestStart),
                     const SizedBox(height: AppSpacing.md),
-                    AppCard(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('距離最晚開始時間'),
-                          CountdownText(
-                            deadline: request.latestStart,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ],
-                      ),
-                    ),
+                    _RequestInfoCard(request: request),
                     const SizedBox(height: AppSpacing.lg),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '目前房間成員（${members.length} / ${request.minParticipants} 人成立）',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        const _MatchingPulse(),
-                      ],
+                    Text(
+                      '目前房間成員（${members.length} / ${request.minParticipants} 人成立）',
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Wrap(
@@ -120,27 +101,56 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('邀請碼（分享給朋友）'),
-                            const SizedBox(height: AppSpacing.xs),
-                            SelectableText(
-                              _inviteToken!,
-                              style: Theme.of(context).textTheme.titleMedium,
+                            Text(
+                              '邀請碼（分享給朋友）',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelLarge
+                                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md,
+                                vertical: AppSpacing.sm,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(AppRadius.sm),
+                                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                              ),
+                              child: SelectableText(
+                                _inviteToken!,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontFamily: 'monospace',
+                                      letterSpacing: 1.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             Row(
                               children: [
-                                TextButton(
-                                  onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: _inviteToken!));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('已複製邀請碼')),
-                                    );
-                                  },
-                                  child: const Text('複製'),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: _inviteToken!));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('已複製邀請碼')),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.copy_rounded, size: 18),
+                                    label: const Text('複製'),
+                                  ),
                                 ),
-                                TextButton(
-                                  onPressed: _busy ? null : () => _revokeInviteLink(request.id),
-                                  child: const Text('撤銷連結'),
+                                const SizedBox(width: AppSpacing.sm),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _busy ? null : () => _revokeInviteLink(request.id),
+                                    icon: const Icon(Icons.link_off_rounded, size: 18),
+                                    label: const Text('撤銷'),
+                                  ),
                                 ),
                               ],
                             ),
@@ -251,6 +261,42 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
         _busy = false;
       });
     }
+  }
+}
+
+/// 等待室的情緒焦點——「還會不會配對成功」——原本只是塞在一張普通 [AppCard]
+/// 裡的一小行文字，跟頁面上其他資訊卡片沒有視覺區別。這裡把倒數做成大字體的
+/// 主視覺，搭配 [_MatchingPulse] 呼吸動畫，讓使用者一打開就知道「系統還在動、
+/// 還剩多久」，不用在一堆卡片裡找。剩餘時間低於一分鐘時 [CountdownText] 自己
+/// 會轉成錯誤色＋icon（見 countdown_text.dart 的 `urgentColor`）。
+class _CountdownHeroCard extends StatelessWidget {
+  const _CountdownHeroCard({required this.deadline});
+
+  final DateTime deadline;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return AppCard(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg, horizontal: AppSpacing.md),
+      child: Column(
+        children: [
+          const _MatchingPulse(),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '距離配對截止時間',
+            style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          CountdownText(
+            deadline: deadline,
+            style: textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w700),
+            urgentColor: scheme.error,
+          ),
+        ],
+      ),
+    );
   }
 }
 

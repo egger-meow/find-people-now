@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
+import '../data/activity_type_icons.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, SCHOOL;
@@ -49,11 +50,6 @@ class CreateRequestScreen extends ConsumerWidget {
             icon: const Icon(Icons.help_outline_rounded),
             tooltip: '使用說明',
             onPressed: () => context.push('/help'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.event_note_rounded),
-            tooltip: '我的活動',
-            onPressed: () => context.go('/my-activities'),
           ),
         ],
       ),
@@ -257,49 +253,6 @@ List<_TimeBucket> _generateBuckets(DateTime now) {
 
 String _formatTime(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-/// 活動類型沒有 icon 欄位（純文字、使用者可提案新增，見 SPEC §…propose_activity_type），
-/// 這裡用關鍵字比對給常見類型一個圖示，比純文字卡片更有「App」感；比對不到
-/// 就用通用的 [Icons.groups_rounded]，不影響任何未來新增的類型能不能選。
-IconData _activityTypeIcon(String name) {
-  final n = name.toLowerCase();
-  const table = <String, IconData>{
-    '籃球': Icons.sports_basketball_rounded,
-    '排球': Icons.sports_volleyball_rounded,
-    '羽球': Icons.sports_tennis_rounded,
-    '網球': Icons.sports_tennis_rounded,
-    '桌球': Icons.sports_tennis_rounded,
-    '足球': Icons.sports_soccer_rounded,
-    '棒球': Icons.sports_baseball_rounded,
-    '咖啡': Icons.local_cafe_rounded,
-    '散步': Icons.directions_walk_rounded,
-    '慢跑': Icons.directions_run_rounded,
-    '跑步': Icons.directions_run_rounded,
-    '讀書': Icons.menu_book_rounded,
-    '唸書': Icons.menu_book_rounded,
-    '自習': Icons.menu_book_rounded,
-    '健身': Icons.fitness_center_rounded,
-    '重訓': Icons.fitness_center_rounded,
-    '桌遊': Icons.casino_rounded,
-    '遊戲': Icons.sports_esports_rounded,
-    '電影': Icons.movie_rounded,
-    '唱歌': Icons.mic_rounded,
-    'ktv': Icons.mic_rounded,
-    '腳踏車': Icons.directions_bike_rounded,
-    '單車': Icons.directions_bike_rounded,
-    '吃飯': Icons.restaurant_rounded,
-    '晚餐': Icons.restaurant_rounded,
-    '午餐': Icons.restaurant_rounded,
-    '早餐': Icons.free_breakfast_rounded,
-    '逛街': Icons.storefront_rounded,
-    '爬山': Icons.terrain_rounded,
-    '游泳': Icons.pool_rounded,
-  };
-  for (final entry in table.entries) {
-    if (n.contains(entry.key)) return entry.value;
-  }
-  return Icons.groups_rounded;
-}
-
 /// Campus Activity Pulse（v1.26）——首頁氣氛指標：「這個校區現在有人在揪」的
 /// 匿名聚合信號，不是可操作的清單（沒有點擊進某個 Request 的入口，那會
 /// 違背盲配設計）。空狀態刻意不顯示大大的「目前沒有活動」，安靜收合即可，
@@ -337,7 +290,7 @@ class _CampusPulseBanner extends ConsumerWidget {
             children: [
               for (final entry in entries)
                 Chip(
-                  avatar: Icon(_activityTypeIcon(entry.activityTypeName), size: 16, color: scheme.primary),
+                  avatar: Icon(activityTypeIcon(entry.activityTypeName), size: 16, color: scheme.primary),
                   label: Text('${entry.activityTypeName} · ${entry.requestCount} 組配對中'),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -719,7 +672,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 children: [
                   for (final type in types)
                     _OptionCard(
-                      icon: _activityTypeIcon(type.name),
+                      icon: activityTypeIcon(type.name),
                       label: type.name,
                       selected: _selectedType?.id == type.id,
                       onTap: () => setState(() {

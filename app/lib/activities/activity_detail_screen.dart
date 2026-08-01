@@ -39,7 +39,7 @@ String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
     };
 
 /// Vibe Tags（v1.28）——依活動類型關鍵字給一組情境標籤選項，同
-/// `create_request_screen.dart` 的 `_activityTypeIcon` 一樣純展示、不接後端
+/// `data/activity_type_icons.dart` 的 `activityTypeIcon` 一樣純展示、不接後端
 /// 審核表（見 `update_vibe_tags` 遷移檔頭註解的取捨說明）。比對不到就給一組
 /// 泛用預設，不因為新類型沒錄入就沒有標籤可選。
 List<String> _vibeTagOptionsFor(String activityTypeName) {
@@ -948,7 +948,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppTextField(controller: _controller, hint: '例如：我會戴紅色棒球帽（限 30 字）'),
+          AppTextField(controller: _controller, hint: '例如：我會戴紅色棒球帽', maxLength: 30),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),

@@ -26,6 +26,9 @@ class MyActivityListItem {
 
   String get id => kind == MyActivityKind.request ? request!.id : activity!.id;
 
+  String get activityTypeId =>
+      kind == MyActivityKind.request ? request!.activityTypeId : activity!.activityTypeId;
+
   DateTime get sortKey =>
       kind == MyActivityKind.request ? request!.createdAt : activity!.createdAt;
 

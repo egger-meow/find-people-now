@@ -163,7 +163,11 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('確認時限'),
-              CountdownText(deadline: status.confirmWindowExpireAt, style: Theme.of(context).textTheme.titleSmall),
+              CountdownText(
+                deadline: status.confirmWindowExpireAt,
+                style: Theme.of(context).textTheme.titleSmall,
+                urgentColor: Theme.of(context).colorScheme.error,
+              ),
             ],
           ),
           if (_error != null) ...[
