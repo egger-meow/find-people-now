@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'dart:io' show Platform;
 
+import '../auth/auth_providers.dart';
+import '../rpc/api_exception.dart';
+import '../rpc/feedback_rpc.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_text_field.dart';
 
-/// UI_PLAN.md §8.2 反饋/QA 頁面內容（定案版）——純靜態文字頁，逐字對應該節
-/// 文案，聯絡信箱維持文件裡本來就標記的〔待補〕狀態
-/// （見 docs/TERMS_OF_SERVICE.md／docs/PRIVACY_POLICY.md 同樣的 🔴 標記），
-/// 不在這裡自己編一個看起來像真的信箱。
+/// UI_PLAN.md §8.2 反饋/QA 頁面內容（定案版）＋ v1.25 新增的送出表單——先前
+/// 這裡是純靜態 FAQ 頁，「聯絡信箱」欄位一直卡在〔待補〕（沒有真的信箱可
+/// 填）。v1.25 不是去補一個信箱地址，而是直接把「送出」這個動作做成表單：
+/// `submit_feedback` RPC 先把訊息寫進 `feedback` 表（唯一保證存在的持久
+/// 記錄），再盡力呼叫 `send-feedback-email` Edge Function 寄信通知——寄信
+/// 失敗不影響「已送出」的使用者體驗，見兩者各自的檔頭註解。
 class FeedbackScreen extends StatelessWidget {
   const FeedbackScreen({super.key});
 
@@ -58,18 +68,110 @@ class FeedbackScreen extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
             ],
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('聯絡信箱', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text('〔聯絡信箱待補〕', style: Theme.of(context).textTheme.bodyMedium),
-                ],
-              ),
-            ),
+            const _FeedbackForm(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FeedbackForm extends ConsumerStatefulWidget {
+  const _FeedbackForm();
+
+  @override
+  ConsumerState<_FeedbackForm> createState() => _FeedbackFormState();
+}
+
+class _FeedbackFormState extends ConsumerState<_FeedbackForm> {
+  final _controller = TextEditingController();
+  bool _sending = false;
+  bool _sent = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final message = _controller.text.trim();
+    if (message.isEmpty) {
+      setState(() => _error = '請輸入回饋內容');
+      return;
+    }
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+
+    final client = ref.read(supabaseClientProvider);
+    try {
+      // 這兩項只是客服排查用的輔助資訊，任何一項拿不到都不該擋住送出——
+      // 見 send-feedback-email 的 email 內文用 '-' 顯示缺漏欄位。
+      String? appVersion;
+      try {
+        final info = await PackageInfo.fromPlatform();
+        appVersion = '${info.version}+${info.buildNumber}';
+      } catch (_) {
+        // ignore
+      }
+      final deviceInfo = Platform.operatingSystem;
+
+      final feedback = await submitFeedback(
+        client,
+        message: message,
+        appVersion: appVersion,
+        deviceInfo: deviceInfo,
+      );
+      await sendFeedbackEmail(client, feedbackId: feedback.id);
+
+      if (!mounted) return;
+      _controller.clear();
+      setState(() => _sent = true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '送出失敗：${e.code.name}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '送出失敗，請檢查網路連線後再試一次');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('送出意見回饋', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '有 bug、建議或想稱讚我們一下都歡迎，會直接送到開發者信箱。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(controller: _controller, label: '你想說的話', maxLines: 4),
+          if (_error != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          if (_sent) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Theme.of(context).colorScheme.primary, size: 18),
+                const SizedBox(width: AppSpacing.xs),
+                const Text('已收到你的回饋，謝謝！'),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(label: '送出', loading: _sending, onPressed: _submit),
+        ],
       ),
     );
   }
