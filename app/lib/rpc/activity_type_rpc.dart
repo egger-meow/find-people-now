@@ -1,7 +1,40 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../generated/activity_type.dart';
+import '../generated/supadart_header.dart' show SCHOOL;
 import 'rpc_client.dart';
+
+class CampusPulseEntry {
+  final String activityTypeId;
+  final String activityTypeName;
+  final int requestCount;
+
+  CampusPulseEntry({required this.activityTypeId, required this.activityTypeName, required this.requestCount});
+}
+
+/// docs/API.md §13.1 — `rpc: get_campus_pulse(school, campus)` (v1.26).
+/// Aggregate-only counts of currently-`REQUESTING` requests per activity
+/// type — never individual request rows (`match_request`'s RLS deliberately
+/// keeps those owner/member-only, see the migration's header comment).
+Future<List<CampusPulseEntry>> getCampusPulse(
+  SupabaseClient client, {
+  required SCHOOL school,
+  required String campus,
+}) {
+  return callRpc<List<CampusPulseEntry>>(
+    client,
+    'get_campus_pulse',
+    params: {'p_school': school.name, 'p_campus': campus},
+    decode: (data) => (data as List)
+        .cast<Map<String, dynamic>>()
+        .map((row) => CampusPulseEntry(
+              activityTypeId: row['activity_type_id'] as String,
+              activityTypeName: row['activity_type_name'] as String,
+              requestCount: row['request_count'] as int,
+            ))
+        .toList(),
+  );
+}
 
 /// docs/API.md §2.2 — `rpc: search_activity_type(query)`.
 /// `returns setof activity_type` → reuses generated [ActivityType].
