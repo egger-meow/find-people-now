@@ -65,6 +65,27 @@ final approvedLocationsProvider =
   return rows.map(Location.fromJson).toList();
 });
 
+/// Arrival Check（v1.24）——只訂閱 `activity_member` 的 `user_id`/`arrived_at`
+/// 兩欄變化，不把整個成員名單（[activityMemberRosterProvider]）改成
+/// Realtime：後者每次事件都要重新打 `get_activity_contacts`/
+/// `get_activity_member_profiles` 兩支 RPC，抵達狀態變化不需要那麼重的刷新，
+/// 這裡單獨用一個窄 stream 疊加在既有名單上即可。
+final activityArrivalStreamProvider =
+    StreamProvider.family<Map<String, DateTime?>, String>((ref, activityId) {
+  final client = ref.watch(supabaseClientProvider);
+  return client
+      .from('activity_member')
+      .stream(primaryKey: ['activity_id', 'user_id'])
+      .eq('activity_id', activityId)
+      .map((rows) {
+        return {
+          for (final row in rows)
+            row['user_id'] as String:
+                row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),
+        };
+      });
+});
+
 /// 集合地點更新紀錄（append-only，見 `update_meeting_point` 註解）——新到舊
 /// 排序，畫面只需要顯示最新一筆＋歷史。
 final activityMeetingPointUpdatesStreamProvider =
@@ -104,6 +125,8 @@ class MemberRosterEntry {
   final DEGREE_LEVEL degreeLevel;
   final ReliabilityTier reliabilityTier;
   final String? meetingHint;
+  final DateTime? arrivedAt;
+  final List<String> vibeTags;
 
   MemberRosterEntry({
     required this.userId,
@@ -117,7 +140,25 @@ class MemberRosterEntry {
     required this.degreeLevel,
     required this.reliabilityTier,
     required this.meetingHint,
+    required this.arrivedAt,
+    required this.vibeTags,
   });
+
+  MemberRosterEntry copyWithArrivedAt(DateTime? arrivedAt) => MemberRosterEntry(
+        userId: userId,
+        sourceRequestId: sourceRequestId,
+        status: status,
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+        contacts: contacts,
+        school: school,
+        department: department,
+        degreeLevel: degreeLevel,
+        reliabilityTier: reliabilityTier,
+        meetingHint: meetingHint,
+        arrivedAt: arrivedAt,
+        vibeTags: vibeTags,
+      );
 }
 
 final activityMemberRosterProvider =
@@ -147,6 +188,8 @@ final activityMemberRosterProvider =
       degreeLevel: profile?.degreeLevel ?? DEGREE_LEVEL.UNDERGRAD,
       reliabilityTier: profile?.reliabilityTier ?? ReliabilityTier.unknown,
       meetingHint: row['meeting_hint'] as String?,
+      arrivedAt: row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),
+      vibeTags: (row['vibe_tags'] as List?)?.cast<String>() ?? const [],
     );
   }).toList();
 });

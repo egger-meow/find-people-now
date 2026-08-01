@@ -250,3 +250,32 @@ Future<ActivityMember> updateMeetingHint(
     decode: (data) => ActivityMember.fromJson(data as Map<String, dynamic>),
   );
 }
+
+/// docs/API.md §6.8 — `rpc: mark_arrived(activity_id)` (v1.24). One-way:
+/// sets `activity_member.arrived_at` from null to now(); idempotent if
+/// already arrived (returns the existing row, no duplicate notification).
+Future<ActivityMember> markArrived(SupabaseClient client, {required String activityId}) {
+  return callRpc<ActivityMember>(
+    client,
+    'mark_arrived',
+    params: {'p_activity_id': activityId},
+    decode: (data) => ActivityMember.fromJson(data as Map<String, dynamic>),
+  );
+}
+
+/// docs/API.md §6.9 — `rpc: update_vibe_tags(activity_id, tags)` (v1.28).
+/// Overwrites (not append-only, like [updateMeetingHint]); max 3 tags, each
+/// up to 20 characters (RPC-level `INVALID_INPUT` detail `TOO_MANY_TAGS`/
+/// `TAG_TOO_LONG`); pass an empty list to clear.
+Future<ActivityMember> updateVibeTags(
+  SupabaseClient client, {
+  required String activityId,
+  required List<String> tags,
+}) {
+  return callRpc<ActivityMember>(
+    client,
+    'update_vibe_tags',
+    params: {'p_activity_id': activityId, 'p_tags': tags},
+    decode: (data) => ActivityMember.fromJson(data as Map<String, dynamic>),
+  );
+}

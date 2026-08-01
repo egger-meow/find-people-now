@@ -9,7 +9,7 @@ import '../generated/activity_location_option.dart';
 import '../generated/location.dart';
 import '../generated/supadart_header.dart'
     show ACTIVITY_MEMBER_STATUS, ACTIVITY_STATUS, COMPLETION_RESULT, DEGREE_LEVEL, RELIABILITY_EVENT_TYPE, REPORT_CATEGORY;
-import '../match/match_providers.dart' show myActiveActivityProvider, myAppUserProvider;
+import '../match/match_providers.dart' show activityTypesProvider, myActiveActivityProvider, myAppUserProvider;
 import '../rpc/activity_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
@@ -37,6 +37,40 @@ String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
       DEGREE_LEVEL.MASTER => '碩士班',
       DEGREE_LEVEL.PHD => '博士班',
     };
+
+/// Vibe Tags（v1.28）——依活動類型關鍵字給一組情境標籤選項，同
+/// `create_request_screen.dart` 的 `_activityTypeIcon` 一樣純展示、不接後端
+/// 審核表（見 `update_vibe_tags` 遷移檔頭註解的取捨說明）。比對不到就給一組
+/// 泛用預設，不因為新類型沒錄入就沒有標籤可選。
+List<String> _vibeTagOptionsFor(String activityTypeName) {
+  final n = activityTypeName.toLowerCase();
+  const sporty = ['新手歡樂場', '認真拼戰', '流汗就好'];
+  const table = <String, List<String>>{
+    '籃球': sporty,
+    '排球': sporty,
+    '羽球': sporty,
+    '網球': sporty,
+    '桌球': sporty,
+    '足球': sporty,
+    '棒球': sporty,
+    '健身': sporty,
+    '重訓': sporty,
+    '慢跑': sporty,
+    '跑步': sporty,
+    '游泳': sporty,
+    '讀書': ['靜音專注', '刷題討論', '互相監督'],
+    '唸書': ['靜音專注', '刷題討論', '互相監督'],
+    '自習': ['靜音專注', '刷題討論', '互相監督'],
+    '咖啡': ['隨意閒聊', '社恐友善', '純吃美食'],
+    '吃飯': ['隨意閒聊', '社恐友善', '純吃美食'],
+    '晚餐': ['隨意閒聊', '社恐友善', '純吃美食'],
+    '午餐': ['隨意閒聊', '社恐友善', '純吃美食'],
+  };
+  for (final entry in table.entries) {
+    if (n.contains(entry.key)) return entry.value;
+  }
+  return const ['新手歡樂場', '認真投入', '隨興就好'];
+}
 
 String _tierLabel(ReliabilityTier tier) => switch (tier) {
       ReliabilityTier.trusted => 'Trusted',
@@ -182,7 +216,11 @@ class ActivityDetailScreen extends ConsumerWidget {
                     child: TabBarView(
                       children: [
                         _LocationTab(activity: activity),
-                        _MembersTab(activityId: activity.id, activityStatus: activity.status),
+                        _MembersTab(
+                          activityId: activity.id,
+                          activityStatus: activity.status,
+                          activityTypeId: activity.activityTypeId,
+                        ),
                       ],
                     ),
                   ),
@@ -927,28 +965,60 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
 /// 來的」，每張卡片點開後顯示聯絡方式（依 `get_activity_contacts` 的
 /// 24h/再約規則決定是否可見）＋封鎖／檢舉入口。
 class _MembersTab extends ConsumerWidget {
-  const _MembersTab({required this.activityId, required this.activityStatus});
+  const _MembersTab({required this.activityId, required this.activityStatus, required this.activityTypeId});
 
   final String activityId;
   final ACTIVITY_STATUS activityStatus;
+  final String activityTypeId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rosterAsync = ref.watch(activityMemberRosterProvider(activityId));
+    final arrivalOverride = ref.watch(activityArrivalStreamProvider(activityId)).value;
+    final showArrival = activityStatus == ACTIVITY_STATUS.MATCHED || activityStatus == ACTIVITY_STATUS.ONGOING;
+    final typesAsync = ref.watch(activityTypesProvider);
+    final matchingTypes = typesAsync.value?.where((t) => t.id == activityTypeId) ?? const Iterable.empty();
+    final activityTypeName = matchingTypes.isEmpty ? '' : matchingTypes.first.name;
 
     return rosterAsync.when(
       loading: () => const LoadingIndicator(),
       error: (error, stack) => Center(child: Text('載入失敗：$error')),
-      data: (roster) {
+      data: (rawRoster) {
+        final roster = arrivalOverride == null
+            ? rawRoster
+            : [
+                for (final member in rawRoster)
+                  arrivalOverride.containsKey(member.userId)
+                      ? member.copyWithArrivedAt(arrivalOverride[member.userId])
+                      : member,
+              ];
         final groups = <String, List<MemberRosterEntry>>{};
         for (final member in roster) {
           groups.putIfAbsent(member.sourceRequestId, () => []).add(member);
         }
+        final joinedCount = roster.where((m) => m.status == ACTIVITY_MEMBER_STATUS.JOINED).length;
+        final arrivedCount = roster
+            .where((m) => m.status == ACTIVITY_MEMBER_STATUS.JOINED && m.arrivedAt != null)
+            .length;
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(activityMemberRosterProvider(activityId)),
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
+              if (showArrival && joinedCount > 0) ...[
+                AppCard(
+                  child: Row(
+                    children: [
+                      Icon(Icons.flag_circle_rounded, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text('已抵達 $arrivedCount / $joinedCount', style: Theme.of(context).textTheme.titleSmall),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+              ],
               for (final group in groups.values) ...[
                 if (group.length > 1) ...[
                   Text(
@@ -965,6 +1035,7 @@ class _MembersTab extends ConsumerWidget {
                     activityId: activityId,
                     activityStatus: activityStatus,
                     member: member,
+                    activityTypeName: activityTypeName,
                   ),
                   const SizedBox(height: AppSpacing.sm),
                 ],
@@ -983,11 +1054,18 @@ class _MembersTab extends ConsumerWidget {
 /// 按鈕」跟第一步/第二步彈窗（`_CompletionReportSheet`/`_RematchSheet`）是
 /// 同一個底層 RPC 的兩個入口，不是兩套邏輯。
 class _MemberCard extends ConsumerStatefulWidget {
-  const _MemberCard({super.key, required this.activityId, required this.activityStatus, required this.member});
+  const _MemberCard({
+    super.key,
+    required this.activityId,
+    required this.activityStatus,
+    required this.member,
+    required this.activityTypeName,
+  });
 
   final String activityId;
   final ACTIVITY_STATUS activityStatus;
   final MemberRosterEntry member;
+  final String activityTypeName;
 
   @override
   ConsumerState<_MemberCard> createState() => _MemberCardState();
@@ -1029,12 +1107,61 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
     setState(() => _expanded = false);
   }
 
+  Future<void> _editVibeTags() async {
+    final options = _vibeTagOptionsFor(widget.activityTypeName);
+    final selected = {...widget.member.vibeTags};
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('這場你想怎麼參與？'),
+          content: Wrap(
+            spacing: AppSpacing.xs,
+            children: [
+              for (final option in options)
+                FilterChip(
+                  label: Text(option),
+                  selected: selected.contains(option),
+                  onSelected: (value) => setDialogState(() {
+                    if (value) {
+                      if (selected.length < 3) selected.add(option);
+                    } else {
+                      selected.remove(option);
+                    }
+                  }),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('儲存')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await updateVibeTags(
+        ref.read(supabaseClientProvider),
+        activityId: widget.activityId,
+        tags: selected.toList(),
+      );
+      ref.invalidate(activityMemberRosterProvider(widget.activityId));
+    } on ApiException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('儲存失敗，請再試一次')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final member = widget.member;
     final userId = ref.watch(currentUserIdProvider);
     final isSelf = member.userId == userId;
     final isCancelled = member.status == ACTIVITY_MEMBER_STATUS.CANCELLED;
+    final showArrival = widget.activityStatus == ACTIVITY_STATUS.MATCHED || widget.activityStatus == ACTIVITY_STATUS.ONGOING;
 
     return AppCard(
       onTap: isSelf ? null : () => setState(() => _expanded = !_expanded),
@@ -1066,6 +1193,53 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                       isCancelled ? '已取消參加 · 可信度 ${_tierLabel(member.reliabilityTier)}' : '可信度 ${_tierLabel(member.reliabilityTier)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                    if (showArrival && !isCancelled) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            member.arrivedAt != null ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                            size: 14,
+                            color: member.arrivedAt != null
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            member.arrivedAt != null ? '已抵達' : '尚未抵達',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: member.arrivedAt != null
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (member.vibeTags.isNotEmpty || (isSelf && !isCancelled)) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          for (final tag in member.vibeTags)
+                            Chip(
+                              label: Text(tag, style: const TextStyle(fontSize: 11)),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              padding: EdgeInsets.zero,
+                            ),
+                          if (isSelf && !isCancelled)
+                            ActionChip(
+                              avatar: const Icon(Icons.add_rounded, size: 14),
+                              label: Text(member.vibeTags.isEmpty ? '設定參與方式' : '編輯', style: const TextStyle(fontSize: 11)),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              onPressed: _editVibeTags,
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1073,6 +1247,8 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                 _RematchButton(activityId: widget.activityId, toUserId: member.userId),
                 const SizedBox(width: AppSpacing.xs),
               ],
+              if (isSelf && showArrival && !isCancelled && member.arrivedAt == null)
+                _ArrivalButton(activityId: widget.activityId),
               if (!isSelf) Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded),
             ],
           ),
@@ -1157,6 +1333,46 @@ class _RematchButtonState extends ConsumerState<_RematchButton> {
       onPressed: voted || _busy ? null : _vote,
       style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
       child: Text(voted ? '已再約' : '👍 再約'),
+    );
+  }
+}
+
+/// Arrival Check「我到了」按鈕（API.md §6.8）。只出現在自己的卡片上、還沒
+/// 標記抵達時；按下後靠 [activityArrivalStreamProvider] 的 Realtime 推播
+/// 自然更新畫面，這裡不用手動 invalidate 或本地樂觀更新。
+class _ArrivalButton extends ConsumerStatefulWidget {
+  const _ArrivalButton({required this.activityId});
+
+  final String activityId;
+
+  @override
+  ConsumerState<_ArrivalButton> createState() => _ArrivalButtonState();
+}
+
+class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
+  bool _busy = false;
+
+  Future<void> _markArrived() async {
+    setState(() => _busy = true);
+    try {
+      await markArrived(ref.read(supabaseClientProvider), activityId: widget.activityId);
+    } on ApiException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('標記失敗，請再試一次')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      onPressed: _busy ? null : _markArrived,
+      style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+      child: _busy
+          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Text('我到了'),
     );
   }
 }
