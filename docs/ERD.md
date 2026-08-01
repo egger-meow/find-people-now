@@ -57,6 +57,12 @@ erDiagram
     app_user ||--o{ report : "reporter_id 發起／reported_user_id 被檢舉對象，nullable（v1.18）"
     activity ||--o{ report : "reported_activity_id 被檢舉對象，nullable（v1.18）"
 
+    app_user ||--o{ feedback : "user_id 送出者（v1.25）"
+    activity ||--o{ feedback : "activity_id 可選的關聯活動，nullable（v1.25）"
+
+    app_user ||--o{ activity_alert_subscription : "user_id 訂閱者（v1.27）"
+    activity_type ||--o{ activity_alert_subscription : "activity_type_id（v1.27）"
+
     app_user {
         uuid id PK "= auth.users.id"
         text email "CHECK：完整比對 @nycu.edu.tw / @nthu.edu.tw 雙校網域"
@@ -162,6 +168,8 @@ erDiagram
         uuid source_request_id FK "從哪個 Request 併進來"
         enum status "JOINED | CANCELLED"
         text meeting_hint "nullable，CHECK char_length <= 30；個人化見面提示，覆寫不留歷史（v1.11.1）"
+        timestamptz arrived_at "nullable；Arrival Check「我到了」，單向 null→時間戳，無清空路徑（v1.24）"
+        text_array vibe_tags "nullable，最多 3 個、每個最多 20 字；配對成立後才可填，刻意不用於配對邏輯（v1.28）"
     }
 
     activity_meeting_point_update {
@@ -259,6 +267,26 @@ erDiagram
         enum status "PENDING | REVIEWED，人工於 Supabase Studio 審核"
         timestamptz created_at
     }
+
+    feedback {
+        uuid id PK
+        uuid user_id FK "送出者"
+        text message "1–2000 字"
+        uuid activity_id FK "nullable，可選的關聯活動"
+        text app_version "nullable"
+        text device_info "nullable"
+        timestamptz created_at
+    }
+
+    activity_alert_subscription {
+        uuid id PK
+        uuid user_id FK "訂閱者"
+        uuid activity_type_id FK
+        enum school "NYCU | NTHU"
+        text campus
+        timestamptz expires_at "訂閱者願意等待的時限，不是背景任務清除，觸發/顯示時用 expires_at > now() 篩選"
+        timestamptz created_at
+    }
 ```
 
 ---
@@ -281,7 +309,7 @@ erDiagram
 | `pending_confirmation_response` | `CONFIRMED` `DECLINED` `NO_RESPONSE` | §12.1（v1.4） |
 | `completion_result` | `WENT_WELL` `REPORTED_ABSENT` `SELF_CANCELLED` | §10 |
 | `reliability_event_type` | `ATTENDED` `EARLY_CANCEL` `LATE_CANCEL` `NO_SHOW` | §12 |
-| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） `ACTIVITY_UPCOMING`（v1.13） | §16 開放問題 5（清單可能擴充） |
+| `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） `ACTIVITY_UPCOMING`（v1.13） `MEMBER_ARRIVED`（v1.24） `ALERT_TRIGGERED`（v1.27） | §16 開放問題 5（清單可能擴充） |
 | `report_category` | `SPAM` `HARASSMENT` `OTHER` | §12.1.6（v1.18） |
 | `report_status` | `PENDING` `REVIEWED` | §12.1.6（v1.18） |
 

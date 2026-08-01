@@ -39,6 +39,7 @@ extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get report => from('report');
   SupabaseQueryBuilder get downgrade_consent => from('downgrade_consent');
   SupabaseQueryBuilder get pending_review => from('pending_review');
+  SupabaseQueryBuilder get feedback => from('feedback');
   SupabaseQueryBuilder get location => from('location');
   SupabaseQueryBuilder get activity_meeting_point_update =>
       from('activity_meeting_point_update');
@@ -47,6 +48,8 @@ extension SupadartClient on SupabaseClient {
   SupabaseQueryBuilder get completion_report => from('completion_report');
   SupabaseQueryBuilder get activity_location_vote =>
       from('activity_location_vote');
+  SupabaseQueryBuilder get activity_alert_subscription =>
+      from('activity_alert_subscription');
   SupabaseQueryBuilder get request_member => from('request_member');
   SupabaseQueryBuilder get match_history_avoidance =>
       from('match_history_avoidance');
@@ -65,7 +68,9 @@ extension SupadartClient on SupabaseClient {
 }
 
 // Supabase Storage Client Extension
-extension SupadartStorageClient on SupabaseStorageClient {}
+extension SupadartStorageClient on SupabaseStorageClient {
+  StorageFileApi get avatars => from('avatars');
+}
 
 // Enums
 enum ACTIVITY_MEMBER_STATUS { JOINED, CANCELLED }
@@ -92,6 +97,8 @@ enum NOTIFICATION_EVENT_TYPE {
   LOCATION_NOT_YET_PROPOSED,
   MEETING_POINT_UPDATED,
   MATCH_NOT_FORMED,
+  MEMBER_ARRIVED,
+  ALERT_TRIGGERED,
 }
 
 enum PENDING_CONFIRMATION_RESPONSE { CONFIRMED, DECLINED, NO_RESPONSE }

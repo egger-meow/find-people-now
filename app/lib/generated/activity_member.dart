@@ -9,6 +9,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
   final String sourceRequestId;
   final ACTIVITY_MEMBER_STATUS status;
   final String? meetingHint;
+  final DateTime? arrivedAt;
+  final List<String>? vibeTags;
 
   const ActivityMember({
     required this.activityId,
@@ -16,6 +18,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     required this.sourceRequestId,
     required this.status,
     this.meetingHint,
+    this.arrivedAt,
+    this.vibeTags,
   });
 
   static String get table_name => 'activity_member';
@@ -24,6 +28,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
   static String get c_sourceRequestId => 'source_request_id';
   static String get c_status => 'status';
   static String get c_meetingHint => 'meeting_hint';
+  static String get c_arrivedAt => 'arrived_at';
+  static String get c_vibeTags => 'vibe_tags';
 
   static List<ActivityMember> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityMember.fromJson).toList();
@@ -39,6 +45,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
     String? meetingHint,
+    DateTime? arrivedAt,
+    List<String>? vibeTags,
   }) {
     return {
       if (activityId != null) 'activity_id': activityId,
@@ -46,6 +54,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       if (sourceRequestId != null) 'source_request_id': sourceRequestId,
       if (status != null) 'status': status.toString().split('.').last,
       if (meetingHint != null) 'meeting_hint': meetingHint,
+      if (arrivedAt != null) 'arrived_at': arrivedAt.toUtc().toIso8601String(),
+      if (vibeTags != null) 'vibe_tags': vibeTags.map((e) => e).toList(),
     };
   }
 
@@ -55,6 +65,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     required String sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
     String? meetingHint,
+    DateTime? arrivedAt,
+    List<String>? vibeTags,
   }) {
     return _generateMap(
       activityId: activityId,
@@ -62,6 +74,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       sourceRequestId: sourceRequestId,
       status: status,
       meetingHint: meetingHint,
+      arrivedAt: arrivedAt,
+      vibeTags: vibeTags,
     );
   }
 
@@ -71,6 +85,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
     String? meetingHint,
+    DateTime? arrivedAt,
+    List<String>? vibeTags,
   }) {
     return _generateMap(
       activityId: activityId,
@@ -78,6 +94,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       sourceRequestId: sourceRequestId,
       status: status,
       meetingHint: meetingHint,
+      arrivedAt: arrivedAt,
+      vibeTags: vibeTags,
     );
   }
 
@@ -96,6 +114,14 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       meetingHint: jsonn['meeting_hint'] != null
           ? jsonn['meeting_hint'].toString()
           : null,
+      arrivedAt: jsonn['arrived_at'] != null
+          ? DateTime.parse(jsonn['arrived_at'].toString())
+          : null,
+      vibeTags: jsonn['vibe_tags'] != null
+          ? (jsonn['vibe_tags'] as List<dynamic>)
+                .map((v) => v.toString())
+                .toList()
+          : null,
     );
   }
 
@@ -105,6 +131,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     String? sourceRequestId,
     ACTIVITY_MEMBER_STATUS? status,
     String? meetingHint,
+    DateTime? arrivedAt,
+    List<String>? vibeTags,
   }) {
     return {
       if (activityId != null) 'activity_id': activityId,
@@ -112,6 +140,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       if (sourceRequestId != null) 'source_request_id': sourceRequestId,
       if (status != null) 'status': status,
       if (meetingHint != null) 'meeting_hint': meetingHint,
+      if (arrivedAt != null) 'arrived_at': arrivedAt,
+      if (vibeTags != null) 'vibe_tags': vibeTags,
     };
   }
 
@@ -122,6 +152,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       sourceRequestId: sourceRequestId,
       status: status,
       meetingHint: meetingHint,
+      arrivedAt: arrivedAt,
+      vibeTags: vibeTags,
     );
   }
 
@@ -132,6 +164,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
     Object? sourceRequestId = _unset,
     Object? status = _unset,
     Object? meetingHint = _unset,
+    Object? arrivedAt = _unset,
+    Object? vibeTags = _unset,
   }) {
     return ActivityMember(
       activityId: activityId == _unset ? this.activityId : activityId as String,
@@ -143,6 +177,8 @@ class ActivityMember implements SupadartClass<ActivityMember> {
       meetingHint: meetingHint == _unset
           ? this.meetingHint
           : meetingHint as String?,
+      arrivedAt: arrivedAt == _unset ? this.arrivedAt : arrivedAt as DateTime?,
+      vibeTags: vibeTags == _unset ? this.vibeTags : vibeTags as List<String>?,
     );
   }
 }

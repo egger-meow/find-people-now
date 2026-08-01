@@ -102,6 +102,19 @@ stateDiagram-v2
 | 每次 `update_meeting_point` 成功 | 向該活動全體 `JOINED` 成員發送 `MEETING_POINT_UPDATED` 通知；`update_meeting_hint` 是個人化欄位，不觸發通知 |
 | `activity.status` 轉為 `COMPLETED`/`CANCELLED` 後 | 兩支 RPC 一律回 `ACTIVITY_NOT_ACTIVE`——協調動作在活動結束/取消後已無實質對象，見 SPEC §9.2 邊界判斷 |
 
+### Arrival Check 子流程（掛在 MATCHED/ONGOING 內部，不是獨立狀態，v1.24）
+
+跟 Meeting Point/Meeting Hint 同一種設計精神，且**同樣獨立於 `activity_location_id` 是否鎖定**：
+
+| 情境 | 行為 |
+|---|---|
+| Activity 建立（A1）起，`status in (MATCHED, ONGOING)` 期間 | 任何 `JOINED` 成員可呼叫 `mark_arrived` 標記自己已抵達（見 API.md 6.8）；單向，無法清空重來 |
+| 已標記過再次呼叫 | 冪等回傳現有 row，不重複發通知 |
+| 每次 `mark_arrived` 首次成功 | 向該活動**其餘**（不含自己）`JOINED` 成員發送 `MEMBER_ARRIVED` 通知 |
+| `activity.status` 轉為 `COMPLETED`/`CANCELLED` 後 | 回 `ACTIVITY_NOT_ACTIVE`，同 6.6/6.7 的既有閘門 |
+
+`arrived_at` 不參與 A3/A4 的完成確認多數決結算，也不寫 `user_reliability_event`——純即時展示信號，非正式出席判定（SPEC §10 仍是唯一的 No-show/出席判準來源）。
+
 ### 完成確認三選一（SPEC §10）與事件對映
 
 | 回報選項 | `completion_result` | 結算時產生的 `reliability_event_type` |

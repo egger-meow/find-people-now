@@ -24,6 +24,7 @@
 | 1.4 | `rpc: get_my_reliability()` | 回 `{ tier: TRUSTED\|NORMAL\|NEW, is_new_user: bool }`，即時由 `fn_reliability_tier` / `fn_is_new_user` 計算（SPEC §12：不存分數欄位）。 |
 | 1.5 | `rpc: delete_account()` **接著** Edge Function `delete-auth-user`（v1.14） | **App 內建帳號刪除**（Apple App Store Review Guideline 5.1.1(v) / Google Play 兩者的上架硬性規定，SPEC §16 開放問題 6）。分兩步、Flutter 端依序呼叫：① `delete_account()` RPC——清理 `public` schema 業務資料、去識別化 `app_user`（row 保留、id 不變，見 ERD 設計備註 42），冪等（`{ success, already_deleted? }`）。② Edge Function `delete-auth-user`——驗證呼叫者 JWT 後呼叫官方 `auth.admin.deleteUser(id, shouldSoftDelete: true)`，只有這支 Function 持有 `service_role` key。呼叫端（Flutter）對步驟②做 2 次重試（1 秒/3 秒 backoff）後放棄，不論結果一律本地登出——步驟①已完成、`ACCOUNT_DELETED` 檢查已生效，殘留風險視窗很小，不需要背景重試佇列。 |
 | 1.6 | `rpc: check_enrollment_reminder(p_degree_level)`（v1.21） | **NYCU 在校生年限軟性提醒（SPEC §2）**：僅當呼叫者信箱網域為 `nycu.edu.tw` 時才可能回 `true`；回傳布林值，由 `fn_seniority_reminder_needed(email, degree_level)` 計算（`fn_parse_nycu_enrollment_year(email)` 負責解析入學年，見 ERD 設計備註 45）。Flutter 端在 `complete_profile`（1.2）送出前呼叫，回 `true` 才跳一次性確認訊息，使用者確認後仍照常呼叫 1.2，**不阻擋註冊流程**。不落地存任何欄位，也不影響 1.2 本身的驗證邏輯。 |
+| 1.7 | `rpc: get_my_badges()`（v1.29） | **Achievement Badges 成就徽章**：回傳 `[{ badge_code, earned }]`，四碼固定為 `FIRST_ACTIVITY`/`PUNCTUAL`/`GREAT_COMPANY`/`ENTHUSIASTIC_ORGANIZER`，皆從既有的 `user_reliability_event`/`rematch_vote`/`match_request` 即時計算，不新增任何表／欄位。補充（不取代）1.4 的可信度等級——刻意用累計數字而非近 30 天滾動窗，代表「曾經達成」的里程碑，跟可信度等級「近期表現」的性質不同。 |
 
 錯誤碼：`INVALID_EMAIL_DOMAIN`、`PROFILE_INCOMPLETE`、`DEGREE_LEVEL_REQUIRED`、`NO_CONTACT_METHOD`、`ACCOUNT_DELETED`（v1.14，見 §0）
 
@@ -99,8 +100,10 @@
 | 6.5 | `rpc: vote_activity_location(activity_id, location_id)`（v1.11） | — | **對既有候選投票（SPEC §9.1）**：呼叫者須為該活動成員，且活動仍是 `MATCHED` 且 `activity_location_id` 尚未鎖定；`location_id` 須已是該活動的既有候選（先前透過 6.4 建立），否則回 `NOT_FOUND`。一人一票，可改票（重複呼叫覆寫先前的投票）。得票最高者於 `start_time` 由背景任務 `fn_start_activities()` 鎖定；同票取最早提案者勝出（見 SPEC §9.1、ERD 設計備註 31/32）。 |
 | 6.6 | `rpc: update_meeting_point(activity_id, description)`（v1.11.1） | — | **更新集合地點（SPEC §9.2）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`；`description` 不可為空白。獨立於 `activity_location_id` 是否鎖定，append-only（不覆寫舊記錄，「目前集合點」＝取最新一筆）。同一人 2 分鐘內連續呼叫回 `MEETING_POINT_UPDATE_COOLDOWN`（`app_config.meeting_point_update_cooldown_minutes`，預設 2 分鐘）。成功後向該活動全體 `JOINED` 成員發送 `MEETING_POINT_UPDATED` 通知。 |
 | 6.7 | `rpc: update_meeting_hint(activity_id, hint)`（v1.11.1） | — | **更新個人化見面提示（SPEC §9.2）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`；`hint` 最多 30 字（RPC 層 `INVALID_INPUT` + DB 層 CHECK 雙重防線），可傳空字串/空白清空。直接覆寫 `activity_member.meeting_hint`，不像 6.6 是 append-only 記錄，不觸發通知。 |
+| 6.8 | `rpc: mark_arrived(activity_id)`（v1.24） | — | **Arrival Check「我到了」**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`，否則分別回 `NOT_ACTIVITY_MEMBER`/`ACTIVITY_NOT_ACTIVE`（沿用 6.6/6.7 同一組閘門與碼）。覆寫 `activity_member.arrived_at`，單向（`null`→時間戳，無清空路徑）、冪等（已標記過重複呼叫回傳現有 row，不重複通知）。成功首次標記後向該活動**其餘**（不含自己）`JOINED` 成員發送 `MEMBER_ARRIVED` 通知，payload 含 `arrived_user_id`/`display_name`。 |
+| 6.9 | `rpc: update_vibe_tags(activity_id, tags)`（v1.28） | — | **Vibe Tags 情境標籤**：閘門同 6.7（`JOINED` 成員 + `status in (MATCHED, ONGOING)`）。`tags` 最多 3 個、每個最多 20 字，超出回 `INVALID_INPUT` detail `TOO_MANY_TAGS`/`TAG_TOO_LONG`（陣列元素長度僅 RPC 層檢查，DB 層只有陣列長度上限的 CHECK，見遷移檔取捨說明）。直接覆寫 `activity_member.vibe_tags`（不像 6.6 append-only），空陣列正規化為 `null`，不觸發通知（同 6.7 的個人化欄位精神）。**刻意不用於配對邏輯**——matching engine 完全不讀這個欄位，只在配對成立後給成員互看，降低期待不一致的社交摩擦。 |
 
-錯誤碼：`NOT_ACTIVITY_MEMBER`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）、`ACTIVITY_NOT_ACTIVE`（v1.11.1 起用於 6.6/6.7；v1.14.1 起 6.3 也重用同一個碼，見上方 6.3 說明）、`MEETING_POINT_UPDATE_COOLDOWN`（v1.11.1，6.6 冷卻中）、`INVALID_INPUT`（v1.11.1，6.6 空白描述 / 6.7 提示超過 30 字）
+錯誤碼：`NOT_ACTIVITY_MEMBER`、`ACTIVITY_LOCATION_LOCKED`（v1.11，活動已鎖定候選地點或已開始，見 6.4/6.5）、`INVALID_CAMPUS_SCOPE`（v1.11，6.4 提案的地點不屬於該活動的 `(school, campus)` 範圍）、`NOT_FOUND`（v1.11，6.5 投給一個尚不存在的候選）、`ACTIVITY_NOT_ACTIVE`（v1.11.1 起用於 6.6/6.7；v1.14.1 起 6.3 也重用同一個碼；v1.24 起 6.8、v1.28 起 6.9 亦重用，見上方各節說明）、`MEETING_POINT_UPDATE_COOLDOWN`（v1.11.1，6.6 冷卻中）、`INVALID_INPUT`（v1.11.1，6.6 空白描述 / 6.7 提示超過 30 字；v1.28，6.9 標籤數量/長度超限）
 
 > 🔴 **v1.14.1 校對移除**：`CONTACT_EXPIRED`、`ACTIVITY_ALREADY_ENDED` 兩個碼從未被任何 RPC 實際 raise 過。前者的替代行為（`contacts` 回傳 `null`）已是合理設計，見上方 6.2 說明；後者拆成兩支 RPC 分別判斷——6.2 刻意不需要這個狀態閘門（見 6.2 說明），6.3 的真缺口已改用既有的 `ACTIVITY_NOT_ACTIVE` 補上（見上方 6.3 說明與 RPC_COVERAGE.md）。
 
@@ -199,3 +202,39 @@
 | 11.5 | `GET report?reporter_id=eq.{自己}`（PostgREST，RLS：`reporter_id = auth.uid()`）（v1.18） | 查自己送出的檢舉記錄；其餘使用者（含被檢舉方）皆查不到。 |
 
 錯誤碼：`INVALID_INPUT`（detail `CANNOT_BLOCK_SELF` / `REPORT_TARGET_REQUIRED`）、`NOT_FOUND`（detail `BLOCKED_USER_NOT_FOUND`）
+
+---
+
+## 12. 意見回饋（v1.25）
+
+| # | Endpoint | 說明 |
+|---|---|---|
+| 12.1 | `rpc: submit_feedback(message, activity_id?, app_version?, device_info?)` | **送出意見回饋（SPEC v1.25）**：`message` 去頭尾空白後長度需在 1–2000 字，否則 `INVALID_INPUT` detail `MESSAGE_REQUIRED`/`MESSAGE_TOO_LONG`。寫入 `feedback` 表，**不檢查 `activity_id` 是否真的跟呼叫者有關**（同 11.4 對 `reported_activity_id` 的既有處理，純屬客服排查用的情境資訊，不是權限邊界）。 |
+| 12.2 | `GET feedback?user_id=eq.{自己}`（PostgREST，RLS：`user_id = auth.uid()`） | 查自己送出的回饋記錄；其餘使用者查不到。 |
+| 12.3 | Edge Function `send-feedback-email` | **非公開 API**，由 Flutter 端在 12.1 成功後盡力呼叫（失敗不影響 12.1 的成功狀態）。只接受 `{ feedback_id }`，信件內容由 Function 自己用 service_role 重新查表組出，並驗證該筆記錄的 `user_id` 等於呼叫者自己。透過 Resend 寄到 `FEEDBACK_EMAIL_TO`（Supabase secret，非 Flutter `.env`）。 |
+
+錯誤碼：`INVALID_INPUT`（detail `MESSAGE_REQUIRED` / `MESSAGE_TOO_LONG`）
+
+---
+
+## 13. 首頁氣氛指標（Campus Activity Pulse；v1.26）
+
+| # | Endpoint | 說明 |
+|---|---|---|
+| 13.1 | `rpc: get_campus_pulse(school, campus)` | **匿名聚合統計**：回傳該 `(school, campus)` 底下每個 `activity_type` 目前 `REQUESTING` 中的 Request 數量。刻意不透露任何一筆 Request 的擁有者/時間窗/其他細節——`match_request` 的 RLS（`my_requests_select`）本來就只放行 owner/成員自己讀取（盲配設計的核心邊界，見 SPEC §11），這支 RPC 只回傳聚合計數，不違背該邊界。前端輪詢（30 秒一次），刻意不用 Realtime——把 `match_request` 整張表加進 publication 會讓 client 收到逐筆新增/消失事件，等於間接洩漏比聚合數字更細的時間點資訊。 |
+
+無專屬錯誤碼（`UNAUTHORIZED` 沿用全域慣例）。
+
+---
+
+## 14. 提醒訂閱（Alert Subscription；v1.27）
+
+| # | Endpoint | 說明 |
+|---|---|---|
+| 14.1 | `rpc: subscribe_activity_alert(activity_type_id, school, campus, lookahead_hours)` | **訂閱「這個類型/校區有新機會就通知我」**：`lookahead_hours` 限制 1–24，超出範圍回 `INVALID_INPUT` detail `LOOKAHEAD_HOURS_OUT_OF_RANGE`；`activity_type_id` 不存在回 `NOT_FOUND` detail `ACTIVITY_TYPE_NOT_FOUND`。同一使用者同時最多 5 筆有效（`expires_at > now()`）訂閱，超過回 `TOO_MANY_ALERT_SUBSCRIPTIONS`。 |
+| 14.2 | `rpc: unsubscribe_activity_alert(subscription_id)` | 冪等取消，找不到（含不屬於自己的）也視為成功。 |
+| 14.3 | `GET activity_alert_subscription?user_id=eq.{自己}`（PostgREST，RLS：`user_id = auth.uid()`） | 查自己的有效訂閱清單；其餘使用者查不到。 |
+
+觸發點：`submit_request`（R2 `DRAFT → REQUESTING`）成功後，查符合 `(activity_type_id, school, campus)` 且 `expires_at > now()` 的訂閱，逐一發 `ALERT_TRIGGERED` 通知（不通知訂閱者自己剛送出的那筆），不消耗訂閱、同一筆訂閱在效期內可能觸發多次。payload 只帶 `activity_type_id`/`school`/`campus`，不帶 `request_id`（同 §13.1 的聚合、不指名精神）。
+
+錯誤碼：`INVALID_INPUT`（detail `LOOKAHEAD_HOURS_OUT_OF_RANGE`）、`NOT_FOUND`（detail `ACTIVITY_TYPE_NOT_FOUND`）、`TOO_MANY_ALERT_SUBSCRIPTIONS`

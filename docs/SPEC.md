@@ -177,6 +177,44 @@
 > 3. 🟢 **刻意不重複 `display_name`/`avatar_url`/`contacts`**：6.2 `get_activity_contacts` 已經無條件（不受 24h/再約閘門限制）回傳這兩欄給所有成員，這支新 RPC 只補「6.2 沒有、且沒有其他路徑能拿到」的欄位，前端依 `user_id` 合併兩支 RPC 的結果組出完整名單，不做兩支 RPC 間的欄位重複——維持「新增的東西剛好補上缺的那塊」的既有原則（同 v1.22 條 3 的精神）。
 > 4. 🟢 **不受聯絡方式的時效/再約閘門限制**：`school`/`department`/`degree_level`/可信度等級屬於一般個人資料，比照 6.2 對 `display_name`/`avatar_url` 的處理，配對成立後即無條件對全體成員可見，不比照 `contacts` 欄位額外加時效判斷。
 
+> **v1.24 變更紀錄**（Arrival Check「我到了」，第 9 節新增子流程）：
+> 1. 🟢 **掛在 `MATCHED`/`ONGOING` 內部，不新增 Activity 狀態**：跟 Meeting Point/Meeting Hint（v1.11.1）同一種設計精神，`activity_member` 新增 `arrived_at timestamptz`（單向，只能從 `null` 變成時間戳，不提供清空路徑——現實中沒有「取消抵達」，MVP 不為手滑誤按開 undo）。
+> 2. 🟢 **新增 `rpc: mark_arrived(activity_id)`（第 6 節新增 6.8）**：呼叫者須為該活動 `JOINED` 成員，且活動 `status in (MATCHED, ONGOING)`，否則分別回 `NOT_ACTIVITY_MEMBER`/`ACTIVITY_NOT_ACTIVE`（沿用 6.6/6.7 既有的閘門與錯誤碼）。冪等：已抵達者重複呼叫直接回傳現有 row，不重複發通知。
+> 3. 🟢 **新增 `notification_event_type = MEMBER_ARRIVED`**：成功標記後廣播給該活動**其餘**（不含自己）`JOINED` 成員，payload 帶 `arrived_user_id`/`display_name` 供文案直接代入，不需前端另外查詢。刻意不比照 `update_meeting_point` 連自己也發一份——「你已抵達」的自我通知沒有資訊價值。
+> 4. 🟢 **`activity_member` 加入 Realtime publication**：先前刻意不加（v1.11 成員名單走 `FutureProvider` + 下拉刷新，見 UI_PLAN §4.1 附註「不像地點投票有即時得票數的明確需求」），這次抵達狀態明確要求即時可見，補上。
+> 5. 🔴 **刻意不影響完成確認／No-show 判定（第 10 節）**：`arrived_at` 純粹是抵達與否的即時展示信號，不餵進 `completion_report`/`user_reliability_event` 的多數決結算邏輯——沒按「我到了」不等於沒出席，兩者是不同判準，避免把「便利性按鈕」跟「正式信譽判定」混為一談。
+
+> **v1.25 變更紀錄**（意見回饋送信，第 12.1 節新增子節；補上 §8.2「反饋/QA」頁面聯絡信箱長期〔待補〕的落差）：
+> 1. 🟢 **新增 `feedback` 表**：`user_id`/`message`（1–2000 字）/可選的 `activity_id`/`app_version`/`device_info`。RLS 比照 `report`（§11.4/11.5）：本人可寫入、可回讀自己送出的，其餘人不可見；寫入一律走 RPC，不開放 client 直寫（CLAUDE.md 既有硬性規則）。刻意不加 `report.category` 那種分類枚舉——意見回饋的形狀比檢舉開放，自由文字已足夠。
+> 2. 🟢 **新增 `rpc: submit_feedback(message, activity_id?, app_version?, device_info?)`**：`SECURITY DEFINER`，訊息去頭尾空白後長度需在 1–2000 字之間，否則 `INVALID_INPUT` detail `MESSAGE_REQUIRED`/`MESSAGE_TOO_LONG`。這是唯一保證的持久記錄——即使後續寄信失敗，這筆資料依然存在，可比照 `report`/`pending_review` 從 Studio 人工查閱。
+> 3. 🟢 **新增 Edge Function `send-feedback-email`**：跟 `delete-auth-user`（v1.14）同一種「唯一持有敏感金鑰」的架構——`RESEND_API_KEY`／`FEEDBACK_EMAIL_TO`／可選的 `FEEDBACK_EMAIL_FROM` 一律是 Supabase secrets（`supabase secrets set`），絕不進 Flutter `.env`。只接受 `feedback_id`，信件內容一律由 Function 自己用 service_role 重新查 `feedback`/`app_user` 組出，不信任呼叫端直接傳入的內容；並驗證該筆 `feedback.user_id` 等於呼叫者自己，擋掉拿他人 `feedback_id` 重複觸發寄信的疑慮。
+> 4. 🔴 **寄信是盡力而為，不是交易的一部分**：Flutter 端先呼叫 `submit_feedback`（RPC 成功 = 使用者看到「已送出」），才**盡力**呼叫 `send-feedback-email`——寄信失敗不回滾、不重試、不影響 UI 呈現的成功狀態，理由同 `delete-auth-user` 呼叫端既有的 retry-then-give-up 設計精神：唯一需要保證的是 `feedback` row 本身存在。
+
+> **v1.26 變更紀錄**（首頁 Campus Activity Pulse，第 13 節新增）：
+> 1. 🟢 **新增 `rpc: get_campus_pulse(school, campus)`**：`SECURITY DEFINER`，只回傳該 `(school, campus)` 下每個 `activity_type` 目前 `REQUESTING` 中的 Request **聚合計數**，不回傳任何個別 Request 的細節（擁有者、時間窗）。刻意選 `REQUESTING`：`DRAFT` 還沒送出、`PENDING_CONFIRMATION` 已經在跟候選人互動、`MATCHED`/`EXPIRED`/`CANCELLED` 都不是「還在等人加入」，只有 `REQUESTING` 符合「現在加入這個類型有機會湊到人」的語意。
+> 2. 🔴 **刻意不讓 client 直接查 `match_request`**：該表 RLS（`my_requests_select`）只放行 owner/成員自己讀取，是盲配設計的核心邊界（§11：配對成立前不能讓任何人看到候選對象資訊）。這支 RPC 只加總數字，不新增任何讀取個別 Request 的路徑，不動搖既有邊界。
+> 3. 🔴 **刻意不用 Realtime**：把 `match_request` 整張表加進 `supabase_realtime` publication 會讓 client 收到「哪些 Request 何時新增/消失」的逐筆事件流，等於間接洩漏比聚合計數更細的時間點資訊，跟盲配精神衝突。前端改用 30 秒輪詢這支只回聚合值的 RPC，數字新鮮度足夠支撐「感覺是活的」這個產品目標，不需要逐筆即時性。
+> 4. 🟢 **UI 落點**：首頁（`/match`，即 `create_request_screen.dart`）表單最上方，MVP 單校區假設下直接用使用者所屬校區；空狀態（該校區目前零 `REQUESTING`）安靜收合不顯示，避免對冷啟動中的校區造成反效果。
+
+> **v1.27 變更紀錄**（Alert Subscription 提醒訂閱，第 14 節新增）：
+> 1. 🟢 **新增 `activity_alert_subscription` 表**：`user_id`/`activity_type_id`/`school`/`campus`/`expires_at`。`expires_at` 是**訂閱者願意等待的時限**（「3 小時內」是使用者自己設定的等待窗），不是被訂閱對象的屬性——跟 `app_user.next_request_allowed_at`/`suspended_until` 同一種軟性到期設計，不開背景任務清除，觸發/顯示時一律用 `expires_at > now()` 篩選。
+> 2. 🟢 **新增 `rpc: subscribe_activity_alert(activity_type_id, school, campus, lookahead_hours)`**：`lookahead_hours` 限制 1–24（比照全系統既有的 24 小時視野，`WINDOW_EXCEEDS_24H` 同一個時間尺度，不是任意數字），超出範圍回 `INVALID_INPUT` detail `LOOKAHEAD_HOURS_OUT_OF_RANGE`。同一使用者同時最多 5 筆有效訂閱，超過回 `TOO_MANY_ALERT_SUBSCRIPTIONS`（純防呆，不是資安邊界）。
+> 3. 🟢 **新增 `rpc: unsubscribe_activity_alert(subscription_id)`**：冪等刪除，找不到（含不屬於自己的）也視為成功，同 `unblock_user` 既有慣例。
+> 4. 🟢 **觸發點掛在 `submit_request`（R2：`DRAFT → REQUESTING`）**：一個 Request 真正進入「還在等人加入」狀態的當下，查有沒有符合 `(activity_type_id, school, campus)` 且 `expires_at > now()` 的訂閱，逐一發 `ALERT_TRIGGERED` 通知（新增的 `notification_event_type` 值），不通知訂閱者自己剛送出的那筆。**不消耗訂閱**——同一筆訂閱在有效期內可能因多筆符合條件的 Request 各自觸發多次通知，這是刻意設計（每次都是真實的新機會），不是漏做節流。
+> 5. 🔴 **刻意不在通知 payload 帶 `request_id`**：跟 v1.26 `get_campus_pulse` 同一個精神——訂閱者要知道的是「這個 (類型, 校區) 現在有機會了，去開一個新的 Request」，不是「去看某人這一筆」；`match_request` 的 RLS 本來就不開放非 owner/成員讀取，帶 id 也查不到任何細節，不帶更乾淨。通知點開導去首頁 `/match`，不是任何一筆活動的詳情頁。
+
+> **v1.28 變更紀錄**（Vibe Tags 情境標籤，第 6 節新增 6.9）：
+> 1. 🟢 **刻意掛在配對成立後的 `activity_member`，不是配對前的 `request_member`**：使用者明確要求「不要當成配對篩選條件」——欄位掛在配對前只會誘使未來「順手」拿來當篩選欄位，掛在配對後讓這件事在結構上就不可能發生，matching engine 完全不碰這個欄位，變更面完全侷限在新的 RPC 本身，不動 matching engine／`respond_pending_confirmation` 任何既有邏輯。
+> 2. 🟢 **新增 `rpc: update_vibe_tags(activity_id, tags)`**：跟 `update_meeting_hint`（v1.11.1）同一種形狀——覆寫不留歷史、不觸發通知（個人化欄位，不是需要打斷對方的事件）。最多 3 個標籤、每個最多 20 字。
+> 3. 🔴 **標籤清單本身不做成後端表**：跟 `department_options.dart`（科系清單）同一個取捨——純展示、不影響配對邏輯，依活動類型關鍵字比對決定顯示哪組標籤（籃球類→「新手歡樂場/認真拼戰/流汗就好」，讀書類→「靜音專注/刷題討論/互相監督」，餐飲類→「隨意閒聊/社恐友善/純吃美食」），比對不到給一組泛用預設。清單走鐘不會卡住使用者——`update_vibe_tags` 本身不驗證標籤內容是否在清單內，只驗證數量與長度。
+> 4. 🟢 **UI 落點**：活動詳情頁「成員」分頁籤，自己的卡片上直接可編輯（不需展開），其他成員的卡片顯示他們設定的標籤，讓剛配對成功的陌生人能提早對齊「這場大家想怎麼參與」的期待，降低配對後才發現期待不一致的社交摩擦。
+
+> **v1.29 變更紀錄**（Achievement Badges 成就徽章，第 1 節新增 1.7）：
+> 1. 🟢 **不新增任何表／欄位**：使用者明確要求「補充可信度系統，不是取代」——四個徽章全部從既有的 `user_reliability_event`/`rematch_vote`/`match_request` 即時計算，跟可信度等級本身「不存分數欄位，查詢時算」同一個精神（v1.1 變更 4）。這是這輪風險最低的一支，純讀取、零寫入路徑、零 schema 變更。
+> 2. 🟢 **新增 `rpc: get_my_badges()`**：回傳四個徽章各自的達成狀態——🌱 初次參團（≥1 次 `ATTENDED`）、⚡ 準時好車友（累計 ≥3 次 `ATTENDED` 且 0 次 `NO_SHOW`）、☕ 相談甚歡（≥1 組雙向成立的 `rematch_vote`）、🏀 熱血揪團長（自己發起且成功配對的 Request ≥3 筆）。門檻皆為 MVP 起始值，之後可依實際數據調整，調整不需要改 schema。
+> 3. 🔴 **刻意用累計、不比照 `fn_reliability_tier` 只看近 30 天**：徽章代表「曾經達成」的里程碑（獎勵性質），可信度等級是「近期表現」的即時反映（風控性質）——兩者目的不同，故意用不同的時間窗，不是實作疏漏。
+> 4. 🟢 **UI 落點**：「帳戶」頁，可信度等級卡片正下方，已達成的徽章正常顯示、未達成的低透明度顯示（可以看到「還差什麼」但不喧賓奪主）。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）

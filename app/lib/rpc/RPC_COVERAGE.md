@@ -794,6 +794,209 @@ as `getActivityMemberProfiles()` in `lib/rpc/activity_rpc.dart`:
    field-non-duplication check). `supabase test db` passes clean (22 files,
    205 assertions, no regressions).
 
+## v1.24 update: `mark_arrived` — Arrival Check「我到了」
+
+New feature, not a doc/code gap. Migrations
+`20260801100000_arrival_check_schema.sql` (adds `activity_member.arrived_at`
++ `notification_event_type = 'MEMBER_ARRIVED'`),
+`20260801100100_arrival_check_rpc.sql` (**`mark_arrived(activity_id)`**,
+`SECURITY DEFINER`), `20260801100200_realtime_activity_member.sql` (adds
+`activity_member` to the `supabase_realtime` publication — it had been
+deliberately excluded, see the provider comment below).
+
+1. Same gate as `update_meeting_hint`/`update_meeting_point` (§6.6/6.7):
+   caller must be a `JOINED` member, activity `status in (MATCHED, ONGOING)`,
+   else `NOT_ACTIVITY_MEMBER`/`ACTIVITY_NOT_ACTIVE`.
+2. One-directional: `arrived_at` only ever moves `null → now()`, no RPC path
+   clears it back to `null`.
+3. Idempotent by design, not by accident: a second call from an
+   already-arrived member returns the existing row and does **not** insert
+   another `notification` row — verified by pgTAP (see below), since a
+   naive `update ... returning` would silently re-fire the notification
+   insert on every repeat call otherwise.
+4. Notification recipients are the activity's JOINED members **excluding
+   the arriver** — deliberately not copying `update_meeting_point`'s
+   broadcast-to-everyone-including-self pattern; being told "you arrived"
+   about yourself has no information value.
+5. Wrapped as `markArrived()` in `lib/rpc/activity_rpc.dart`. Client-side,
+   `activity_detail_providers.dart` adds a narrow
+   `activityArrivalStreamProvider` (`user_id`/`arrived_at` only) rather than
+   converting the whole member roster (`activityMemberRosterProvider`) to a
+   `StreamProvider` — that provider's own comment explains why it's a plain
+   `FutureProvider` (no realtime need previously); arrival status is the
+   first roster-adjacent field that genuinely needs realtime, so it's
+   layered on top instead of changing the existing provider's shape.
+6. Covered by `supabase/tests/database/24_arrival_check.test.sql` (9 pgTAP
+   assertions: NOT_ACTIVITY_MEMBER, successful mark, correct-recipient
+   notification, self-exclusion, idempotency/no-duplicate-notification,
+   reverse-direction notification, COMPLETED/CANCELLED boundaries).
+
+## v1.25 update: `submit_feedback` + `send-feedback-email` Edge Function — filled the long-standing 〔聯絡信箱待補〕 placeholder
+
+New feature. Migrations `20260801110000_feedback_schema.sql` (new
+`feedback` table, RLS mirrors `report`'s own-write/own-read shape) and
+`20260801110100_feedback_rpc.sql` (**`submit_feedback(message,
+activity_id?, app_version?, device_info?)`**, `SECURITY DEFINER`).
+
+1. `feedback_screen.dart` was a pure static FAQ page with a literal
+   `〔聯絡信箱待補〕` placeholder where a contact email should go — this
+   round replaces that with an actual submission form instead of just
+   filling in an address.
+2. Two-step client flow, deliberately not one atomic operation:
+   `submitFeedback()` (RPC, durable — the `feedback` row is the only
+   guaranteed-persistent artifact) then best-effort
+   `sendFeedbackEmail()` (`client.functions.invoke('send-feedback-email')`).
+   The email step's failure is swallowed and never surfaces to the user —
+   same non-blocking pattern as `account_deletion.dart`'s
+   `_invokeDeleteAuthUserWithRetry` treats its Edge Function call.
+3. New Edge Function `supabase/functions/send-feedback-email/` — same
+   "only place holding a secret key" shape as `delete-auth-user` (v1.14):
+   `RESEND_API_KEY`/`FEEDBACK_EMAIL_TO`/optional `FEEDBACK_EMAIL_FROM` are
+   Supabase secrets, never in `app/.env`. Takes only a `feedback_id`,
+   re-reads the row server-side via service_role rather than trusting
+   client-supplied email content, and checks the row's `user_id` matches
+   the caller's JWT (blocks replaying someone else's `feedback_id` to
+   trigger a resend).
+4. Added `package_info_plus` dependency for `app_version` metadata;
+   `device_info` deliberately uses `dart:io`'s `Platform.operatingSystem`
+   instead of adding `device_info_plus` — good enough for support triage
+   without a second, heavier platform-channel plugin.
+5. `AppTextField` gained an optional `maxLines` parameter (default `1`,
+   every existing call site unaffected) to support the feedback message's
+   multi-line input — reused rather than duplicating a one-off `TextField`.
+6. No pgTAP coverage for the Edge Function itself (Deno runtime, outside
+   pgTAP's scope) — `submit_feedback`'s SQL-level behavior (auth, length
+   validation, row shape) is covered by
+   `supabase/tests/database/25_feedback.test.sql`.
+
+## v1.26 update: `get_campus_pulse` — homepage "Campus Activity Pulse"
+
+New feature. Migration `20260801120000_campus_pulse_rpc.sql` adds
+**`get_campus_pulse(school, campus)`** (`SECURITY DEFINER`, returns
+aggregate `(activity_type_id, activity_type_name, request_count)` rows).
+
+1. Deliberately aggregate-only: `match_request`'s `my_requests_select` RLS
+   policy is owner/member-scoped by design (the blind-matching boundary,
+   SPEC §11) — this RPC never exposes an individual request's owner or
+   timing, only a per-activity-type count of currently-`REQUESTING` rows.
+2. Wrapped as `getCampusPulse()` in `lib/rpc/activity_type_rpc.dart`
+   (returns a small `CampusPulseEntry` DTO, not a generated table class —
+   the RPC returns a custom aggregate shape, not a `setof <table>`).
+3. `lib/match/match_providers.dart`'s `campusPulseProvider` is a
+   `StreamProvider.family` built from a 30s `Timer.periodic`, **not**
+   Realtime — adding all of `match_request` to the `supabase_realtime`
+   publication would leak individual add/remove event timing, a strictly
+   finer-grained signal than the aggregate count this feature needs. See
+   the migration and provider's own comments for the full reasoning.
+4. UI: `_CampusPulseBanner` in `create_request_screen.dart`, reusing that
+   file's existing private `_activityTypeIcon()` keyword-match helper
+   rather than duplicating an icon table. Renders nothing (not an empty
+   state) when the campus currently has zero `REQUESTING` requests.
+5. Covered by `supabase/tests/database/26_campus_pulse.test.sql` — counts
+   only `REQUESTING` (not `DRAFT`/`PENDING_CONFIRMATION`/`MATCHED`), scoped
+   correctly per `(school, campus)`, zero-count types omitted entirely.
+
+## v1.27 update: `subscribe_activity_alert`/`unsubscribe_activity_alert` — Alert Subscription
+
+New feature. Migrations `20260801130000_alert_subscription_schema.sql`
+(new `activity_alert_subscription` table + `notification_event_type =
+'ALERT_TRIGGERED'`), `20260801130100_alert_subscription_rpc.sql`
+(**`subscribe_activity_alert`**/**`unsubscribe_activity_alert`**), and
+`20260801130200_alert_subscription_trigger.sql` (re-`create or replace`s
+`submit_request` — copied verbatim from
+`20260724122600_delete_account_guard.sql`'s version, only the new
+notify-subscribers block appended after the `REQUESTING` transition;
+watch for future `submit_request` edits landing in a different migration
+and forgetting this block exists downstream).
+
+1. `expires_at` belongs to the *subscriber* (how long they're willing to
+   wait), not the thing being subscribed to — same soft-expiry shape as
+   `app_user.next_request_allowed_at`/`suspended_until`: no cleanup job,
+   just filter `expires_at > now()` wherever it matters.
+2. Notification payload deliberately omits `request_id` — same reasoning
+   as v1.26's `get_campus_pulse`: `match_request` RLS still blocks
+   non-owner/member reads regardless, so including an id the client can't
+   resolve into anything adds a field with no payoff. The client deep-links
+   `ALERT_TRIGGERED` to `/match` (home), not an activity/request detail
+   screen — see the new branch in `notifications_screen.dart`'s `_open()`.
+3. Not consumed on fire: a subscription can trigger multiple
+   `ALERT_TRIGGERED` notifications within its window (each matching new
+   `REQUESTING` request is a genuinely new opportunity) — capped instead by
+   a max-5-concurrent-active-subscriptions guard in the RPC
+   (`TOO_MANY_ALERT_SUBSCRIPTIONS`, new `ApiErrorCode` value), not a
+   per-fire rate limit.
+4. Wrapped in `lib/rpc/alert_subscription_rpc.dart`;
+   `lib/match/match_providers.dart`'s `myActiveAlertSubscriptionsProvider`
+   is a plain `FutureProvider` (no realtime need — this is a short list the
+   user manages, not a live feed) filtered to `expires_at > now()`. UI is
+   `_AlertSubscriptionSection` in `create_request_screen.dart`, next to the
+   v1.26 pulse banner.
+5. Covered by `supabase/tests/database/27_alert_subscription.test.sql`:
+   lookahead-hours bounds, the 5-subscription cap, `submit_request` firing
+   `ALERT_TRIGGERED` only for matching/unexpired subscriptions and never
+   for the submitter's own, and idempotent unsubscribe.
+
+## v1.28 update: `update_vibe_tags` — Vibe Tags
+
+New feature. Migrations `20260801140000_vibe_tags_schema.sql` (adds
+`activity_member.vibe_tags text[]`, count-only CHECK — see that file's
+comment for why per-element length validation was deliberately left
+RPC-only rather than also a DB CHECK: array-element CHECK constraints have
+enough Postgres edge cases that this round didn't want to ship one
+untested against a real local instance) and
+`20260801140100_vibe_tags_rpc.sql` (**`update_vibe_tags(activity_id,
+tags)`**, `SECURITY DEFINER`).
+
+1. Deliberately lives on `activity_member` (post-match), not
+   `request_member`/`match_request` (pre-match) — the user explicitly asked
+   these never become matching filters. Putting the column post-match makes
+   that structurally true (the matching engine never reads this table's new
+   column) rather than a policy someone could accidentally violate later by
+   wiring it into `fn_run_matching_engine`.
+2. Same shape as `update_meeting_hint`: overwrite (not append-only), no
+   notification, `JOINED` + `status in (MATCHED, ONGOING)` gate.
+3. Tag catalog is a client-side keyword-matched table
+   (`_vibeTagOptionsFor()` in `activity_detail_screen.dart`, same pattern as
+   `create_request_screen.dart`'s existing `_activityTypeIcon()`) — not a
+   backend admin-approved table like `activity_type`. The RPC only
+   validates count (≤3) and length (≤20 chars each), never tag content
+   against the catalog, so a stale/uncovered client catalog never blocks a
+   user from saving.
+4. UI: self's card in the Members tab shows tags inline (editable without
+   expanding — self's card isn't expandable, see existing `isSelf ? null :`
+   tap handler); other members' tags render as read-only chips in the same
+   spot regardless of expand state.
+5. Covered by `supabase/tests/database/28_vibe_tags.test.sql`: count/length
+   limits, overwrite-not-append, empty-array-clears, `ACTIVITY_NOT_ACTIVE`
+   boundary, and confirming the matching engine path never touches this
+   column (structural, not just tested at the RPC layer).
+
+## v1.29 update: `get_my_badges` — Achievement Badges
+
+New feature. Migration `20260801150000_achievement_badges_rpc.sql` adds
+**`get_my_badges()`** — the lowest-risk addition this round: zero schema
+change, `stable`/read-only, computed entirely from existing
+`user_reliability_event`/`rematch_vote`/`match_request` data (same
+"no persisted score, query-time computation" philosophy as
+`fn_reliability_tier` itself, SPEC v1.1 change 4).
+
+1. Four badges, all cumulative (not the 30-day rolling window
+   `fn_reliability_tier` uses) — deliberate: a badge is a permanent
+   milestone ("you did this once"), not a live risk signal, so it
+   shouldn't silently un-earn itself after 30 quiet days.
+2. Wrapped as `getMyBadges()` in `lib/rpc/auth_profile_rpc.dart`, returning
+   a `Set<AchievementBadge>` (Dart enum carrying `code`/`icon`/`label`; the
+   RPC itself only returns stable string codes, presentation is client-side).
+3. `lib/match/match_providers.dart`'s `myBadgesProvider` (plain
+   `FutureProvider`), rendered by `profile_screen.dart`'s new
+   `_BadgesSection` directly under the existing reliability-tier card —
+   earned badges full-opacity, unearned dimmed (not hidden), loading/error
+   states collapse to nothing rather than disrupting the rest of the page.
+4. Covered by `supabase/tests/database/29_achievement_badges.test.sql`:
+   each badge's threshold (just-under vs just-at), mutual-vs-one-way
+   rematch_vote (must be bidirectional to count), and that an unrelated
+   user's data never leaks into another user's count.
+
 ## UI update: `propose_activity_type`/`propose_location` wired into `create_request_screen.dart`
 
 Found during manual testing feedback (敢不敢揪 round): both RPCs, their Dart
