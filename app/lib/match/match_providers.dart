@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
 import '../generated/activity.dart';
+import '../generated/activity_alert_subscription.dart';
 import '../generated/activity_type.dart';
 import '../generated/app_user.dart';
 import '../generated/match_request.dart';
@@ -37,6 +40,51 @@ final myAppUserProvider = FutureProvider<AppUser?>((ref) async {
   return row == null ? null : AppUser.fromJson(row);
 });
 
+/// Campus Activity Pulse（v1.26，UI_PLAN.md 首頁氣氛指標）——刻意用 30 秒
+/// 輪詢而非 Realtime：底層 RPC 只回傳聚合計數（見 get_campus_pulse 遷移檔
+/// 的頭註解），把 `match_request` 整張表加進 Realtime publication 會讓
+/// client 收到「哪些 Request 何時新增/消失」的逐筆事件，等於間接洩漏比
+/// 聚合數字更細的時間點資訊，違背盲配設計的初衷——輪詢一支只回聚合值的
+/// RPC 不會有這個問題。30 秒間隔在「感覺是活的」與「沒必要打得太頻繁」
+/// 之間取中間值，不是精確調校過的數字。
+final campusPulseProvider =
+    StreamProvider.family<List<CampusPulseEntry>, (SCHOOL, String)>((ref, key) {
+  final (school, campus) = key;
+  final client = ref.watch(supabaseClientProvider);
+  Future<List<CampusPulseEntry>> fetch() => getCampusPulse(client, school: school, campus: campus);
+
+  late final StreamController<List<CampusPulseEntry>> controller;
+  Timer? timer;
+  controller = StreamController<List<CampusPulseEntry>>(
+    onListen: () {
+      fetch().then(controller.add).catchError(controller.addError);
+      timer = Timer.periodic(const Duration(seconds: 30), (_) {
+        fetch().then(controller.add).catchError(controller.addError);
+      });
+    },
+    onCancel: () => timer?.cancel(),
+  );
+  ref.onDispose(() {
+    timer?.cancel();
+    controller.close();
+  });
+  return controller.stream;
+});
+
+/// Alert Subscription（v1.27）——自己目前仍有效（`expires_at > now()`）的
+/// 訂閱清單，給 `create_request_screen.dart` 顯示「你正在等的通知」+ 取消
+/// 入口。RLS 本身已限定只回自己的列，這裡另外加 `expires_at` 篩選純粹是
+/// 不想把已過期、不再有意義的舊列顯示出來（表本身不清，見
+/// `activity_alert_subscription` schema 遷移檔的既有慣例說明）。
+final myActiveAlertSubscriptionsProvider = FutureProvider<List<ActivityAlertSubscription>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('activity_alert_subscription')
+      .select()
+      .gt('expires_at', DateTime.now().toUtc().toIso8601String());
+  return ActivityAlertSubscription.converter(rows.cast<Map<String, dynamic>>());
+});
+
 /// UI_PLAN.md §2.1 步驟 3 — MVP 階段每校僅一個校區，選單實質上是自動帶入：
 /// 從該校已核准地點反查 distinct campus。
 final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((ref, school) async {
@@ -55,6 +103,13 @@ final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((ref, 
 final myReliabilityProvider = FutureProvider<MyReliability>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   return getMyReliability(client);
+});
+
+/// UI_PLAN.md §8.1「帳戶」頁——Achievement Badges（v1.29），補在可信度卡片
+/// 旁邊，兩者互補不互斥（見 `get_my_badges` 遷移檔頭註解）。
+final myBadgesProvider = FutureProvider<Set<AchievementBadge>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  return getMyBadges(client);
 });
 
 /// UI_PLAN.md §2.2 送出前預先攔截：使用者已有 `REQUESTING`/`PENDING_CONFIRMATION`

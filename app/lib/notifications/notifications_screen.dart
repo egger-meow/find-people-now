@@ -61,6 +61,8 @@ class NotificationsScreen extends ConsumerWidget {
         ? ('人數調整成立', '活動改成 ${s('target_size')} 人進行囉')
         : ('人數調整沒有成立', '活動維持原本的人數門檻，繼續幫你找人'),
     NOTIFICATION_EVENT_TYPE.MATCH_NOT_FORMED => ('這次配對沒有成立', '別擔心，可以重新發起新的邀約，我們會繼續幫你找人'),
+    NOTIFICATION_EVENT_TYPE.MEMBER_ARRIVED => ('${s('display_name')} 已抵達', '點開看看目前誰已經到了'),
+    NOTIFICATION_EVENT_TYPE.ALERT_TRIGGERED => ('你設定的提醒出現了！', '${s('campus')} 現在有人在找人一起，趕快去看看'),
   };
 }
 
@@ -78,6 +80,14 @@ class _NotificationTile extends ConsumerWidget {
     final activityId = notification.payload['activity_id']?.toString();
     if (activityId != null && activityId.isNotEmpty) {
       context.push('/activity/$activityId');
+      return;
+    }
+    if (notification.eventType == NOTIFICATION_EVENT_TYPE.ALERT_TRIGGERED) {
+      // 沒有 activity_id/request_id 可導：這則通知本來就不指向任何一筆特定
+      // 記錄（get_campus_pulse/ALERT_TRIGGERED 刻意只給聚合資訊，見
+      // 20260801130200_alert_subscription_trigger.sql 的頭註解），導去首頁
+      // 讓使用者自己發起新的 Request。
+      context.go('/match');
       return;
     }
     // request_id 類通知（DOWNGRADE_*/MATCH_NOT_FORMED）：等到使用者點開時，

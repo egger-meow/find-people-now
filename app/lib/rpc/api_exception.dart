@@ -48,6 +48,7 @@ enum ApiErrorCode {
   accountDeleted('ACCOUNT_DELETED'),
   activityNotEnded('ACTIVITY_NOT_ENDED'),
   invalidAbsentTarget('INVALID_ABSENT_TARGET'),
+  tooManyAlertSubscriptions('TOO_MANY_ALERT_SUBSCRIPTIONS'),
   unknown('__UNKNOWN__');
 
   final String code;

@@ -5,8 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../auth/auth_providers.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_STATUS;
+import '../generated/supadart_header.dart' show ACTIVITY_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
+import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
@@ -299,6 +300,176 @@ IconData _activityTypeIcon(String name) {
   return Icons.groups_rounded;
 }
 
+/// Campus Activity Pulse（v1.26）——首頁氣氛指標：「這個校區現在有人在揪」的
+/// 匿名聚合信號，不是可操作的清單（沒有點擊進某個 Request 的入口，那會
+/// 違背盲配設計）。空狀態刻意不顯示大大的「目前沒有活動」，安靜收合即可，
+/// 避免對冷啟動的校區造成反效果。
+class _CampusPulseBanner extends ConsumerWidget {
+  const _CampusPulseBanner({required this.school, required this.campus});
+
+  final SCHOOL school;
+  final String campus;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pulseAsync = ref.watch(campusPulseProvider((school, campus)));
+    final entries = pulseAsync.value;
+    if (entries == null || entries.isEmpty) return const SizedBox.shrink();
+
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🔥', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: AppSpacing.xs),
+              Text('$campus 現在有人在揪', style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final entry in entries)
+                Chip(
+                  avatar: Icon(_activityTypeIcon(entry.activityTypeName), size: 16, color: scheme.primary),
+                  label: Text('${entry.activityTypeName} · ${entry.requestCount} 組配對中'),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Alert Subscription（v1.27）——「羽球在光復校區 3 小時內出現就通知我」。
+/// 顯示目前有效的訂閱（可取消）+ 一個開新訂閱的入口，跟 [_CampusPulseBanner]
+/// 同一個位置群組，兩者都是「不用一直盯著等待室，系統會告訴你」這個產品
+/// 目標的兩面。
+class _AlertSubscriptionSection extends ConsumerWidget {
+  const _AlertSubscriptionSection({required this.school, required this.campus, required this.types});
+
+  final SCHOOL school;
+  final String campus;
+  final List<ActivityType> types;
+
+  Future<void> _openSubscribeDialog(BuildContext context, WidgetRef ref) async {
+    if (types.isEmpty) return;
+    ActivityType selectedType = types.first;
+    int hours = 3;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('設定提醒'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('活動類型', style: Theme.of(dialogContext).textTheme.labelMedium),
+              const SizedBox(height: AppSpacing.xs),
+              DropdownButton<ActivityType>(
+                isExpanded: true,
+                value: selectedType,
+                items: [
+                  for (final type in types) DropdownMenuItem(value: type, child: Text(type.name)),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedType = value);
+                },
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text('$campus 出現在幾小時內就通知我', style: Theme.of(dialogContext).textTheme.labelMedium),
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: AppSpacing.xs,
+                children: [
+                  for (final option in const [1, 3, 6, 12, 24])
+                    ChoiceChip(
+                      label: Text('$option 小時'),
+                      selected: hours == option,
+                      onSelected: (_) => setDialogState(() => hours = option),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('設定提醒')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await subscribeActivityAlert(
+        ref.read(supabaseClientProvider),
+        activityTypeId: selectedType.id,
+        school: school,
+        campus: campus,
+        lookaheadHours: hours,
+      );
+      ref.invalidate(myActiveAlertSubscriptionsProvider);
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      final message = e.code == ApiErrorCode.tooManyAlertSubscriptions ? '同時最多只能設定 5 個提醒，先取消一些吧' : '設定失敗：${e.code.name}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  Future<void> _cancel(WidgetRef ref, String subscriptionId) async {
+    await unsubscribeActivityAlert(ref.read(supabaseClientProvider), subscriptionId: subscriptionId);
+    ref.invalidate(myActiveAlertSubscriptionsProvider);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final subsAsync = ref.watch(myActiveAlertSubscriptionsProvider);
+    final subs = subsAsync.value ?? const [];
+    final typeNameById = {for (final type in types) type.id: type.name};
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notifications_active_outlined, size: 18),
+              const SizedBox(width: AppSpacing.xs),
+              const Expanded(child: Text('沒等到想要的活動？設定提醒，出現就通知你')),
+              TextButton(onPressed: () => _openSubscribeDialog(context, ref), child: const Text('設定')),
+            ],
+          ),
+          if (subs.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                for (final sub in subs)
+                  InputChip(
+                    label: Text(typeNameById[sub.activityTypeId] ?? '未知類型'),
+                    onDeleted: () => _cancel(ref, sub.id),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _CreateRequestForm extends ConsumerStatefulWidget {
   const _CreateRequestForm();
 
@@ -491,10 +662,17 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
           final window = _resolveWindow();
           final isCooldown = user.nextRequestAllowedAt != null && user.nextRequestAllowedAt!.isAfter(DateTime.now());
+          final pulseCampus = campusAsync.value?.isNotEmpty == true ? campusAsync.value!.first : null;
 
           return ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
+              if (pulseCampus != null) ...[
+                _CampusPulseBanner(school: user.school, campus: pulseCampus),
+                const SizedBox(height: AppSpacing.sm),
+                _AlertSubscriptionSection(school: user.school, campus: pulseCampus, types: types),
+                const SizedBox(height: AppSpacing.md),
+              ],
               if (isCooldown) ...[
                 AppCard(
                   child: Row(
