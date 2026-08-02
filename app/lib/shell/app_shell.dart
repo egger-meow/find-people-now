@@ -37,7 +37,7 @@ class AppShell extends ConsumerWidget {
       // FutureProvider、IndexedStack 又讓分頁常駐，不會自動重查——每次切回這個
       // 分頁時強制重新整理，確保「進行中」/「已結束」分類跟後端當下狀態一致。
       if (index == 1) {
-        ref.invalidate(myActivityListProvider);
+        invalidateMyActivityList(ref);
       }
       navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
     }

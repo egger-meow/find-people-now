@@ -103,7 +103,7 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
       // 回應後整個「我的活動」清單都可能變（雙方皆確認 -> 這筆 Request 變成
       // Activity；拒絕 -> 這輪先重新載入這張卡片顯示「未成立」，狀態最終
       // 退回 REQUESTING 由背景任務處理，下次進頁面/下拉刷新會反映）。
-      ref.invalidate(myActivityListProvider);
+      invalidateMyActivityList(ref);
       ref.invalidate(myActiveRequestProvider);
       ref.invalidate(myActiveActivityProvider);
       await _load();

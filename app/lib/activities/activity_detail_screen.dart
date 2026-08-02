@@ -126,7 +126,7 @@ class ActivityDetailScreen extends ConsumerWidget {
       final result = await cancelActivityParticipation(client, activity.id);
       if (!context.mounted) return;
 
-      ref.invalidate(myActivityListProvider);
+      invalidateMyActivityList(ref);
       ref.invalidate(myActiveActivityProvider);
       ref.invalidate(myAppUserProvider);
 
@@ -154,7 +154,7 @@ class ActivityDetailScreen extends ConsumerWidget {
       final prevStatus = previous?.value?.status;
       final nextStatus = next.value?.status;
       if (nextStatus != null && nextStatus != prevStatus) {
-        ref.invalidate(myActivityListProvider);
+        invalidateMyActivityList(ref);
         ref.invalidate(myActiveActivityProvider);
       }
     });

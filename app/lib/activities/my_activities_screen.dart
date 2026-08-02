@@ -172,7 +172,7 @@ class _ActivityList extends ConsumerWidget {
       data: (items) {
         final filtered = items.where((item) => item.isOngoing == showOngoing).toList();
         return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(myActivityListProvider),
+          onRefresh: () async => invalidateMyActivityList(ref),
           child: filtered.isEmpty
               ? ListView(
                   children: [

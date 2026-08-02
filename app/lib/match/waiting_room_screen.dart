@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../activities/my_activities_providers.dart' show myActivityListProvider;
+import '../activities/my_activities_providers.dart' show invalidateMyActivityList;
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
 import '../generated/match_request.dart';
@@ -55,10 +55,11 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       if (status != null && isTerminalForWaitingRoom(status)) {
         ref.invalidate(myActiveRequestProvider);
         ref.invalidate(myActiveActivityProvider);
-        // 反饋：配對成功後點「前往我的活動」，清單卻是空的——myActivityListProvider
-        // 同樣是快取的 FutureProvider，「我的活動」分頁在 IndexedStack 底下可能
-        // 早就 build 過一次（配對成立前），沒有東西會讓它自動重新查詢。
-        ref.invalidate(myActivityListProvider);
+        // 反饋：配對成功後點「前往我的活動」，清單卻還是配對前的「等待配對中」
+        // ——這裡原本只 invalidate myActivityListProvider，但那個 provider 只是
+        // watch 兩個來源 provider 組出來的，沒有連帶讓來源重新查詢，等於沒用
+        // （見 invalidateMyActivityList 註解）。
+        invalidateMyActivityList(ref);
       }
     });
 

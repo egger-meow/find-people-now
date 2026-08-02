@@ -97,3 +97,18 @@ final myActivityListProvider = FutureProvider<List<MyActivityListItem>>((ref) as
   ]..sort((a, b) => b.sortKey.compareTo(a.sortKey));
   return items;
 });
+
+/// 反饋：各處呼叫端一直只單獨 `ref.invalidate(myActivityListProvider)`——但這個
+/// provider 只是 `ref.watch(xxx.future)` 组合兩個來源 provider，`invalidate`
+/// 只會讓它自己的計算重跑，不會連帶讓被 watch 的 [myMatchRequestsProvider]／
+/// [myActivitiesFromActivityTableProvider] 重新查詢；那兩個沒被標成 dirty，
+/// 重跑時 `ref.watch(...future)` 直接拿到它們原本沒過期的快取結果，等於整個
+/// invalidate 沒有實際效果。曾造成配對成立後等待室顯示「配對成功」（讀的是
+/// Realtime stream，永遠新鮮），但「我的活動」清單還是顯示配對前的
+/// `等待配對中`——來回點擊變成無限迴圈。統一用這個 helper，一次把三個
+/// provider 都標成過期。
+void invalidateMyActivityList(WidgetRef ref) {
+  ref.invalidate(myMatchRequestsProvider);
+  ref.invalidate(myActivitiesFromActivityTableProvider);
+  ref.invalidate(myActivityListProvider);
+}
