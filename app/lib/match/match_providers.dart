@@ -85,8 +85,16 @@ final myActiveAlertSubscriptionsProvider = FutureProvider<List<ActivityAlertSubs
   return ActivityAlertSubscription.converter(rows.cast<Map<String, dynamic>>());
 });
 
-/// UI_PLAN.md §2.1 步驟 3 — MVP 階段每校僅一個校區，選單實質上是自動帶入：
-/// 從該校已核准地點反查 distinct campus。
+/// UI_PLAN.md §2.1 步驟 3 — 從該校已核准地點反查 distinct campus。
+///
+/// v1.32 補齊 NYCU/NTHU 全部校區的 seed 地點後，每校不再只有 1 個選項——排序
+/// 從單純字母序改成「地點數多的校區排前面」（同數再比字母序）：地點數是「這個
+/// 校區目前有多少已知地點」的代理指標，數量最多的通常就是使用者最熟悉、人最多
+/// 的主校區。這個順序不只影響選單顯示，也影響所有把 `.first` 當「預設值」用的
+/// 呼叫端（`_CampusPulseBanner`/`_AlertSubscriptionSection` 的 pulseCampus、
+/// create_request_screen 在使用者還沒有 `default_campus` 時的 fallback）——純字母
+/// 序在 NTHU 會把地點數只有 1 筆的新校區「南大」排到有 9 筆地點的主校區「校本部」
+/// 前面，語意上不合理。
 final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((ref, school) async {
   final client = ref.watch(supabaseClientProvider);
   final rows = await client
@@ -94,7 +102,16 @@ final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((ref, 
       .select('campus')
       .eq('school', school.name)
       .eq('status', 'APPROVED');
-  final campuses = rows.map((r) => r['campus'] as String).toSet().toList()..sort();
+  final counts = <String, int>{};
+  for (final row in rows) {
+    final campus = row['campus'] as String;
+    counts[campus] = (counts[campus] ?? 0) + 1;
+  }
+  final campuses = counts.keys.toList()
+    ..sort((a, b) {
+      final byCount = counts[b]!.compareTo(counts[a]!);
+      return byCount != 0 ? byCount : a.compareTo(b);
+    });
   return campuses;
 });
 

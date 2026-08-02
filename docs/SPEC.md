@@ -241,6 +241,8 @@
 > 4. 🔴 **`campuses` table 暫不正規化**：`location.campus` 目前就是純文字、`select distinct` 衍生出校區清單，資料量小、擴充成本低，暫時夠用；等真的出現英文名稱/排序/圖片/座標/管理後台/跨校（NYCU、台大、清大…）一致 ID 這類需求，再拆表，屆時只需要新增 `campuses` 表、把既有 `location.campus`/`app_user.default_campus` 文字值遷移成 FK，不影響這輪的資料形狀。
 > 5. 🟢 **首頁動態 Feed 的「校區 filter」留待該功能真正落地時再做**：目前沒有可瀏覽的首頁活動列表（`_CampusPulseBanner` 只是 create_request 畫面裡的一句氣氛提示，不是 Feed），`default_campus` 存在的意義是「先把資料準備好」，屆時直接拿來當預設 filter，不用回頭補欄位。
 > 6. 🟢 **`app_user` column-level UPDATE 授權白名單新增 `default_campus`**：延續 v1.20（`onboarding_seen_at`）與 20260724125200 收斂授權後的既有慣例——新增一個前端該能直接寫的欄位，必須額外 `grant update (default_campus)`，不會自動繼承任何舊授權。
+> 7. 🟢 **補齊 NYCU/NTHU 全部校區的 seed 地點**：`location` 表原本只有 NYCU 光復、NTHU 校本部有資料，是 SPEC §16 開放問題 4 從 v1.2 就留著的缺口——不補的話上面幾點做的校區選擇機制在兩校都只會看到 1 個選項，等於白做。依 v1.11 變更紀錄已載明的地理事實補上 NYCU 博愛/六家/陽明/北門/歸仁，以及 NTHU 南大（2016 年合併新竹教育大學校地而來），各先補一筆「校門口」代表地點（`20260803140000_seed_all_nycu_nthu_campuses.sql`）——刻意不虛構特定館舍名稱，之後使用者可以用 v1.30 的自由輸入候選機制自己補實際地點，不受這裡的預設清單限制。
+> 8. 🟢 **`campusOptionsProvider` 排序從純字母序改成「地點數多的校區排前面」**：補齊校區後才發現的副作用——NTHU 純字母序會把只有 1 筆地點的新校區「南大」排到有 9 筆地點的主校區「校本部」前面，而多處呼叫端（`_CampusPulseBanner`/`_AlertSubscriptionSection` 的 `pulseCampus`、使用者還沒有 `default_campus` 時 create_request 的 fallback）都拿排序結果的 `.first` 當預設值用，等於把冷門校區當預設，不合理。改成依地點數（代理「這個校區有多熟悉/多少人用」）降冪排序，同數才比字母序。
 
 ---
 
