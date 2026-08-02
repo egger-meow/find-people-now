@@ -7,7 +7,8 @@ import '../auth/auth_providers.dart';
 import '../data/activity_type_icons.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_STATUS, SCHOOL;
+import '../generated/match_request.dart';
+import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
@@ -63,12 +64,17 @@ class CreateRequestScreen extends ConsumerWidget {
           data: (request) {
             if (request != null) {
               // UI_PLAN §2.2 送出前預先攔截 — 還在找人流程中（REQUESTING/
-              // PENDING_CONFIRMATION）的 Request 就直接導去等待室，不重新
-              // 顯示表單。用 post-frame callback 避免在 build 中途觸發導覽。
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (context.mounted) context.push('/waiting-room/${request.id}');
-              });
-              return const LoadingIndicator(label: '你已經有進行中的配對，正在帶你過去…');
+              // PENDING_CONFIRMATION）的 Request 就不重新顯示表單。
+              //
+              // 反饋：原本用 post-frame callback 自動 context.push 去等待室——
+              // 這個畫面是分頁 branch 的 root，在 IndexedStack 底下離開等待室
+              // 後仍留在樹裡；只要 myActiveRequestProvider 因為任何原因重新
+              // build（realtime 狀態流常會這樣），就會再 push 一次等待室，使用
+              // 者從等待室按上一頁等於直接被彈回去，感覺「按兩次上一頁才出
+              // 得去」甚至卡死在這個 loading 字樣。改成跟下面 [_ActiveActivityBlock]
+              // 一致的靜態卡片＋按鈕，讓使用者自己決定要不要回等待室，不再有
+              // build 過程中觸發導覽的問題。
+              return _ActiveRequestBlock(request: request);
             }
             // 反饋：使用者目前有 MATCHED/ONGOING 活動時，配對頁該直接告知
             // 「當前有活動，無法建立新配對」，而不是讓使用者填完整張表單才在
@@ -152,6 +158,46 @@ class CreateRequestScreen extends ConsumerWidget {
       // picks up the new membership.
       ref.invalidate(myActiveRequestProvider);
     }
+  }
+}
+
+/// 跟 [_ActiveActivityBlock] 同一種靜態卡片＋按鈕模式，取代原本 build 過程中
+/// 用 post-frame callback 自動 push 去等待室的做法（見上面呼叫處註解）。
+class _ActiveRequestBlock extends StatelessWidget {
+  const _ActiveRequestBlock({required this.request});
+
+  final MatchRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final statusLabel = request.status == REQUEST_STATUS.PENDING_CONFIRMATION ? '小人數確認中' : '配對中';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.hourglass_top_rounded, size: 48, color: scheme.onSurfaceVariant),
+            const SizedBox(height: AppSpacing.md),
+            Text('你已經有進行中的配對', style: textTheme.titleLarge, textAlign: TextAlign.center),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              '狀態：$statusLabel — 完成或取消前無法建立新配對',
+              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            AppButton(
+              label: '前往等待室',
+              onPressed: () => context.push('/waiting-room/${request.id}'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -998,11 +1044,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 ),
               const SizedBox(height: AppSpacing.lg),
               AppCard(
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _allowDowngrade,
-                  onChanged: (v) => setState(() => _allowDowngrade = v),
-                  title: const Text('人數不夠時，接受少一點人也算成局？'),
+                // AppCard 沒帶 onTap 時內部只有 Container/DecoratedBox，沒有
+                // Material 祖先——SwitchListTile 內建的 ListTile 找不到最近的
+                // Material 畫 ink splash，會噴 "background color or ink
+                // splashes may be invisible" assertion。這裡自己包一層透明
+                // Material 補上。
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _allowDowngrade,
+                    onChanged: (v) => setState(() => _allowDowngrade = v),
+                    title: const Text('人數不夠時，接受少一點人也算成局？'),
+                  ),
                 ),
               ),
               const SizedBox(height: AppSpacing.md),

@@ -187,31 +187,40 @@ class ProfileScreen extends ConsumerWidget {
                   const _SectionLabel('說明與回饋'),
                   AppCard(
                     padding: EdgeInsets.zero,
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.question_answer_outlined),
-                          title: const Text('反饋 / 常見問答'),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: () => context.push('/profile/feedback'),
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(Icons.menu_book_outlined),
-                          title: const Text('使用說明'),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: () => context.push('/help'),
-                        ),
-                      ],
+                    // AppCard 沒帶 onTap 時只有 Container/DecoratedBox，沒有
+                    // Material 祖先給裡面的 ListTile 畫 ink splash——自己補一層
+                    // 透明 Material。
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.question_answer_outlined),
+                            title: const Text('反饋 / 常見問答'),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => context.push('/profile/feedback'),
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const Icon(Icons.menu_book_outlined),
+                            title: const Text('使用說明'),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => context.push('/help'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   AppCard(
                     padding: EdgeInsets.zero,
-                    child: ListTile(
-                      leading: const Icon(Icons.logout_rounded),
-                      title: const Text('登出'),
-                      onTap: () => _confirmSignOut(context, ref),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: ListTile(
+                        leading: const Icon(Icons.logout_rounded),
+                        title: const Text('登出'),
+                        onTap: () => _confirmSignOut(context, ref),
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
