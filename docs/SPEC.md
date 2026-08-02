@@ -230,6 +230,10 @@
 > 4. 🔴 **`activity.activity_location_id` 的 FK 從指向 `location(id)` 改指向 `activity_location_option(id)`**：鎖定結果現在可能是一個 custom_name 候選，沒有對應的 `location` 列可指——`fn_start_activities()` 依得票數鎖定的邏輯不變（同票取最早提案者），只是鎖定寫入的值從「地點本身」改成「候選記錄」。前端（`_LockedLocationCard`）解析顯示名稱時要先查 `activity_location_option`，再依它是哪種來源（`location_id`/`custom_name`）決定顯示文字。
 > 5. 🟢 **`custom_name` 驗證**：RPC 層 trim 後長度需在 1~40 字（超出回 `INVALID_INPUT`），DB 層同步加 CHECK 雙重防線（同 `update_meeting_hint`/`update_vibe_tags` 既有慣例）；同一活動內同名（大小寫不敏感）重複提案退化成投票，不視為錯誤（延續既有 location_id 候選「提案已存在的候選 = 自動投票」精神）。
 
+> **v1.31 變更紀錄**（新增官方預設類型：桌遊、麻將）：
+> 1. 🟢 **新增兩筆官方 `activity_type`（`status='APPROVED'`，不走 `propose_activity_type` 審核）**：比照 v1.10 seed「先聚了再說」的做法。桌遊 `default_duration_minutes=150`、`default_min_participants=3`、`default_max_participants=8`、`group_size_step=null`；麻將 `default_duration_minutes=180`、`default_min_participants=4`、`default_max_participants=4`（固定 4 人，不設步階）。見 `20260803120000_activity_type_board_games_mahjong.sql`。數值為 admin 起始評估值，可隨時經 Supabase Dashboard 調整，不需要改 schema（同其他 `activity_type` 欄位的既有慣例）。
+> 2. 🟢 **兩者刻意不 seed 任何 `location`**：這兩種類型正是 v1.30 開放 Activity Location 自由輸入候選的原始動機——桌遊、麻將沒有可預先收錄的固定場地（桌遊店、系學會空間、私人住處等每次都不同），`location` 官方清單放什麼都不合適，因此不補任何一筆 `location` row。`location` 表本來就不分 `activity_type`（只分 `school`/`campus`，見第 9.1 節與 ERD），所以這兩種類型建立活動後，「候選清單」下拉仍會列出其他類型 seed 過的地點（例如籃球場），但都不相關；使用者在活動配對成立後應一律透過 `propose_activity_location(custom_name=...)` 自行提出候選地點供投票，這是預期使用方式，不是缺漏。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
