@@ -86,6 +86,27 @@ final activityArrivalStreamProvider =
       });
 });
 
+/// Vibe Tags（v1.28）即時同步給其他成員看——跟 [activityArrivalStreamProvider]
+/// 同一種「窄 stream 疊加在既有名單上」手法：只訂閱 `vibe_tags` 這一欄，不把
+/// 整個 [activityMemberRosterProvider]（會連帶重打兩支聯絡方式/個資 RPC）改成
+/// Realtime。反饋：使用者編輯自己的 vibe tags 後，原本只在自己這端
+/// `ref.invalidate(activityMemberRosterProvider(...))`，其他正在看同一個活動
+/// 的成員完全不會知道，要等他們自己下拉刷新才看得到。
+final activityVibeTagsStreamProvider =
+    StreamProvider.family<Map<String, List<String>>, String>((ref, activityId) {
+  final client = ref.watch(supabaseClientProvider);
+  return client
+      .from('activity_member')
+      .stream(primaryKey: ['activity_id', 'user_id'])
+      .eq('activity_id', activityId)
+      .map((rows) {
+        return {
+          for (final row in rows)
+            row['user_id'] as String: (row['vibe_tags'] as List?)?.cast<String>() ?? const <String>[],
+        };
+      });
+});
+
 /// 集合地點更新紀錄（append-only，見 `update_meeting_point` 註解）——新到舊
 /// 排序，畫面只需要顯示最新一筆＋歷史。
 final activityMeetingPointUpdatesStreamProvider =
@@ -145,6 +166,22 @@ class MemberRosterEntry {
   });
 
   MemberRosterEntry copyWithArrivedAt(DateTime? arrivedAt) => MemberRosterEntry(
+        userId: userId,
+        sourceRequestId: sourceRequestId,
+        status: status,
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+        contacts: contacts,
+        school: school,
+        department: department,
+        degreeLevel: degreeLevel,
+        reliabilityTier: reliabilityTier,
+        meetingHint: meetingHint,
+        arrivedAt: arrivedAt,
+        vibeTags: vibeTags,
+      );
+
+  MemberRosterEntry copyWithVibeTags(List<String> vibeTags) => MemberRosterEntry(
         userId: userId,
         sourceRequestId: sourceRequestId,
         status: status,

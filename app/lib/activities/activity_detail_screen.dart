@@ -1025,6 +1025,7 @@ class _MembersTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final rosterAsync = ref.watch(activityMemberRosterProvider(activityId));
     final arrivalOverride = ref.watch(activityArrivalStreamProvider(activityId)).value;
+    final vibeTagsOverride = ref.watch(activityVibeTagsStreamProvider(activityId)).value;
     final showArrival = activityStatus == ACTIVITY_STATUS.MATCHED || activityStatus == ACTIVITY_STATUS.ONGOING;
     final typesAsync = ref.watch(activityTypesProvider);
     final matchingTypes = typesAsync.value?.where((t) => t.id == activityTypeId) ?? const Iterable.empty();
@@ -1034,14 +1035,19 @@ class _MembersTab extends ConsumerWidget {
       loading: () => const LoadingIndicator(),
       error: (error, stack) => Center(child: Text('載入失敗：$error')),
       data: (rawRoster) {
-        final roster = arrivalOverride == null
-            ? rawRoster
-            : [
-                for (final member in rawRoster)
-                  arrivalOverride.containsKey(member.userId)
-                      ? member.copyWithArrivedAt(arrivalOverride[member.userId])
-                      : member,
-              ];
+        final roster = [
+          for (final member in rawRoster)
+            () {
+              var m = member;
+              if (arrivalOverride != null && arrivalOverride.containsKey(m.userId)) {
+                m = m.copyWithArrivedAt(arrivalOverride[m.userId]);
+              }
+              if (vibeTagsOverride != null && vibeTagsOverride.containsKey(m.userId)) {
+                m = m.copyWithVibeTags(vibeTagsOverride[m.userId]!);
+              }
+              return m;
+            }(),
+        ];
         final groups = <String, List<MemberRosterEntry>>{};
         for (final member in roster) {
           groups.putIfAbsent(member.sourceRequestId, () => []).add(member);
@@ -1155,35 +1161,86 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
 
   Future<void> _editVibeTags() async {
     final options = _vibeTagOptionsFor(widget.activityTypeName);
-    final selected = {...widget.member.vibeTags};
+    // 反饋：tag 也可以用來溝通（例如籃球「#有帶球」讓其他人知道不用帶），
+    // 所以除了預設選項，使用者要能自己打字新增——後端 update_vibe_tags 本來
+    // 就沒有白名單限制（只驗證數量 ≤3、單則 ≤20 字，見遷移檔註解），這裡補上
+    // 前端缺的自由輸入欄位即可，不算新開放什麼。
+    final selected = <String>[...widget.member.vibeTags];
+    final textController = TextEditingController();
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
-          title: '這場你想怎麼參與？',
-          content: Wrap(
-            spacing: AppSpacing.xs,
-            children: [
-              for (final option in options)
-                FilterChip(
-                  label: Text(option),
-                  selected: selected.contains(option),
-                  onSelected: (value) => setDialogState(() {
-                    if (value) {
-                      if (selected.length < 3) selected.add(option);
-                    } else {
-                      selected.remove(option);
-                    }
-                  }),
+        builder: (dialogContext, setDialogState) {
+          void addCustomTag(String raw) {
+            final tag = raw.trim();
+            if (tag.isEmpty || tag.length > 20) return;
+            if (selected.contains(tag) || selected.length >= 3) return;
+            setDialogState(() {
+              selected.add(tag);
+              textController.clear();
+            });
+          }
+
+          return AppAdaptiveDialog(
+            title: '這場你想怎麼參與？',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '最多 3 個，可以自己打字（例如 #有帶球），讓其他人即時看到',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final option in options)
+                      FilterChip(
+                        label: Text(option),
+                        selected: selected.contains(option),
+                        onSelected: (value) => setDialogState(() {
+                          if (value) {
+                            if (selected.length < 3) selected.add(option);
+                          } else {
+                            selected.remove(option);
+                          }
+                        }),
+                      ),
+                    for (final tag in selected.where((t) => !options.contains(t)))
+                      InputChip(
+                        label: Text(tag),
+                        onDeleted: () => setDialogState(() => selected.remove(tag)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                TextField(
+                  controller: textController,
+                  maxLength: 20,
+                  enabled: selected.length < 3,
+                  decoration: InputDecoration(
+                    hintText: selected.length >= 3 ? '最多 3 個標籤' : '輸入自訂標籤',
+                    isDense: true,
+                    counterText: '',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.add_rounded),
+                      tooltip: '新增標籤',
+                      onPressed: selected.length >= 3 ? null : () => addCustomTag(textController.text),
+                    ),
+                  ),
+                  onSubmitted: addCustomTag,
+                ),
+              ],
+            ),
+            actions: [
+              AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+              AppDialogAction(label: '儲存', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
             ],
-          ),
-          actions: [
-            AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
-            AppDialogAction(label: '儲存', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
-          ],
-        ),
+          );
+        },
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -1192,7 +1249,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
       await updateVibeTags(
         ref.read(supabaseClientProvider),
         activityId: widget.activityId,
-        tags: selected.toList(),
+        tags: selected,
       );
       ref.invalidate(activityMemberRosterProvider(widget.activityId));
     } on ApiException {
