@@ -17,7 +17,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(9);
+select plan(10);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -26,6 +26,7 @@ select plan(9);
 create temp table fixtures (
   author_id    uuid,
   other_id     uuid,
+  deleted_id   uuid,
   activity_id  uuid
 );
 insert into fixtures default values;
@@ -36,6 +37,7 @@ declare
   v_act_type_id  uuid;
   v_author_id    uuid := gen_random_uuid();
   v_other_id     uuid := gen_random_uuid();
+  v_deleted_id   uuid := gen_random_uuid();
   v_activity_id  uuid;
   v_now          timestamptz := now();
 begin
@@ -43,16 +45,22 @@ begin
 
   insert into auth.users (id, email) values
     (v_author_id, 'fb_author@nycu.edu.tw'),
-    (v_other_id, 'fb_other@nycu.edu.tw');
+    (v_other_id, 'fb_other@nycu.edu.tw'),
+    (v_deleted_id, 'fb_deleted@nycu.edu.tw');
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig) values
     (v_author_id, 'fb_author@nycu.edu.tw', 'NYCU', 'FB Author', 'https://avatar.fbauthor', 'UNDERGRAD', 'fb_author_ig'),
-    (v_other_id, 'fb_other@nycu.edu.tw', 'NYCU', 'FB Other', 'https://avatar.fbother', 'UNDERGRAD', 'fb_other_ig');
+    (v_other_id, 'fb_other@nycu.edu.tw', 'NYCU', 'FB Other', 'https://avatar.fbother', 'UNDERGRAD', 'fb_other_ig'),
+    (v_deleted_id, 'fb_deleted@nycu.edu.tw', 'NYCU', 'FB Deleted', 'https://avatar.fbdeleted', 'UNDERGRAD', 'fb_deleted_ig');
+
+  update app_user
+     set email = 'deleted+' || v_deleted_id::text, deleted_at = now()
+   where id = v_deleted_id;
 
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status, contact_visible_until)
   values (v_act_type_id, 'NYCU', 'FB區', v_now, v_now + interval '90 minutes', 'ONGOING', v_now + interval '24 hours')
   returning id into v_activity_id;
 
-  update fixtures set author_id = v_author_id, other_id = v_other_id, activity_id = v_activity_id;
+  update fixtures set author_id = v_author_id, other_id = v_other_id, deleted_id = v_deleted_id, activity_id = v_activity_id;
 end;
 $setup$;
 
@@ -123,6 +131,24 @@ select throws_ok(
   'INVALID_INPUT',
   '超過 2000 字應被 MESSAGE_TOO_LONG (INVALID_INPUT) 擋下'
 );
+
+-- -----------------------------------------------------------------------------
+-- 4.1 已刪除帳號呼叫 submit_feedback 應被 ACCOUNT_DELETED 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  $sql$select submit_feedback('已刪除帳號的回饋')$sql$,
+  'ACCOUNT_DELETED',
+  '已刪除帳號呼叫 submit_feedback 應被 ACCOUNT_DELETED 擋下'
+);
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select author_id::text from fixtures), true);
+end $$;
 
 -- -----------------------------------------------------------------------------
 -- 5. RLS：送出者自己看得到，別人查不到

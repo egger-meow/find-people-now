@@ -19,6 +19,9 @@
 --   ⑦ match_history_avoidance 涉及刪除者的 pair 被清掉
 --   ⑧ 冪等：重複呼叫 delete_account() 回傳 already_deleted=true、不報錯
 --   ⑨ 所有身分驗證類 RPC 補上的 ACCOUNT_DELETED 檢查，實際擋下一支代表性 RPC
+--   ⑩ v1.29.1 修正回歸測試：meeting_hint/vibe_tags 這兩個個人化自由文字欄位，
+--      應在刪除帳號後清空——不限目前 status（MATCHED activity 上的列）、
+--      也不限 activity 是否已結束（COMPLETED activity 的歷史列一樣要清）
 --
 -- 執行：`supabase test db`
 -- 全檔包在 BEGIN;...ROLLBACK; 內，測試結束自動還原，不需手動清理資料。
@@ -29,7 +32,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(23);
+select plan(25);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -47,6 +50,7 @@ create temp table fixtures (
   actor1_id       uuid,  -- MATCHED activity 的成員，將被刪除；有提案+投票地點
   actor2_id       uuid,  -- 同一活動的另一個成員，不該受影響
   activity_id     uuid,
+  completed_activity_id uuid,  -- actor1 在一個已 COMPLETED 活動上的歷史列，測 meeting_hint/vibe_tags 清除
   bystander_id    uuid,  -- match_history_avoidance 的另一方，只需存在滿足 FK
   loc_id          uuid,
   original_degree text,
@@ -70,6 +74,7 @@ declare
   v_req_other    uuid;
   v_req_act      uuid;
   v_activity     activity;
+  v_completed_activity activity;
   v_loc_id       uuid;
   v_pc_id        uuid;
 begin
@@ -118,6 +123,21 @@ begin
   insert into activity_member (activity_id, user_id, source_request_id, status)
   select v_activity.id, u, v_req_act, 'JOINED' from unnest(array[v_actor1, v_actor2]) as u;
 
+  -- actor1 在 MATCHED activity 上填了個人化自由文字，測刪除帳號後應被清空
+  update activity_member
+     set meeting_hint = '躲在福利社門口，穿紅色外套',
+         vibe_tags    = array['新手歡樂場', '流汗就好']
+   where activity_id = v_activity.id and user_id = v_actor1;
+
+  -- actor1 在一個已 COMPLETED 的舊活動上也留了自由文字——這張表的重點是驗證
+  -- 這種「活動早已結束、不會再被任何狀態轉移碰到」的歷史列也要被清空，不是
+  -- 只有目前進行中的那筆才清。
+  insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
+  values (v_act_type_id, 'NYCU', v_campus, now() - interval '3 hours', now() - interval '2 hours', 'COMPLETED')
+  returning * into v_completed_activity;
+  insert into activity_member (activity_id, user_id, source_request_id, status, meeting_hint, vibe_tags)
+  values (v_completed_activity.id, v_actor1, v_req_act, 'JOINED', '穿黑色外套', array['認真拼戰']);
+
   insert into activity_location_option (activity_id, location_id, proposed_by)
   values (v_activity.id, v_loc_id, v_actor1);
   insert into activity_location_vote (activity_id, user_id, location_id)
@@ -142,6 +162,7 @@ begin
     owner_id = v_owner, member1_id = v_member1, req_owned_id = v_req_owned,
     other_owner_id = v_other_owner, member2_id = v_member2, req_other_id = v_req_other,
     actor1_id = v_actor1, actor2_id = v_actor2, activity_id = v_activity.id,
+    completed_activity_id = v_completed_activity.id,
     bystander_id = v_bystander, loc_id = v_loc_id,
     original_degree = 'MASTER', original_school = 'NYCU';
 end;
@@ -202,6 +223,23 @@ select is(
     where activity_id = (select activity_id from fixtures) and user_id = (select actor1_id from fixtures)),
   'CANCELLED',
   'actor1 在 MATCHED activity 上的 activity_member 應變成 CANCELLED'
+);
+
+-- -----------------------------------------------------------------------------
+-- 6.1/6.2 meeting_hint/vibe_tags 應在刪除帳號後清空——不限目前 status
+--         （剛轉 CANCELLED 的那筆），也不限 activity 是否早已 COMPLETED
+-- -----------------------------------------------------------------------------
+
+select ok(
+  (select meeting_hint is null and vibe_tags is null from activity_member
+    where activity_id = (select activity_id from fixtures) and user_id = (select actor1_id from fixtures)),
+  'actor1 在 MATCHED activity 上的 meeting_hint/vibe_tags 應在刪除帳號後清空'
+);
+
+select ok(
+  (select meeting_hint is null and vibe_tags is null from activity_member
+    where activity_id = (select completed_activity_id from fixtures) and user_id = (select actor1_id from fixtures)),
+  'actor1 在早已 COMPLETED 的舊活動上的 meeting_hint/vibe_tags 歷史列也應被清空'
 );
 
 -- -----------------------------------------------------------------------------

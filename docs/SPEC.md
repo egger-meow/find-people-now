@@ -215,6 +215,14 @@
 > 3. 🔴 **刻意用累計、不比照 `fn_reliability_tier` 只看近 30 天**：徽章代表「曾經達成」的里程碑（獎勵性質），可信度等級是「近期表現」的即時反映（風控性質）——兩者目的不同，故意用不同的時間窗，不是實作疏漏。
 > 4. 🟢 **UI 落點**：「帳戶」頁，可信度等級卡片正下方，已達成的徽章正常顯示、未達成的低透明度顯示（可以看到「還差什麼」但不喧賓奪主）。
 
+> **v1.29.1 變更紀錄**（v1.24–v1.29 六個新功能的健壯性覆核，比照 v1.14.1 的校對性質——不新增產品決策，修正實作缺口）：
+> 1. 🔴 **`mark_arrived` 並發競態修正**：原本的冪等判斷是「先 `SELECT arrived_at is not null` 再 `UPDATE`」兩步分開，不是原子操作——兩個並發呼叫可以都通過「還沒抵達」的檢查，各自送一次 `MEMBER_ARRIVED` 給其他成員，洗版重複通知（`arrived_at` 最終值本身不會錯，只是通知會重複）。改成 `UPDATE ... WHERE arrived_at IS NULL RETURNING`，用單一陳述式的原子性取代兩步檢查。見 `20260801160000_fix_mark_arrived_race.sql`。
+> 2. 🔴 **`delete_account()` 補清 `activity_member.meeting_hint`/`.vibe_tags`**：這兩欄是使用者自己打的自由文字，對其他活動成員可見，且沒有時效性（活動早已 `COMPLETED` 也一樣留著）。`delete_account()` 逐表去識別化清單裡從未涵蓋這兩欄——不是「比照 meeting_hint 當初的處理方式」，因為 meeting_hint（v1.11.1）從來沒被 `delete_account()`（v1.14）處理過，這是既有的遺漏，vibe_tags（v1.28）只是重複踩了同一個坑。修法：新增一段 UPDATE，清空該使用者名下*所有*（不限目前 status、不限 activity 是否仍在進行中）`activity_member` 列的這兩欄。`arrived_at` 不動——純時間戳事實，不含自由輸入內容，不具識別力。見 `20260801160100_fix_delete_account_personal_text.sql`。
+> 3. 🟡 **`activity_alert_subscription` 補上清理背景任務**：v1.27 schema 當初的設計註解類比 `app_user.next_request_allowed_at`（每人一欄、被覆寫）主張「不需要清理」，但這個類比不成立——`activity_alert_subscription` 是每次 `subscribe_activity_alert` 呼叫就新增一列，過期後從不刪除，會隨使用量無限累積。新增 `fn_cleanup_alert_subscriptions()`（回傳實際清掉的列數，比照既有背景任務慣例）並掛進 pg_cron（15 分鐘一次，誤差不影響任何功能正確性，純粹是資料庫容量管理）。見 `20260801160200_alert_subscription_cleanup.sql`。
+> 4. 🟡 **7 支新 RPC 補上 `ACCOUNT_DELETED` 檢查**：`mark_arrived`／`update_vibe_tags`／`submit_feedback`／`get_campus_pulse`／`subscribe_activity_alert`／`unsubscribe_activity_alert`／`get_my_badges`——v1.14 起「所有 `auth.uid()`-driven RPC 都要檢查 `ACCOUNT_DELETED`」是持續在維護的既有慣例（v1.18 `submit_report` 仍照做），這輪六個新功能的新 RPC 全部漏掉了。多數情況下即使沒有這個檢查也不會被繞過（例如 `mark_arrived`／`update_vibe_tags` 靠 `activity_member.status` 已經是 `CANCELLED` 或 `activity.status` 已經 `COMPLETED` 間接擋掉），但這是巧合，不是設計，補上才是穩定的保證。見 `20260801160300_account_deleted_guard_new_rpcs.sql`。
+> 5. 🟢 **檢查過、確認沒問題、刻意不修的項目**：`subscribe_activity_alert` 的 5 筆上限檢查（`count>=5` 再 `INSERT`）有一樣的 check-then-act race，但程式碼註解已明講「純防呆防洗版，不是資安邊界」，極端併發下頂多多出 1-2 筆，不影響任何安全性質；`get_my_badges` 三段各自獨立 `SELECT` 之間沒有交易一致性保護，但每個徽章判準只依賴自己那一段查詢的單點快照，不存在跨段拼出錯誤徽章的情況；`activity_alert_subscription` 觸發邏輯（掛在 `submit_request` 內）純 `INSERT...SELECT`，走索引，不鎖任何跨交易共用資源，大量訂閱者/大量送出不構成死鎖或效能風險；`user_block` 與 alert 通知的交互——通知 payload 只有 `(activity_type_id, school, campus)`，不帶身份資訊，即使通知到封鎖/被封鎖對象也不違反盲配隱私設計；`feedback.message` 可能含 PII 但這張表本來就只有本人看得到，是否在刪帳號時一併清是資料保留政策問題而非資料外洩 bug，這輪不動。
+> 6. 🟢 **pgTAP 補齊**：`mark_arrived`/`update_vibe_tags` 補上 `ACTIVITY_NOT_FOUND` 測試；`unsubscribe_activity_alert` 補上「不能刪除別人的訂閱」測試（原本只測過刪不存在的 id）；六支受影響 RPC 各補一則 `ACCOUNT_DELETED` 回歸測試；`13_delete_account.test.sql` 補上 meeting_hint/vibe_tags 清除的回歸測試（含一筆早已 `COMPLETED` 活動上的歷史列，驗證不是只清目前進行中那筆）；新增 `30_alert_subscription_cleanup.test.sql` 涵蓋 `fn_cleanup_alert_subscriptions`。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）

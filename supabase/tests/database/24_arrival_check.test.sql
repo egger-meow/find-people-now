@@ -13,7 +13,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(9);
+select plan(11);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -25,6 +25,7 @@ create temp table fixtures (
   outsider_id     uuid,
   c1_id           uuid,  -- activity_2 (COMPLETED) member
   x1_id           uuid,  -- activity_3 (CANCELLED) member
+  deleted_id      uuid,  -- activity_1 member，帳號已刪除
   act_type_id     uuid,
   campus          text,
   activity1_id    uuid,
@@ -41,6 +42,7 @@ declare
   v_outsider  uuid := gen_random_uuid();
   v_c1        uuid := gen_random_uuid();
   v_x1        uuid := gen_random_uuid();
+  v_deleted   uuid := gen_random_uuid();
   v_act_type_id uuid;
   v_campus      text := '光復';
   v_req1        uuid;
@@ -53,14 +55,23 @@ begin
   insert into auth.users (id, email) values
     (v_m1, 'ac_m1@nycu.edu.tw'), (v_m2, 'ac_m2@nycu.edu.tw'),
     (v_outsider, 'ac_outsider@nycu.edu.tw'),
-    (v_c1, 'ac_c1@nycu.edu.tw'), (v_x1, 'ac_x1@nycu.edu.tw');
+    (v_c1, 'ac_c1@nycu.edu.tw'), (v_x1, 'ac_x1@nycu.edu.tw'),
+    (v_deleted, 'ac_deleted@nycu.edu.tw');
 
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_line) values
     (v_m1, 'ac_m1@nycu.edu.tw', 'NYCU', 'Ac M1', 'https://avatar.ac_m1', 'MASTER', 'ac_m1_line'),
     (v_m2, 'ac_m2@nycu.edu.tw', 'NYCU', 'Ac M2', 'https://avatar.ac_m2', 'MASTER', 'ac_m2_line'),
     (v_outsider, 'ac_outsider@nycu.edu.tw', 'NYCU', 'Ac Outsider', 'https://avatar.ac_outsider', 'MASTER', 'ac_outsider_line'),
     (v_c1, 'ac_c1@nycu.edu.tw', 'NYCU', 'Ac C1', 'https://avatar.ac_c1', 'MASTER', 'ac_c1_line'),
-    (v_x1, 'ac_x1@nycu.edu.tw', 'NYCU', 'Ac X1', 'https://avatar.ac_x1', 'MASTER', 'ac_x1_line');
+    (v_x1, 'ac_x1@nycu.edu.tw', 'NYCU', 'Ac X1', 'https://avatar.ac_x1', 'MASTER', 'ac_x1_line'),
+    (v_deleted, 'ac_deleted@nycu.edu.tw', 'NYCU', 'Ac Deleted', 'https://avatar.ac_deleted', 'MASTER', 'ac_deleted_line');
+
+  -- 比照 delete_account() 實際去識別化後的狀態，不直接偽造成一筆一開始就是
+  -- deleted 的 row（會撞上 school_matches_email 之類的 CHECK 在插入當下還沒有
+  -- deleted_at 短路條件可用）。
+  update app_user
+     set email = 'deleted+' || v_deleted::text, deleted_at = now()
+   where id = v_deleted;
 
   select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
 
@@ -81,7 +92,7 @@ begin
   values (v_act_type_id, 'NYCU', v_campus, now() + interval '1 hour', now() + interval '2 hours', 'MATCHED')
   returning * into v_activity1;
   insert into activity_member (activity_id, user_id, source_request_id, status)
-  select v_activity1.id, u, v_req1, 'JOINED' from unnest(array[v_m1, v_m2]) as u;
+  select v_activity1.id, u, v_req1, 'JOINED' from unnest(array[v_m1, v_m2, v_deleted]) as u;
 
   -- activity_2：COMPLETED，測邊界
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
@@ -99,6 +110,7 @@ begin
 
   update fixtures set
     m1_id = v_m1, m2_id = v_m2, outsider_id = v_outsider, c1_id = v_c1, x1_id = v_x1,
+    deleted_id = v_deleted,
     act_type_id = v_act_type_id, campus = v_campus,
     activity1_id = v_activity1.id, activity2_id = v_activity2.id, activity3_id = v_activity3.id;
 end;
@@ -236,6 +248,34 @@ select throws_ok(
   format($sql$select mark_arrived(%L)$sql$, (select activity3_id from fixtures)),
   'ACTIVITY_NOT_ACTIVE',
   'CANCELLED 的活動不可再標記抵達，應被 ACTIVITY_NOT_ACTIVE 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 9. 邊界：不存在的 activity_id 應被 NOT_FOUND 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select m1_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select mark_arrived(%L)$sql$, gen_random_uuid()),
+  'NOT_FOUND',
+  '不存在的 activity_id 應被 NOT_FOUND 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 10. 已刪除帳號呼叫 mark_arrived 應被 ACCOUNT_DELETED 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select mark_arrived(%L)$sql$, (select activity1_id from fixtures)),
+  'ACCOUNT_DELETED',
+  '已刪除帳號呼叫 mark_arrived 應被 ACCOUNT_DELETED 擋下'
 );
 
 select * from finish();

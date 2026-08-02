@@ -23,7 +23,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(11);
+select plan(13);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -33,6 +33,7 @@ create temp table fixtures (
   subscriber_id   uuid,
   submitter_id    uuid,
   other_id        uuid,
+  deleted_id      uuid,
   basketball_id   uuid,
   coffee_id       uuid,
   campus          text,
@@ -46,6 +47,7 @@ declare
   v_subscriber  uuid := gen_random_uuid();
   v_submitter   uuid := gen_random_uuid();
   v_other       uuid := gen_random_uuid();
+  v_deleted     uuid := gen_random_uuid();
   v_basketball  uuid;
   v_coffee      uuid;
   v_campus      text := 'AS測試區';
@@ -55,14 +57,20 @@ begin
   select id into v_coffee from activity_type where name = '咖啡' limit 1;
 
   insert into auth.users (id, email) values
-    (v_subscriber, 'as_sub@nycu.edu.tw'), (v_submitter, 'as_submit@nycu.edu.tw'), (v_other, 'as_other@nycu.edu.tw');
+    (v_subscriber, 'as_sub@nycu.edu.tw'), (v_submitter, 'as_submit@nycu.edu.tw'), (v_other, 'as_other@nycu.edu.tw'),
+    (v_deleted, 'as_deleted@nycu.edu.tw');
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig) values
     (v_subscriber, 'as_sub@nycu.edu.tw', 'NYCU', 'AS Subscriber', 'https://avatar.assub', 'UNDERGRAD', 'as_sub_ig'),
     (v_submitter, 'as_submit@nycu.edu.tw', 'NYCU', 'AS Submitter', 'https://avatar.assubmit', 'UNDERGRAD', 'as_submit_ig'),
-    (v_other, 'as_other@nycu.edu.tw', 'NYCU', 'AS Other', 'https://avatar.asother', 'UNDERGRAD', 'as_other_ig');
+    (v_other, 'as_other@nycu.edu.tw', 'NYCU', 'AS Other', 'https://avatar.asother', 'UNDERGRAD', 'as_other_ig'),
+    (v_deleted, 'as_deleted@nycu.edu.tw', 'NYCU', 'AS Deleted', 'https://avatar.asdeleted', 'UNDERGRAD', 'as_deleted_ig');
+
+  update app_user
+     set email = 'deleted+' || v_deleted::text, deleted_at = now()
+   where id = v_deleted;
 
   update fixtures set
-    subscriber_id = v_subscriber, submitter_id = v_submitter, other_id = v_other,
+    subscriber_id = v_subscriber, submitter_id = v_submitter, other_id = v_other, deleted_id = v_deleted,
     basketball_id = v_basketball, coffee_id = v_coffee, campus = v_campus, other_campus = v_other_campus;
 end;
 $setup$;
@@ -206,6 +214,45 @@ end $$;
 select lives_ok(
   $sql$select unsubscribe_activity_alert(gen_random_uuid())$sql$,
   '取消一筆不存在的訂閱應冪等成功，不拋錯'
+);
+
+-- -----------------------------------------------------------------------------
+-- 9.1 unsubscribe 不能刪除別人的訂閱（不拋錯，但也不應真的刪掉）
+-- -----------------------------------------------------------------------------
+
+do $$
+declare
+  v_target_id uuid;
+begin
+  select id into v_target_id from activity_alert_subscription
+   where user_id = (select subscriber_id from fixtures)
+     and activity_type_id = (select basketball_id from fixtures);
+
+  perform set_config('request.jwt.claim.sub', (select other_id from fixtures)::text, true);
+  perform unsubscribe_activity_alert(v_target_id);
+end $$;
+
+select is(
+  (select count(*)::int from activity_alert_subscription
+    where user_id = (select subscriber_id from fixtures)
+      and activity_type_id = (select basketball_id from fixtures)),
+  1,
+  '別人呼叫 unsubscribe_activity_alert 傳我的訂閱 id 不應真的刪掉我的訂閱記錄'
+);
+
+-- -----------------------------------------------------------------------------
+-- 9.2 已刪除帳號呼叫 subscribe_activity_alert 應被 ACCOUNT_DELETED 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select subscribe_activity_alert(%L, 'NYCU'::school, %L, 3)$sql$,
+    (select basketball_id from fixtures), (select campus from fixtures)),
+  'ACCOUNT_DELETED',
+  '已刪除帳號呼叫 subscribe_activity_alert 應被 ACCOUNT_DELETED 擋下'
 );
 
 -- -----------------------------------------------------------------------------

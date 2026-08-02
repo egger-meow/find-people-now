@@ -826,10 +826,12 @@ deliberately excluded, see the provider comment below).
    `FutureProvider` (no realtime need previously); arrival status is the
    first roster-adjacent field that genuinely needs realtime, so it's
    layered on top instead of changing the existing provider's shape.
-6. Covered by `supabase/tests/database/24_arrival_check.test.sql` (9 pgTAP
+6. Covered by `supabase/tests/database/24_arrival_check.test.sql` (11 pgTAP
    assertions: NOT_ACTIVITY_MEMBER, successful mark, correct-recipient
    notification, self-exclusion, idempotency/no-duplicate-notification,
-   reverse-direction notification, COMPLETED/CANCELLED boundaries).
+   reverse-direction notification, COMPLETED/CANCELLED boundaries,
+   ACTIVITY_NOT_FOUND, ACCOUNT_DELETED — see the v1.29.1 update below for the
+   race-condition fix in the underlying RPC).
 
 ## v1.25 update: `submit_feedback` + `send-feedback-email` Edge Function — filled the long-standing 〔聯絡信箱待補〕 placeholder
 
@@ -996,6 +998,43 @@ change, `stable`/read-only, computed entirely from existing
    each badge's threshold (just-under vs just-at), mutual-vs-one-way
    rematch_vote (must be bidirectional to count), and that an unrelated
    user's data never leaks into another user's count.
+
+## v1.29.1 update: robustness fixes across the six v1.24–v1.29 RPCs
+
+Not new features — a targeted correctness pass (concurrency, RLS, delete-account
+interaction, error-path coverage) requested against the six features above,
+same spirit as v1.14.1's doc-vs-implementation audit. Full rationale in
+SPEC.md's v1.29.1 changelog entry; summary here:
+
+1. **`mark_arrived` race fixed** (`20260801160000_fix_mark_arrived_race.sql`):
+   the idempotency check was `SELECT` then `UPDATE` as two separate
+   statements, so two concurrent calls could both pass the "not yet arrived"
+   check and each fire a `MEMBER_ARRIVED` notification. Now a single
+   `UPDATE ... WHERE arrived_at IS NULL RETURNING`. `24_arrival_check.test.sql`
+   grew from 9 to 11 assertions (adds `ACTIVITY_NOT_FOUND` + `ACCOUNT_DELETED`
+   coverage; the idempotency assertion already in place continues to hold
+   under the atomic version).
+2. **`delete_account()` now clears `meeting_hint`/`vibe_tags`**
+   (`20260801160100_fix_delete_account_personal_text.sql`) on every
+   `activity_member` row for the deleting user, regardless of status —
+   these are free-text fields visible to other members and were never
+   de-identified. `13_delete_account.test.sql` grew from 23 to 25 assertions.
+3. **`fn_cleanup_alert_subscriptions()` + pg_cron schedule added**
+   (`20260801160200_alert_subscription_cleanup.sql`) — the table had no
+   cleanup path and grows one row per `subscribe_activity_alert` call, never
+   shrinking. New `30_alert_subscription_cleanup.test.sql` (3 assertions).
+4. **`ACCOUNT_DELETED` check added** to `update_vibe_tags`,
+   `submit_feedback`, `get_campus_pulse`, `subscribe_activity_alert`,
+   `unsubscribe_activity_alert`, `get_my_badges`
+   (`20260801160300_account_deleted_guard_new_rpcs.sql`), matching the
+   convention established in v1.14 and continued in v1.18's `submit_report`.
+   `25_feedback.test.sql` (9→10), `26_campus_pulse.test.sql` (4→5),
+   `28_vibe_tags.test.sql` (8→10) each grew by one assertion; `27_alert_
+   subscription.test.sql` grew by two (9.1 also adds a regression test that
+   `unsubscribe_activity_alert` can't delete another user's subscription —
+   previously only tested against a nonexistent id, so the `user_id =
+   auth.uid()` clause in the `DELETE` had no test actually pinning it);
+   `29_achievement_badges.test.sql` (9→10).
 
 ## UI update: `propose_activity_type`/`propose_location` wired into `create_request_screen.dart`
 

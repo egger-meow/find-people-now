@@ -18,7 +18,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(9);
+select plan(10);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -35,6 +35,7 @@ create temp table fixtures (
   oneway_target_id uuid,
   organizer3_id uuid, -- 3 筆 MATCHED owner
   organizer2_id uuid, -- 2 筆 MATCHED owner（不應得徽章）
+  deleted_id  uuid,  -- 帳號已刪除
   act_type_id uuid,
   campus      text,
   dummy_activity_id uuid
@@ -54,6 +55,7 @@ declare
   v_oneway_target uuid := gen_random_uuid();
   v_organizer3 uuid := gen_random_uuid();
   v_organizer2 uuid := gen_random_uuid();
+  v_deleted    uuid := gen_random_uuid();
   v_act_type_id uuid;
   v_campus text := 'AB測試區';
   v_dummy_activity activity;
@@ -63,10 +65,14 @@ begin
 
   insert into auth.users (id, email)
   select u, u::text || '@nycu.edu.tw'
-    from unnest(array[v_zero, v_first, v_punctual, v_noshow, v_mutual_a, v_mutual_b, v_oneway, v_oneway_target, v_organizer3, v_organizer2]) as u;
+    from unnest(array[v_zero, v_first, v_punctual, v_noshow, v_mutual_a, v_mutual_b, v_oneway, v_oneway_target, v_organizer3, v_organizer2, v_deleted]) as u;
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig)
   select u, u::text || '@nycu.edu.tw', 'NYCU', 'AB ' || u::text, 'https://avatar.ab', 'UNDERGRAD', 'ab_ig'
-    from unnest(array[v_zero, v_first, v_punctual, v_noshow, v_mutual_a, v_mutual_b, v_oneway, v_oneway_target, v_organizer3, v_organizer2]) as u;
+    from unnest(array[v_zero, v_first, v_punctual, v_noshow, v_mutual_a, v_mutual_b, v_oneway, v_oneway_target, v_organizer3, v_organizer2, v_deleted]) as u;
+
+  update app_user
+     set email = 'deleted+' || v_deleted::text, deleted_at = now()
+   where id = v_deleted;
 
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
   values (v_act_type_id, 'NYCU', v_campus, now() - interval '3 hours', now() - interval '2 hours', 'COMPLETED')
@@ -112,7 +118,7 @@ begin
   update fixtures set
     zero_id = v_zero, first_id = v_first, punctual_id = v_punctual, noshow_id = v_noshow,
     mutual_a_id = v_mutual_a, mutual_b_id = v_mutual_b, oneway_id = v_oneway, oneway_target_id = v_oneway_target,
-    organizer3_id = v_organizer3, organizer2_id = v_organizer2,
+    organizer3_id = v_organizer3, organizer2_id = v_organizer2, deleted_id = v_deleted,
     act_type_id = v_act_type_id, campus = v_campus, dummy_activity_id = v_dummy_activity.id;
 end;
 $setup$;
@@ -221,6 +227,20 @@ select is(
   (select earned from get_my_badges() where badge_code = 'ENTHUSIASTIC_ORGANIZER'),
   false,
   '只有 2 筆不應達成 ENTHUSIASTIC_ORGANIZER'
+);
+
+-- -----------------------------------------------------------------------------
+-- 6. 已刪除帳號呼叫 get_my_badges 應被 ACCOUNT_DELETED 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  $sql$select * from get_my_badges()$sql$,
+  'ACCOUNT_DELETED',
+  '已刪除帳號呼叫 get_my_badges 應被 ACCOUNT_DELETED 擋下'
 );
 
 select * from finish();

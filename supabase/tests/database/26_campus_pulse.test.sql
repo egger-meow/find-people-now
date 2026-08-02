@@ -16,7 +16,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(4);
+select plan(5);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -24,6 +24,7 @@ select plan(4);
 
 create temp table fixtures (
   viewer_id     uuid,
+  deleted_id    uuid,
   basketball_id uuid,
   coffee_id     uuid,
   campus        text,
@@ -35,6 +36,7 @@ grant select on fixtures to authenticated;
 do $setup$
 declare
   v_viewer        uuid := gen_random_uuid();
+  v_deleted       uuid := gen_random_uuid();
   v_owner1        uuid := gen_random_uuid();
   v_owner2        uuid := gen_random_uuid();
   v_owner3        uuid := gen_random_uuid();
@@ -49,12 +51,16 @@ begin
   select id into v_coffee_id from activity_type where name = '咖啡' limit 1;
 
   insert into auth.users (id, email) values
-    (v_viewer, 'cp_viewer@nycu.edu.tw'), (v_owner1, 'cp_o1@nycu.edu.tw'),
+    (v_viewer, 'cp_viewer@nycu.edu.tw'), (v_deleted, 'cp_deleted@nycu.edu.tw'), (v_owner1, 'cp_o1@nycu.edu.tw'),
     (v_owner2, 'cp_o2@nycu.edu.tw'), (v_owner3, 'cp_o3@nycu.edu.tw'), (v_owner4, 'cp_o4@nycu.edu.tw'),
     (v_owner5, 'cp_o5@nycu.edu.tw');
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig)
   select u, u::text || '@nycu.edu.tw', 'NYCU', 'CP ' || u::text, 'https://avatar.cp', 'UNDERGRAD', 'cp_ig'
-    from unnest(array[v_viewer, v_owner1, v_owner2, v_owner3, v_owner4, v_owner5]) as u;
+    from unnest(array[v_viewer, v_deleted, v_owner1, v_owner2, v_owner3, v_owner4, v_owner5]) as u;
+
+  update app_user
+     set email = 'deleted+' || v_deleted::text, deleted_at = now()
+   where id = v_deleted;
 
   -- 2 筆籃球 REQUESTING（同校區）
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
@@ -79,7 +85,7 @@ begin
   values (v_owner5, v_basketball_id, 'NYCU', v_other_campus, now(), now() + interval '2 hours', 2, 4, 'REQUESTING');
 
   update fixtures set
-    viewer_id = v_viewer, basketball_id = v_basketball_id, coffee_id = v_coffee_id,
+    viewer_id = v_viewer, deleted_id = v_deleted, basketball_id = v_basketball_id, coffee_id = v_coffee_id,
     campus = v_campus, other_campus = v_other_campus;
 end;
 $setup$;
@@ -130,6 +136,20 @@ select is(
     where activity_type_id = (select coffee_id from fixtures)),
   0,
   '零筆的活動類型完全不應出現在結果列中'
+);
+
+-- -----------------------------------------------------------------------------
+-- 5. 已刪除帳號呼叫 get_campus_pulse 應被 ACCOUNT_DELETED 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select * from get_campus_pulse('NYCU'::school, %L)$sql$, (select campus from fixtures)),
+  'ACCOUNT_DELETED',
+  '已刪除帳號呼叫 get_campus_pulse 應被 ACCOUNT_DELETED 擋下'
 );
 
 select * from finish();

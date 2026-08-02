@@ -20,7 +20,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(8);
+select plan(10);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -30,6 +30,7 @@ create temp table fixtures (
   m1_id        uuid,
   outsider_id  uuid,
   c1_id        uuid,
+  deleted_id   uuid,
   act_type_id  uuid,
   campus       text,
   activity1_id uuid,
@@ -43,6 +44,7 @@ declare
   v_m1          uuid := gen_random_uuid();
   v_outsider    uuid := gen_random_uuid();
   v_c1          uuid := gen_random_uuid();
+  v_deleted     uuid := gen_random_uuid();
   v_act_type_id uuid;
   v_campus      text := 'VT測試區';
   v_req1        uuid;
@@ -53,11 +55,17 @@ begin
   select id into v_act_type_id from activity_type where name = '籃球' limit 1;
 
   insert into auth.users (id, email) values
-    (v_m1, 'vt_m1@nycu.edu.tw'), (v_outsider, 'vt_outsider@nycu.edu.tw'), (v_c1, 'vt_c1@nycu.edu.tw');
+    (v_m1, 'vt_m1@nycu.edu.tw'), (v_outsider, 'vt_outsider@nycu.edu.tw'), (v_c1, 'vt_c1@nycu.edu.tw'),
+    (v_deleted, 'vt_deleted@nycu.edu.tw');
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_line) values
     (v_m1, 'vt_m1@nycu.edu.tw', 'NYCU', 'Vt M1', 'https://avatar.vt_m1', 'MASTER', 'vt_m1_line'),
     (v_outsider, 'vt_outsider@nycu.edu.tw', 'NYCU', 'Vt Outsider', 'https://avatar.vt_outsider', 'MASTER', 'vt_outsider_line'),
-    (v_c1, 'vt_c1@nycu.edu.tw', 'NYCU', 'Vt C1', 'https://avatar.vt_c1', 'MASTER', 'vt_c1_line');
+    (v_c1, 'vt_c1@nycu.edu.tw', 'NYCU', 'Vt C1', 'https://avatar.vt_c1', 'MASTER', 'vt_c1_line'),
+    (v_deleted, 'vt_deleted@nycu.edu.tw', 'NYCU', 'Vt Deleted', 'https://avatar.vt_deleted', 'MASTER', 'vt_deleted_line');
+
+  update app_user
+     set email = 'deleted+' || v_deleted::text, deleted_at = now()
+   where id = v_deleted;
 
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
   values (v_m1, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 2, 4, 'MATCHED')
@@ -71,6 +79,8 @@ begin
   returning * into v_activity1;
   insert into activity_member (activity_id, user_id, source_request_id, status)
   values (v_activity1.id, v_m1, v_req1, 'JOINED');
+  insert into activity_member (activity_id, user_id, source_request_id, status)
+  values (v_activity1.id, v_deleted, v_req1, 'JOINED');
 
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
   values (v_act_type_id, 'NYCU', v_campus, now() - interval '3 hours', now() - interval '2 hours', 'COMPLETED')
@@ -79,7 +89,8 @@ begin
   values (v_activity2.id, v_c1, v_req2, 'JOINED');
 
   update fixtures set
-    m1_id = v_m1, outsider_id = v_outsider, c1_id = v_c1, act_type_id = v_act_type_id,
+    m1_id = v_m1, outsider_id = v_outsider, c1_id = v_c1, deleted_id = v_deleted,
+    act_type_id = v_act_type_id,
     campus = v_campus, activity1_id = v_activity1.id, activity2_id = v_activity2.id;
 end;
 $setup$;
@@ -189,6 +200,34 @@ select is(
   (select count(*)::int from notification where user_id = (select m1_id from fixtures)),
   0,
   '設定 vibe_tags 不應觸發任何通知'
+);
+
+-- -----------------------------------------------------------------------------
+-- 9. 邊界：不存在的 activity_id 應被 NOT_FOUND 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select m1_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select update_vibe_tags(%L, array['認真拼戰'])$sql$, gen_random_uuid()),
+  'NOT_FOUND',
+  '不存在的 activity_id 應被 NOT_FOUND 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 10. 已刪除帳號呼叫 update_vibe_tags 應被 ACCOUNT_DELETED 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select update_vibe_tags(%L, array['認真拼戰'])$sql$, (select activity1_id from fixtures)),
+  'ACCOUNT_DELETED',
+  '已刪除帳號呼叫 update_vibe_tags 應被 ACCOUNT_DELETED 擋下'
 );
 
 select * from finish();
