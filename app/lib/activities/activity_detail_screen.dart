@@ -293,7 +293,10 @@ class _CompletionReportBanner extends ConsumerWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 FilledButton(
-                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size(64, 36),
+                  ),
                   onPressed: () => showModalBottomSheet<void>(
                     context: context,
                     isScrollControlled: true,
@@ -541,7 +544,10 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
               ),
               title: Text(m.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: OutlinedButton(
-                style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  minimumSize: const Size(64, 36),
+                ),
                 onPressed: _voted.contains(m.userId) || _busy.contains(m.userId) ? null : () => _vote(m.userId),
                 child: Text(_voted.contains(m.userId) ? '已按讚' : '👍 再約'),
               ),
@@ -780,6 +786,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   OutlinedButton(
+                    style: OutlinedButton.styleFrom(minimumSize: const Size(64, 36)),
                     onPressed: _busy || myVoteLocationId == option.locationId
                         ? null
                         : () => _vote(option.locationId),
@@ -1357,7 +1364,10 @@ class _RematchButtonState extends ConsumerState<_RematchButton> {
     final voted = votesAsync.value?.contains(widget.toUserId) ?? false;
     return OutlinedButton(
       onPressed: voted || _busy ? null : _vote,
-      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(64, 36),
+      ),
       child: Text(voted ? '已再約' : '👍 再約'),
     );
   }
@@ -1395,7 +1405,10 @@ class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
   Widget build(BuildContext context) {
     return FilledButton.tonal(
       onPressed: _busy ? null : _markArrived,
-      style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+      style: FilledButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(64, 36),
+      ),
       child: _busy
           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
           : const Text('我到了'),
