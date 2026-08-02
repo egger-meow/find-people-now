@@ -47,6 +47,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   bool _uploadingAvatar = false;
   String? _error;
 
+  // v1.32 — 主要校區。只有該校已核准地點涵蓋 2 個以上校區時才要求使用者選
+  // （見 build() 內 campusAsync 的判斷），_campusOptions 供 _submit() 驗證用。
+  String? _defaultCampus;
+  List<String> _campusOptions = const [];
+
   @override
   void initState() {
     super.initState();
@@ -100,6 +105,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
       setState(() => _error = '請至少填寫一項聯絡方式');
       return;
     }
+    if (_campusOptions.length > 1 && _defaultCampus == null) {
+      setState(() => _error = '請選擇主要校區');
+      return;
+    }
 
     setState(() {
       _loading = true;
@@ -129,6 +138,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
         contactDiscord: contactDiscord.isEmpty ? null : contactDiscord,
+        defaultCampus: _defaultCampus,
       );
       // authStateProvider (the router's refreshListenable) doesn't fire here
       // — same session, only the DB row changed — so invalidate
@@ -168,6 +178,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final school = schoolFromEmail(ref.watch(supabaseClientProvider).auth.currentUser?.email);
+    final campusAsync = school == null ? null : ref.watch(campusOptionsProvider(school));
+
     return Scaffold(
       appBar: AppBar(title: const Text('完善個人資料')),
       body: SafeArea(
@@ -226,9 +239,42 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: AppSpacing.md),
             DepartmentField(
               controller: _departmentController,
-              school: schoolFromEmail(ref.watch(supabaseClientProvider).auth.currentUser?.email),
+              school: school,
               degreeLevel: _degreeLevel,
             ),
+            // v1.32 — 主要校區：之後建立揪團（create_request_screen.dart）會
+            // 直接帶入這個值，省去每次都要重選。只有 1 個校區可選時（MVP 單
+            // 校區假設，同 campusOptionsProvider 註解）靜默帶入，不多問一步。
+            if (campusAsync != null)
+              campusAsync.when(
+                loading: () => const SizedBox.shrink(),
+                error: (_, _) => const SizedBox.shrink(),
+                data: (campuses) {
+                  _campusOptions = campuses;
+                  if (campuses.length == 1) {
+                    _defaultCampus ??= campuses.first;
+                    return const SizedBox.shrink();
+                  }
+                  if (campuses.length < 2) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: AppSpacing.md),
+                      DropdownButtonFormField<String>(
+                        initialValue: _defaultCampus,
+                        decoration: const InputDecoration(labelText: '你平常在哪個校區？'),
+                        items: [for (final c in campuses) DropdownMenuItem(value: c, child: Text(c))],
+                        onChanged: (value) => setState(() => _defaultCampus = value),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        '之後建立揪團會直接帶入這個校區，隨時可以在建立揪團時改選。',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  );
+                },
+              ),
             const SizedBox(height: AppSpacing.md),
             AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
             const SizedBox(height: AppSpacing.md),

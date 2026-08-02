@@ -81,6 +81,7 @@ erDiagram
         timestamptz created_at
         timestamptz deleted_at "nullable，帳號刪除去識別化標記，row 保留、id 不變（v1.14，見設計備註 42）"
         timestamptz onboarding_seen_at "nullable，新手上手引導卡片是否已看過（v1.20，UI_PLAN.md §11.1）"
+        text default_campus "nullable，純文字、不開 FK（比照 location.campus，v1.11 同一決定）；註冊時選過或建立揪團回寫的最近使用校區，建立揪團預設帶入（v1.32）"
     }
 
     activity_type {
@@ -371,3 +372,4 @@ erDiagram
 44. **`report` 沒有 admin API/介面，審核走 Supabase Studio 人工查詢（v1.18，比照設計備註 27 `pending_review` view 的既有慣例）**：`status='PENDING'` 的檢舉記錄由人工在 Studio 查詢處理，人工判斷後視情況手動更新對應使用者的 `suspended_until`——不新增獨立的懲罰機制，沿用既有停權欄位。與 `pending_review` view 不同的是這裡不另開 view（`report` 本身就是單一表，直接查 `status='PENDING'` 即可，不需要 UNION 多張來源表）。
 45. **NYCU 在校生年限軟性提醒不落地存欄位、也不新增任何 schema（v1.21）**：跟 `known_member_count`（設計備註 20）、得票數（設計備註 32）同一精神——入學年份（信箱本身）、`degree_level`、目前日期都已存在，註冊當下即時算即可；這個判斷只在註冊當下用一次，不需要之後反覆查詢，比前述兩者更沒有快取的理由。`fn_parse_nycu_enrollment_year`/`fn_seniority_reminder_needed` 刻意寫成 plain SQL/PL/pgSQL function（不是 RPC），方便 pgTAP 直接測、不需要模擬 `auth.uid()`；`check_enrollment_reminder` RPC 只是包一層 `auth.uid() → auth.users.email` 查詢再呼叫這兩個 helper。
 46. **自訂候選（`custom_name`）不新增 `location.status` 特殊值、不落地 `location` 表（v1.30）**：曾考慮比照既有 `PENDING`/`APPROVED` 模式新增一個如 `UNLISTED` 的 status，讓自訂地點也寫進 `location` 表、只是從一般下拉清單過濾掉——否決理由是這樣資料本質上仍是「永久增加到地點資料庫」，只是不顯示，隨活動數量線性累積孤兒列，且需要額外清理機制，跟使用者「不會永久增到預設地點資料庫」的訴求直接矛盾。改成 `activity_location_option.custom_name`（nullable text）與既有 `location_id`（改 nullable）恰好其一非空（CHECK XOR），資料只存在候選記錄本身，活動結束、候選未中選也不會留下任何 `location` 表痕跡。連帶把 `activity_location_vote.location_id`／`activity.activity_location_id` 都改成指向 `activity_location_option.id`（設計備註 31/32/33 的既有邏輯不變，只是計票/鎖定的對象從「地點」統一改成「候選記錄」）——這是唯一能讓 custom_name 候選跟既有 location_id 候選共用同一套計票/鎖定查詢、不必為兩種來源分岔邏輯的作法。
+47. **`app_user.default_campus` 不開 `campuses` 表、不開 FK（v1.32）**：跟設計備註 46 同一類判斷——曾提案正規化成獨立 `campuses` 表（`id`/`university_id`/`name`），讓 `app_user.default_campus_id`、`activity.campus_id` 都改指向 FK，未來擴充英文名稱/排序/圖片/座標/管理後台/跨校一致 ID 時比較乾淨。否決理由不是技術上做不到，而是現在還沒有任何一個上述需求成立——`location.campus` 從 v1.11 起就是純文字、`select distinct` 就能衍生出校區清單（`campusOptionsProvider`），資料量小到不需要正規化管理；`default_campus` 存的只是「使用者上次/預設選哪個」，跟 `location.campus` 保持同一種資料形狀（純文字比對）反而更一致，也不用為了一個目前用不到的欄位（`university_id`）多繞一層 join。等真的出現上述需求，屆時把 `location.campus`/`app_user.default_campus` 的文字值遷移成 FK 即可，不影響現在的資料形狀。

@@ -1112,6 +1112,60 @@ rather than implying instant availability. `DUPLICATE_TYPE_NAME`/
 `DUPLICATE_LOCATION_NAME` are mapped to a friendlier message; other
 `ApiException`s fall back to showing the raw error code.
 
+## v1.32 update: `complete_profile` gained `p_default_campus` — `app_user.default_campus`
+
+User feedback: `create_request_screen.dart` made the caller re-pick a campus
+from the chip list on every single request, even though most users only ever
+use one. Full design discussion (including a rejected `campuses` normalized
+table proposal) in SPEC.md's v1.32 changelog entry; summary here:
+
+1. **Schema**: `app_user.default_campus` (nullable text, no FK — same
+   free-text shape as `location.campus`, not a new normalized concept).
+   Migration `20260803130000_app_user_default_campus_schema.sql`. Needed an
+   explicit `grant update (default_campus) on app_user to authenticated`
+   since `20260724125200_restrict_app_user_notification_column_grants.sql`
+   collapsed the old blanket `UPDATE` grant into a column whitelist — adding
+   a column doesn't inherit that old grant automatically.
+2. **`complete_profile` gained optional `p_default_campus`**
+   (`20260803130100_app_user_default_campus_rpc.sql`) — required dropping the
+   old 9-arg signature first (`drop function if exists complete_profile(text,
+   text, degree_level, text, text, text, text, text, text);`), same class of
+   pitfall as v1.30's `propose_activity_location`/`vote_activity_location`:
+   adding a trailing default-valued param without dropping the old signature
+   creates an ambiguous overload for any 9-arg call site. The upsert's `on
+   conflict (id) do update` branch is shared with `edit_profile_screen.dart`
+   re-calling this same RPC for unrelated profile edits (never touches
+   campus) — used `default_campus = coalesce(excluded.default_campus,
+   app_user.default_campus)` so a call that doesn't pass campus can't wipe a
+   previously-set value.
+3. **Dart wrapper** (`lib/rpc/auth_profile_rpc.dart`): `completeProfile()`
+   gained optional `defaultCampus` param, sent as `p_default_campus`.
+   `AppUser` regenerated via `supadart` (`defaultCampus` field, only file
+   with content changes).
+4. **UI — registration** (`complete_profile_screen.dart`): when
+   `campusOptionsProvider(school)` resolves 2+ campuses, shows a "你平常在哪個
+   校區？" dropdown and requires a selection before submit
+   (`_campusOptions.length > 1 && _defaultCampus == null` → inline error,
+   same pattern as the existing "至少一項聯絡方式" check). When there's only 1
+   campus (current MVP reality for both schools), silently defaults to it —
+   no extra tap.
+5. **UI — request creation** (`create_request_screen.dart`): the campus chip
+   selector's initial value now prefers `user.defaultCampus` (if still a
+   valid option) over `campuses.first`; still fully overridable per-request
+   (e.g. usually at 光復 but today at 博愛). On successful submit, if the
+   campus actually used differs from `user.defaultCampus`, PATCHes it back —
+   this is the "always editable" mechanism per the user's requirement,
+   without a dedicated settings screen: whatever you pick becomes next time's
+   default.
+6. **pgTAP**: new `31_default_campus.test.sql` (4 assertions) — first call
+   sets `default_campus`; a later call without the param doesn't wipe it
+   (coalesce); a later call with a new value overwrites it; a user who never
+   passes the param stays `null`.
+7. **Explicitly deferred**: a normalized `campuses` table, and a browsable
+   homepage feed with a campus filter (`default_campus` is stored now so it's
+   ready to be that filter's default once the feed screen exists — no schema
+   rework needed then).
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

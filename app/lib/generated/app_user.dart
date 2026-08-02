@@ -21,6 +21,7 @@ class AppUser implements SupadartClass<AppUser> {
   final DateTime? nextRequestAllowedAt;
   final DateTime? deletedAt;
   final DateTime? onboardingSeenAt;
+  final String? defaultCampus;
 
   const AppUser({
     required this.id,
@@ -40,6 +41,7 @@ class AppUser implements SupadartClass<AppUser> {
     this.nextRequestAllowedAt,
     this.deletedAt,
     this.onboardingSeenAt,
+    this.defaultCampus,
   });
 
   static String get table_name => 'app_user';
@@ -60,6 +62,7 @@ class AppUser implements SupadartClass<AppUser> {
   static String get c_nextRequestAllowedAt => 'next_request_allowed_at';
   static String get c_deletedAt => 'deleted_at';
   static String get c_onboardingSeenAt => 'onboarding_seen_at';
+  static String get c_defaultCampus => 'default_campus';
 
   static List<AppUser> converter(List<Map<String, dynamic>> data) {
     return data.map(AppUser.fromJson).toList();
@@ -87,6 +90,7 @@ class AppUser implements SupadartClass<AppUser> {
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
     DateTime? onboardingSeenAt,
+    String? defaultCampus,
   }) {
     return {
       if (id != null) 'id': id,
@@ -112,6 +116,7 @@ class AppUser implements SupadartClass<AppUser> {
       if (deletedAt != null) 'deleted_at': deletedAt.toUtc().toIso8601String(),
       if (onboardingSeenAt != null)
         'onboarding_seen_at': onboardingSeenAt.toUtc().toIso8601String(),
+      if (defaultCampus != null) 'default_campus': defaultCampus,
     };
   }
 
@@ -133,6 +138,7 @@ class AppUser implements SupadartClass<AppUser> {
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
     DateTime? onboardingSeenAt,
+    String? defaultCampus,
   }) {
     return _generateMap(
       id: id,
@@ -152,6 +158,7 @@ class AppUser implements SupadartClass<AppUser> {
       nextRequestAllowedAt: nextRequestAllowedAt,
       deletedAt: deletedAt,
       onboardingSeenAt: onboardingSeenAt,
+      defaultCampus: defaultCampus,
     );
   }
 
@@ -173,6 +180,7 @@ class AppUser implements SupadartClass<AppUser> {
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
     DateTime? onboardingSeenAt,
+    String? defaultCampus,
   }) {
     return _generateMap(
       id: id,
@@ -192,6 +200,7 @@ class AppUser implements SupadartClass<AppUser> {
       nextRequestAllowedAt: nextRequestAllowedAt,
       deletedAt: deletedAt,
       onboardingSeenAt: onboardingSeenAt,
+      defaultCampus: defaultCampus,
     );
   }
 
@@ -240,6 +249,9 @@ class AppUser implements SupadartClass<AppUser> {
       onboardingSeenAt: jsonn['onboarding_seen_at'] != null
           ? DateTime.parse(jsonn['onboarding_seen_at'].toString())
           : null,
+      defaultCampus: jsonn['default_campus'] != null
+          ? jsonn['default_campus'].toString()
+          : null,
     );
   }
 
@@ -261,6 +273,7 @@ class AppUser implements SupadartClass<AppUser> {
     DateTime? nextRequestAllowedAt,
     DateTime? deletedAt,
     DateTime? onboardingSeenAt,
+    String? defaultCampus,
   }) {
     return {
       if (id != null) 'id': id,
@@ -281,6 +294,7 @@ class AppUser implements SupadartClass<AppUser> {
         'next_request_allowed_at': nextRequestAllowedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (onboardingSeenAt != null) 'onboarding_seen_at': onboardingSeenAt,
+      if (defaultCampus != null) 'default_campus': defaultCampus,
     };
   }
 
@@ -303,6 +317,7 @@ class AppUser implements SupadartClass<AppUser> {
       nextRequestAllowedAt: nextRequestAllowedAt,
       deletedAt: deletedAt,
       onboardingSeenAt: onboardingSeenAt,
+      defaultCampus: defaultCampus,
     );
   }
 
@@ -325,6 +340,7 @@ class AppUser implements SupadartClass<AppUser> {
     Object? nextRequestAllowedAt = _unset,
     Object? deletedAt = _unset,
     Object? onboardingSeenAt = _unset,
+    Object? defaultCampus = _unset,
   }) {
     return AppUser(
       id: id == _unset ? this.id : id as String,
@@ -360,6 +376,9 @@ class AppUser implements SupadartClass<AppUser> {
       onboardingSeenAt: onboardingSeenAt == _unset
           ? this.onboardingSeenAt
           : onboardingSeenAt as DateTime?,
+      defaultCampus: defaultCampus == _unset
+          ? this.defaultCampus
+          : defaultCampus as String?,
     );
   }
 }

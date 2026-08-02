@@ -19,6 +19,7 @@ Future<AppUser> completeProfile(
   String? contactIg,
   String? contactLine,
   String? contactDiscord,
+  String? defaultCampus,
 }) {
   return callRpc<AppUser>(
     client,
@@ -33,6 +34,11 @@ Future<AppUser> completeProfile(
       'p_contact_ig': contactIg,
       'p_contact_line': contactLine,
       'p_contact_discord': contactDiscord,
+      // v1.32 — 只有註冊畫面（校區選項 ≥2 個時）會帶這個參數；
+      // edit_profile_screen.dart 編輯個人資料重複呼叫時不帶，RPC 端用
+      // coalesce 保留原值，不會被這裡的 null 洗掉（見
+      // 20260803130100_app_user_default_campus_rpc.sql 註解）。
+      'p_default_campus': defaultCampus,
     },
     decode: (data) => AppUser.fromJson(data as Map<String, dynamic>),
   );

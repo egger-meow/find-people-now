@@ -234,6 +234,14 @@
 > 1. 🟢 **新增兩筆官方 `activity_type`（`status='APPROVED'`，不走 `propose_activity_type` 審核）**：比照 v1.10 seed「先聚了再說」的做法。桌遊 `default_duration_minutes=150`、`default_min_participants=3`、`default_max_participants=8`、`group_size_step=null`；麻將 `default_duration_minutes=180`、`default_min_participants=4`、`default_max_participants=4`（固定 4 人，不設步階）。見 `20260803120000_activity_type_board_games_mahjong.sql`。數值為 admin 起始評估值，可隨時經 Supabase Dashboard 調整，不需要改 schema（同其他 `activity_type` 欄位的既有慣例）。
 > 2. 🟢 **兩者刻意不 seed 任何 `location`**：這兩種類型正是 v1.30 開放 Activity Location 自由輸入候選的原始動機——桌遊、麻將沒有可預先收錄的固定場地（桌遊店、系學會空間、私人住處等每次都不同），`location` 官方清單放什麼都不合適，因此不補任何一筆 `location` row。`location` 表本來就不分 `activity_type`（只分 `school`/`campus`，見第 9.1 節與 ERD），所以這兩種類型建立活動後，「候選清單」下拉仍會列出其他類型 seed 過的地點（例如籃球場），但都不相關；使用者在活動配對成立後應一律透過 `propose_activity_location(custom_name=...)` 自行提出候選地點供投票，這是預期使用方式，不是缺漏。
 
+> **v1.32 變更紀錄**（`app_user.default_campus`：註冊時選主要校區，之後建立揪團直接預設）：
+> 1. 🟢 **背景**：使用者反饋現有 create_request 流程每次都要重選校區，體驗上像「每次開 Google Maps 都要重設住家」；同時提出正規化 `campuses` table 的完整方案。討論後拍板一個小很多的版本——這次只做 `app_user.default_campus`（純文字，比照 v1.11 對 `location.campus` 的決定，不開 table、不開 FK），`campuses` table 暫緩，等真的出現「校區要排序/圖片/座標/管理後台/跨校一致 ID」等需求再正規化，維持 MVP 節奏（見下方第 4 點）。
+> 2. 🟢 **`complete_profile` 新增可選參數 `p_default_campus`**：註冊畫面（`complete_profile_screen.dart`）在校區清單（`select distinct campus from location where school=...`，即既有 `campusOptionsProvider`）有 2 個以上選項時，讓使用者選一次「你平常在哪個校區？」隨註冊一起送出；只有 1 個選項時前端靜默帶入，不多問一步（MVP 單校區假設）。`on conflict (id) do update` 這條路徑同時是 `edit_profile_screen.dart` 編輯個人資料會重複呼叫的路徑，而編輯表單不碰校區——用 `coalesce(excluded.default_campus, app_user.default_campus)` 讓「這次沒帶值」不會洗掉先前設定，只有「這次真的帶了新值」才覆蓋。
+> 3. 🟢 **`create_request` 畫面：優先帶入 `default_campus`，選了新的就回寫**：`create_request_screen.dart` 原本每次都要在既有校區 chip 選單裡重選；改成優先用 `app_user.default_campus`（若仍在該校核准地點的校區清單內）預選，使用者仍可在該畫面改選其他校區（例如平常在光復、今天去博愛上課想找博愛的人）；送出成功後，若這次實際選的校區跟 `default_campus` 不同，直接 PATCH 回寫，讓「最近一次用的校區」自動成為下次的預設值，等同「隨時可以改」，不需要另外開一個帳號設定頁面。
+> 4. 🔴 **`campuses` table 暫不正規化**：`location.campus` 目前就是純文字、`select distinct` 衍生出校區清單，資料量小、擴充成本低，暫時夠用；等真的出現英文名稱/排序/圖片/座標/管理後台/跨校（NYCU、台大、清大…）一致 ID 這類需求，再拆表，屆時只需要新增 `campuses` 表、把既有 `location.campus`/`app_user.default_campus` 文字值遷移成 FK，不影響這輪的資料形狀。
+> 5. 🟢 **首頁動態 Feed 的「校區 filter」留待該功能真正落地時再做**：目前沒有可瀏覽的首頁活動列表（`_CampusPulseBanner` 只是 create_request 畫面裡的一句氣氛提示，不是 Feed），`default_campus` 存在的意義是「先把資料準備好」，屆時直接拿來當預設 filter，不用回頭補欄位。
+> 6. 🟢 **`app_user` column-level UPDATE 授權白名單新增 `default_campus`**：延續 v1.20（`onboarding_seen_at`）與 20260724125200 收斂授權後的既有慣例——新增一個前端該能直接寫的欄位，必須額外 `grant update (default_campus)`，不會自動繼承任何舊授權。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）

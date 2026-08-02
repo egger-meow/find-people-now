@@ -668,6 +668,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         allowDowngrade: _allowDowngrade,
       );
       await submitRequest(client, request.id);
+      // v1.32 —「隨時可以改」：這次實際選的校區跟 default_campus 不同就回寫，
+      // 下次建立揪團直接預設這裡選的（等同「上次使用的校區」）。安靜失敗——
+      // 最壞情況只是下次還要重選一次，不影響本次配對送出。
+      final user = ref.read(myAppUserProvider).value;
+      if (user != null && campus != user.defaultCampus) {
+        try {
+          await client.from('app_user').update({'default_campus': campus}).eq('id', user.id);
+          ref.invalidate(myAppUserProvider);
+        } catch (_) {}
+      }
       // 反饋：「配對中結果選活動畫面還是可以去選」——myActiveRequestProvider
       // 是普通 FutureProvider，建立/送出新 Request 這裡不會自動讓它重新查詢，
       // 使用者若之後按瀏覽器上一頁/切分頁回到配對頁，會看到過期的快取值
@@ -891,7 +901,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.error));
                   }
                   if (_selectedCampus == null || !campuses.contains(_selectedCampus)) {
-                    _selectedCampus = campuses.first;
+                    // v1.32 — 優先帶入 app_user.default_campus（註冊時選過，或
+                    // 上次建立揪團時回寫的值），沒有才 fallback 第一個選項。
+                    final defaultCampus = user.defaultCampus;
+                    _selectedCampus = (defaultCampus != null && campuses.contains(defaultCampus))
+                        ? defaultCampus
+                        : campuses.first;
                   }
                   // MVP 單校區假設（見 campusOptionsProvider 註解）：只有一個
                   // 選項時直接帶入顯示，不再讓使用者多一步選擇；反饋：地點清單
