@@ -146,6 +146,19 @@ class ActivityDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 反饋：活動狀態（如 ONGOING → COMPLETED）由背景排程觸發，不是使用者操作，
+    // 「我的活動」清單的 myActivityListProvider 只是快取的 FutureProvider，不會自動
+    // 感知這種變化——沒有這個 listen，使用者留在詳情頁看到最新狀態，回到清單卻還卡在
+    // 舊分頁（見 project_stale_futureprovider_gating 這類 bug）。
+    ref.listen<AsyncValue<Activity?>>(activityStreamProvider(activityId), (previous, next) {
+      final prevStatus = previous?.value?.status;
+      final nextStatus = next.value?.status;
+      if (nextStatus != null && nextStatus != prevStatus) {
+        ref.invalidate(myActivityListProvider);
+        ref.invalidate(myActiveActivityProvider);
+      }
+    });
+
     final activityAsync = ref.watch(activityStreamProvider(activityId));
 
     return Scaffold(
@@ -1403,15 +1416,20 @@ class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonal(
+    return FilledButton.icon(
       onPressed: _busy ? null : _markArrived,
       style: FilledButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        minimumSize: const Size(64, 36),
+        minimumSize: const Size(112, 44),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
       ),
-      child: _busy
-          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-          : const Text('我到了'),
+      icon: _busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            )
+          : const Icon(Icons.near_me_rounded, size: 18),
+      label: Text(_busy ? '標記中…' : '我到了', style: const TextStyle(fontWeight: FontWeight.w700)),
     );
   }
 }

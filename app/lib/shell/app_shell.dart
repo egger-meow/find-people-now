@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../activities/my_activities_providers.dart';
 import '../downgrade/downgrade_consent_dialog.dart';
 import '../notifications/notification_providers.dart';
 import '../onboarding/onboarding_overlay.dart';
@@ -30,8 +31,16 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(unreadNotificationCountProvider);
 
-    void onDestinationSelected(int index) =>
-        navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
+    void onDestinationSelected(int index) {
+      // 反饋：活動狀態可能在使用者離開「活動」分頁時，被背景排程（如
+      // fn_complete_activities）在背後推進，myActivityListProvider 是快取的
+      // FutureProvider、IndexedStack 又讓分頁常駐，不會自動重查——每次切回這個
+      // 分頁時強制重新整理，確保「進行中」/「已結束」分類跟後端當下狀態一致。
+      if (index == 1) {
+        ref.invalidate(myActivityListProvider);
+      }
+      navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
+    }
 
     return OnboardingGate(
       child: DowngradeConsentGate(
