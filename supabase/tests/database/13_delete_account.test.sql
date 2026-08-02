@@ -76,6 +76,7 @@ declare
   v_activity     activity;
   v_completed_activity activity;
   v_loc_id       uuid;
+  v_loc_option_id uuid;
   v_pc_id        uuid;
 begin
   insert into auth.users (id, email) values
@@ -139,9 +140,10 @@ begin
   values (v_completed_activity.id, v_actor1, v_req_act, 'JOINED', '穿黑色外套', array['認真拼戰']);
 
   insert into activity_location_option (activity_id, location_id, proposed_by)
-  values (v_activity.id, v_loc_id, v_actor1);
-  insert into activity_location_vote (activity_id, user_id, location_id)
-  values (v_activity.id, v_actor1, v_loc_id);
+  values (v_activity.id, v_loc_id, v_actor1)
+  returning id into v_loc_option_id;
+  insert into activity_location_vote (activity_id, user_id, option_id)
+  values (v_activity.id, v_actor1, v_loc_option_id);
 
   -- actor1/actor2 各自的通知收件匣（各一筆）
   insert into notification (user_id, event_type, payload) values

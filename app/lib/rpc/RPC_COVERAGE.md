@@ -1036,6 +1036,61 @@ SPEC.md's v1.29.1 changelog entry; summary here:
    auth.uid()` clause in the `DELETE` had no test actually pinning it);
    `29_achievement_badges.test.sql` (9→10).
 
+## v1.30 update: `propose_activity_location`/`vote_activity_location` — free-text candidates
+
+User feedback: the fixed-list-only rule from v1.10/v1.11 ("候選地點...不開放
+自由輸入，延續固定清單原則") didn't hold up once activity types expanded past
+on-campus meetups — board games, mahjong, off-campus cafes are one-off venues
+that shouldn't need admin review or a permanent slot in the shared `location`
+table. Full rationale in SPEC.md's v1.30 changelog entry; summary here:
+
+1. **`propose_activity_location(activity_id, location_id, custom_name)`** —
+   `custom_name` is new, optional, and mutually exclusive with `location_id`
+   (`INVALID_INPUT` if both or neither given). Giving `custom_name` (1~40
+   chars, `INVALID_INPUT` if longer) skips the `APPROVED`/scope check
+   entirely and creates a candidate scoped only to that activity — never
+   written to `location`. `propose_location` (the existing admin-review path
+   for adding to the shared directory) is unchanged and still wired into
+   `create_request_screen.dart` per the entry below; the two now serve
+   distinct purposes (one-off vs. reusable).
+2. **`vote_activity_location(activity_id, option_id)`** — `location_id`
+   renamed to `option_id`, now votes target the candidate row
+   (`activity_location_option.id`) instead of a location, since a
+   `custom_name` candidate has no `location_id` to vote for.
+   `activity_location_vote.location_id` → `option_id` in the schema
+   (`20260802120000_activity_location_free_text_schema.sql`); RPC rewrite in
+   `20260802120100_activity_location_free_text_rpc.sql`.
+3. **`activity.activity_location_id`'s FK target changed** from `location(id)`
+   to `activity_location_option(id)` — the winning candidate can now be a
+   custom one with no `location` row to point at. `fn_start_activities()`'s
+   tally/lock query updated to group by `activity_location_option.id` instead
+   of `location_id`; the winner selection logic itself (highest votes, ties
+   go to earliest `created_at`) is unchanged.
+4. **Dart wrapper changes** (`lib/rpc/activity_rpc.dart`):
+   `proposeActivityLocation()` gained an optional `customName` param
+   alongside the now-optional `locationId` (asserts exactly one is passed);
+   `voteActivityLocation()`'s `locationId` param renamed to `optionId`.
+   `ActivityLocationOption`/`ActivityLocationVote` regenerated via
+   `supadart` (`location_id` now nullable, new `custom_name` field on the
+   option; `location_id` → `option_id` on the vote).
+5. **UI** (`activity_detail_screen.dart`'s `_LocationVoting`): new "新增這場
+   活動的候選地點" button opens a text-input dialog and calls
+   `proposeActivityLocation(..., customName: ...)` directly — no review,
+   visible/votable immediately. The existing "提議新增到清單" button (admin
+   review, unchanged RPC) is relabeled "建議加入官方地點清單" to distinguish
+   it from the new instant path. `_LockedLocationCard` now resolves the
+   locked name by first looking up the winning `activity_location_option`
+   (via `activityLocationOptionsStreamProvider`), then either using its
+   `custom_name` directly or resolving `location_id` against
+   `approvedLocationsProvider` — it can no longer look `activityLocationId`
+   up directly against the location list.
+6. **pgTAP**: `06_activity_location_voting.test.sql` grew from 15 to 20
+   assertions (both/neither `INVALID_INPUT`, custom candidate creation +
+   auto-vote + confirmed not written to `location`, same-name re-propose
+   degrades to a vote, `fn_start_activities` can lock a custom candidate).
+   `13_delete_account.test.sql`'s fixture updated for the `option_id` column
+   rename (assertions themselves were `count(*)`-based, unaffected).
+
 ## UI update: `propose_activity_type`/`propose_location` wired into `create_request_screen.dart`
 
 Found during manual testing feedback (敢不敢揪 round): both RPCs, their Dart

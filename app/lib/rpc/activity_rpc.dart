@@ -178,36 +178,56 @@ Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
   );
 }
 
-/// docs/API.md §6.4 — `rpc: propose_activity_location(activity_id, location_id)`
-/// (v1.11). Proposing also casts the caller's own vote for it — a second
-/// call for a location someone else already proposed just re-votes, it's not
-/// an error (see the migration's `on conflict ... do nothing` handling).
+/// docs/API.md §6.4 — `rpc: propose_activity_location(activity_id, location_id,
+/// custom_name)` (v1.11, v1.30). Pass exactly one of [locationId]/[customName]
+/// — passing both or neither raises `INVALID_INPUT`. [locationId] must be an
+/// existing `APPROVED` location within the activity's `(school, campus)`
+/// scope, same as before v1.30. [customName] skips that review entirely and
+/// is scoped only to this activity — it is never written to the shared
+/// `location` table (see the schema migration's rationale: one-off venues
+/// like an off-campus board game cafe shouldn't have to go through admin
+/// review or permanently pollute the shared directory). Proposing also casts
+/// the caller's own vote for it — a second call for a candidate someone else
+/// already proposed (by `location_id`, or by case-insensitive `custom_name`)
+/// just re-votes, it's not an error.
 Future<ActivityLocationOption> proposeActivityLocation(
   SupabaseClient client, {
   required String activityId,
-  required String locationId,
+  String? locationId,
+  String? customName,
 }) {
+  assert(
+    (locationId == null) != (customName == null),
+    'pass exactly one of locationId/customName',
+  );
   return callRpc<ActivityLocationOption>(
     client,
     'propose_activity_location',
-    params: {'p_activity_id': activityId, 'p_location_id': locationId},
+    params: {
+      'p_activity_id': activityId,
+      'p_location_id': locationId,
+      'p_custom_name': customName,
+    },
     decode: (data) =>
         ActivityLocationOption.fromJson(data as Map<String, dynamic>),
   );
 }
 
-/// docs/API.md §6.5 — `rpc: vote_activity_location(activity_id, location_id)`
-/// (v1.11). One vote per user per activity; calling again with a different
-/// `locationId` changes the vote (upsert on `(activity_id, user_id)`).
+/// docs/API.md §6.5 — `rpc: vote_activity_location(activity_id, option_id)`
+/// (v1.11, v1.30 renamed `location_id` → `option_id`). Votes target the
+/// candidate record itself now, not a location — a v1.30 custom-name
+/// candidate has no `location_id` to vote for. One vote per user per
+/// activity; calling again with a different `optionId` changes the vote
+/// (upsert on `(activity_id, user_id)`).
 Future<ActivityLocationVote> voteActivityLocation(
   SupabaseClient client, {
   required String activityId,
-  required String locationId,
+  required String optionId,
 }) {
   return callRpc<ActivityLocationVote>(
     client,
     'vote_activity_location',
-    params: {'p_activity_id': activityId, 'p_location_id': locationId},
+    params: {'p_activity_id': activityId, 'p_option_id': optionId},
     decode: (data) =>
         ActivityLocationVote.fromJson(data as Map<String, dynamic>),
   );

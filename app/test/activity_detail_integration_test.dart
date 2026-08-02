@@ -31,6 +31,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:find_people_now/generated/activity.dart';
+import 'package:find_people_now/generated/activity_location_option.dart';
 import 'package:find_people_now/generated/activity_meeting_point_update.dart';
 import 'package:find_people_now/generated/location.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
@@ -153,6 +154,18 @@ Future<List<Location>> _approvedLocationsQuery(
       .eq('campus', campus)
       .eq('status', 'APPROVED');
   return rows.map(Location.fromJson).toList();
+}
+
+/// The exact query `activityLocationOptionsStreamProvider` issues (v1.30:
+/// `activity.activityLocationId` now points at an `activity_location_option`
+/// row, not directly at a `location` row — `_LockedLocationCard` resolves the
+/// display name through this table first).
+Future<List<ActivityLocationOption>> _activityLocationOptionsQuery(
+  SupabaseClient client,
+  String activityId,
+) async {
+  final rows = await client.from('activity_location_option').select().eq('activity_id', activityId);
+  return rows.map(ActivityLocationOption.fromJson).toList();
 }
 
 void main() {
@@ -352,7 +365,7 @@ void main() {
       // -----------------------------------------------------------------
       final option = await proposeActivityLocation(clientA, activityId: activityId, locationId: locationId);
       expect(option.locationId, locationId);
-      await voteActivityLocation(clientB, activityId: activityId, locationId: locationId);
+      await voteActivityLocation(clientB, activityId: activityId, optionId: option.id);
 
       // fn_start_activities() sweeps every ready activity system-wide in one
       // call, not scoped to this activityId — under concurrent test-file
@@ -372,11 +385,16 @@ void main() {
 
       final lockedRow = await clientA.from('activity').select().eq('id', activityId).single();
       final lockedActivity = Activity.fromJson(lockedRow);
-      expect(lockedActivity.activityLocationId, locationId);
+      expect(lockedActivity.activityLocationId, option.id);
       expect(lockedActivity.status, ACTIVITY_STATUS.ONGOING);
 
+      final options = await _activityLocationOptionsQuery(clientA, activityId);
+      final lockedOptionMatch = options.where((o) => o.id == lockedActivity.activityLocationId);
+      expect(lockedOptionMatch, isNotEmpty, reason: '_LockedLocationCard must be able to resolve the winning option');
+      expect(lockedOptionMatch.single.locationId, locationId);
+
       final approved = await _approvedLocationsQuery(clientA, lockedActivity.school, lockedActivity.campus);
-      final lockedMatch = approved.where((l) => l.id == lockedActivity.activityLocationId);
+      final lockedMatch = approved.where((l) => l.id == lockedOptionMatch.single.locationId);
       expect(lockedMatch, isNotEmpty, reason: '_LockedLocationCard must be able to resolve the name');
       expect(lockedMatch.single.name, 'ADT測試地點$stamp');
       // ignore: avoid_print

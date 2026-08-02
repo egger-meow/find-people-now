@@ -619,16 +619,30 @@ class _LockedLocationCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // v1.30：activity.activityLocationId 現在指向 activity_location_option.id
+    // （可能是既有 location 候選，也可能是自訂候選），不再直接指向 location(id)，
+    // 所以要先從候選清單找出得票勝出的那筆，再視它是哪種來源解析顯示名稱。
+    final optionsAsync = ref.watch(activityLocationOptionsStreamProvider(activity.id));
     final locationsAsync = ref.watch(
       approvedLocationsProvider((activity.school, activity.campus)),
     );
     return AppCard(
-      child: locationsAsync.when(
+      child: optionsAsync.when(
         loading: () => const LoadingIndicator(),
         error: (error, stack) => Text('載入失敗：$error'),
-        data: (locations) {
-          final locked = locations.where((l) => l.id == activity.activityLocationId).toList();
-          final name = locked.isEmpty ? '（地點已鎖定）' : locked.first.name;
+        data: (options) {
+          final locked = options.where((o) => o.id == activity.activityLocationId).toList();
+          String name = '（地點已鎖定）';
+          if (locked.isNotEmpty) {
+            final option = locked.first;
+            if (option.customName != null) {
+              name = option.customName!;
+            } else {
+              final locations = locationsAsync.value ?? const <Location>[];
+              final matching = locations.where((l) => l.id == option.locationId);
+              name = matching.isEmpty ? '（地點已鎖定）' : matching.first.name;
+            }
+          }
           return Row(
             children: [
               const Icon(Icons.lock_rounded, size: 20),
@@ -655,7 +669,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
   bool _busy = false;
   String? _error;
 
-  Future<void> _vote(String locationId) async {
+  Future<void> _vote(String optionId) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -664,7 +678,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
       await voteActivityLocation(
         ref.read(supabaseClientProvider),
         activityId: widget.activity.id,
-        locationId: locationId,
+        optionId: optionId,
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -693,18 +707,66 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
     }
   }
 
-  /// 反饋：「地點是在投票環節設定的吧，投票地點的時候可以新增」——原本
-  /// `propose_location`（送新地點給 admin 審核）被放在建立配對表單那一步，但
-  /// 那時候使用者連隊友是誰都還不知道，太早決定「這裡缺一個地點」。地點的
-  /// 需求是配對成立、開始選地點投票時才會真的浮現，入口移來這裡才合理。
-  /// 跟 [_openProposeSheet] 不同：那邊是從既有已核准地點裡挑一個當候選，這裡
-  /// 是「這個校區根本沒有我要的地點」時，送一筆全新的申請給 admin 審核。
+  /// 反饋：「投票地點的候選改不用審核，使用者可以自己打字新增投票選項」——
+  /// 活動類型已擴充到桌遊、麻將、校外咖啡廳等只會用這一次的地點，硬要求先送
+  /// admin 審核、永久寫進全域清單既不合理也造成清單污染。這裡直接建立僅該活動
+  /// 可見的候選（不經審核，不落地 location 表），成功後其他成員立刻能看到、
+  /// 直接投給它（同 activityLocationOptionsStreamProvider 的既有 Realtime 疊加）。
+  Future<void> _proposeCustom() async {
+    final nameController = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppAdaptiveDialog(
+        title: '新增這場活動的候選地點',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '例如校外咖啡廳、桌遊店——不用審核，馬上就能投票，但只有這場活動看得到',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppTextField(controller: nameController, label: '地點名稱', autofocus: true, maxLength: 40),
+          ],
+        ),
+        actions: [
+          AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+          AppDialogAction(label: '新增並投票', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
+        ],
+      ),
+    );
+    if (submitted != true || !mounted) return;
+    final name = nameController.text.trim();
+    if (name.isEmpty) return;
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await proposeActivityLocation(
+        ref.read(supabaseClientProvider),
+        activityId: widget.activity.id,
+        customName: name,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '新增失敗：${e.code.name}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 跟 [_proposeCustom] 不同：那邊是只給這場活動用的一次性候選，這裡是
+  /// 「這個地點以後其他活動應該也用得到」時，送一筆全新的申請給 admin 審核、
+  /// 加入官方地點清單（見 `propose_location` 的既有審核機制）。
   Future<void> _proposeNewLocation() async {
     final nameController = TextEditingController();
     final submitted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAdaptiveDialog(
-        title: '提議新地點',
+        title: '建議加入官方地點清單',
         content: AppTextField(controller: nameController, label: '地點名稱', autofocus: true),
         actions: [
           AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
@@ -721,7 +783,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
       await proposeLocation(client, name: name, school: widget.activity.school, campus: widget.activity.campus);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已送出「$name」，審核通過後才能投給這裡')),
+        SnackBar(content: Text('已送出「$name」，審核通過後才能投給這裡（這場活動想馬上投票，改用「新增這場活動的候選地點」）')),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -774,7 +836,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
     final votes = votesAsync.value ?? [];
     final locations = {for (final l in locationsAsync.value ?? <Location>[]) l.id: l};
     final myVotes = votes.where((v) => v.userId == userId).toList();
-    final myVoteLocationId = myVotes.isEmpty ? null : myVotes.first.locationId;
+    final myVoteOptionId = myVotes.isEmpty ? null : myVotes.first.optionId;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,21 +851,19 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                 children: [
                   Expanded(
                     child: Text(
-                      locations[option.locationId]?.name ?? '（地點）',
+                      option.customName ?? locations[option.locationId]?.name ?? '（地點）',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
                   Text(
-                    '${votes.where((v) => v.locationId == option.locationId).length} 票',
+                    '${votes.where((v) => v.optionId == option.id).length} 票',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(minimumSize: const Size(64, 36)),
-                    onPressed: _busy || myVoteLocationId == option.locationId
-                        ? null
-                        : () => _vote(option.locationId),
-                    child: Text(myVoteLocationId == option.locationId ? '已投' : '投給這裡'),
+                    onPressed: _busy || myVoteOptionId == option.id ? null : () => _vote(option.id),
+                    child: Text(myVoteOptionId == option.id ? '已投' : '投給這裡'),
                   ),
                 ],
               ),
@@ -820,16 +880,22 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
               ? null
               : () => _openProposeSheet(
                     locationsAsync.value ?? [],
-                    options.map((o) => o.locationId).toSet(),
+                    options.where((o) => o.locationId != null).map((o) => o.locationId!).toSet(),
                   ),
           icon: const Icon(Icons.add_location_alt_outlined),
           label: const Text('提案新地點'),
         ),
         const SizedBox(height: AppSpacing.xs),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _proposeCustom,
+          icon: const Icon(Icons.edit_location_alt_outlined),
+          label: const Text('新增這場活動的候選地點'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
         TextButton.icon(
           onPressed: _busy ? null : _proposeNewLocation,
           icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('沒有你要的地點？提議新增到清單'),
+          label: const Text('這個地點以後也會用到？建議加入官方清單'),
         ),
       ],
     );

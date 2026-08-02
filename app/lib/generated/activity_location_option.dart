@@ -6,16 +6,18 @@ import 'supadart_header.dart';
 class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
   final String id;
   final String activityId;
-  final String locationId;
+  final String? locationId;
   final String proposedBy;
   final DateTime createdAt;
+  final String? customName;
 
   const ActivityLocationOption({
     required this.id,
     required this.activityId,
-    required this.locationId,
+    this.locationId,
     required this.proposedBy,
     required this.createdAt,
+    this.customName,
   });
 
   static String get table_name => 'activity_location_option';
@@ -24,6 +26,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
   static String get c_locationId => 'location_id';
   static String get c_proposedBy => 'proposed_by';
   static String get c_createdAt => 'created_at';
+  static String get c_customName => 'custom_name';
 
   static List<ActivityLocationOption> converter(
     List<Map<String, dynamic>> data,
@@ -41,6 +44,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
     String? locationId,
     String? proposedBy,
     DateTime? createdAt,
+    String? customName,
   }) {
     return {
       if (id != null) 'id': id,
@@ -48,15 +52,17 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
       if (locationId != null) 'location_id': locationId,
       if (proposedBy != null) 'proposed_by': proposedBy,
       if (createdAt != null) 'created_at': createdAt.toUtc().toIso8601String(),
+      if (customName != null) 'custom_name': customName,
     };
   }
 
   static Map<String, dynamic> insert({
     String? id,
     required String activityId,
-    required String locationId,
+    String? locationId,
     required String proposedBy,
     DateTime? createdAt,
+    String? customName,
   }) {
     return _generateMap(
       id: id,
@@ -64,6 +70,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
       locationId: locationId,
       proposedBy: proposedBy,
       createdAt: createdAt,
+      customName: customName,
     );
   }
 
@@ -73,6 +80,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
     String? locationId,
     String? proposedBy,
     DateTime? createdAt,
+    String? customName,
   }) {
     return _generateMap(
       id: id,
@@ -80,6 +88,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
       locationId: locationId,
       proposedBy: proposedBy,
       createdAt: createdAt,
+      customName: customName,
     );
   }
 
@@ -91,13 +100,16 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
           : '',
       locationId: jsonn['location_id'] != null
           ? jsonn['location_id'].toString()
-          : '',
+          : null,
       proposedBy: jsonn['proposed_by'] != null
           ? jsonn['proposed_by'].toString()
           : '',
       createdAt: jsonn['created_at'] != null
           ? DateTime.parse(jsonn['created_at'].toString())
           : DateTime.fromMillisecondsSinceEpoch(0),
+      customName: jsonn['custom_name'] != null
+          ? jsonn['custom_name'].toString()
+          : null,
     );
   }
 
@@ -107,6 +119,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
     String? locationId,
     String? proposedBy,
     DateTime? createdAt,
+    String? customName,
   }) {
     return {
       if (id != null) 'id': id,
@@ -114,6 +127,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
       if (locationId != null) 'location_id': locationId,
       if (proposedBy != null) 'proposed_by': proposedBy,
       if (createdAt != null) 'created_at': createdAt,
+      if (customName != null) 'custom_name': customName,
     };
   }
 
@@ -124,6 +138,7 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
       locationId: locationId,
       proposedBy: proposedBy,
       createdAt: createdAt,
+      customName: customName,
     );
   }
 
@@ -134,13 +149,19 @@ class ActivityLocationOption implements SupadartClass<ActivityLocationOption> {
     Object? locationId = _unset,
     Object? proposedBy = _unset,
     Object? createdAt = _unset,
+    Object? customName = _unset,
   }) {
     return ActivityLocationOption(
       id: id == _unset ? this.id : id as String,
       activityId: activityId == _unset ? this.activityId : activityId as String,
-      locationId: locationId == _unset ? this.locationId : locationId as String,
+      locationId: locationId == _unset
+          ? this.locationId
+          : locationId as String?,
       proposedBy: proposedBy == _unset ? this.proposedBy : proposedBy as String,
       createdAt: createdAt == _unset ? this.createdAt : createdAt as DateTime,
+      customName: customName == _unset
+          ? this.customName
+          : customName as String?,
     );
   }
 }

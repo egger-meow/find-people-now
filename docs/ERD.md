@@ -22,13 +22,13 @@ erDiagram
     app_user ||--o{ activity_member : ""
     match_request ||--o{ activity_member : "source_request_id 來源追溯"
 
-    activity ||--o{ activity_location_option : "候選地點提案（v1.11）"
-    location ||--o{ activity_location_option : "location_id"
+    activity ||--o{ activity_location_option : "候選地點提案（v1.11，自訂候選 v1.30）"
+    location ||--o{ activity_location_option : "location_id（nullable，v1.30）"
     app_user ||--o{ activity_location_option : "proposed_by"
     activity ||--o{ activity_location_vote : "得票（v1.11）"
-    location ||--o{ activity_location_vote : "location_id"
+    activity_location_option ||--o{ activity_location_vote : "option_id（v1.30，取代直接指向 location）"
     app_user ||--o{ activity_location_vote : "user_id"
-    location ||--o{ activity : "activity_location_id（nullable，鎖定後才有，v1.11）"
+    activity_location_option ||--o{ activity : "activity_location_id（nullable，鎖定後才有；v1.30 起指向 option 而非 location）"
 
     activity ||--o{ activity_meeting_point_update : "集合點更新記錄，append-only（v1.11.1）"
     app_user ||--o{ activity_meeting_point_update : "updated_by"
@@ -139,7 +139,7 @@ erDiagram
         uuid activity_type_id FK
         enum school "Matching Scope 快照，撮合當下複製自來源 Request（v1.11，取代 campus_location_id）"
         text campus "同上"
-        uuid activity_location_id FK "nullable；配對成立後由參與者投票決定的精確地點，見 activity_location_option/vote（v1.11）"
+        uuid activity_location_id FK "nullable；FK 指向 activity_location_option.id（v1.30，非直接指向 location——候選可能是自訂地點），配對成立後由參與者投票決定"
         timestamptz start_time
         timestamptz estimated_end_time "= start_time + default_duration"
         enum status "MATCHED | ONGOING | COMPLETED | CANCELLED"
@@ -150,7 +150,8 @@ erDiagram
     activity_location_option {
         uuid id PK
         uuid activity_id FK "UNIQUE(activity_id, location_id)"
-        uuid location_id FK "候選限定該 activity 的 (school, campus) 範圍內、status=APPROVED 的地點"
+        uuid location_id FK "nullable（v1.30）；候選限定該 activity 的 (school, campus) 範圍內、status=APPROVED 的地點"
+        text custom_name "nullable，1~40 字（v1.30）；跟 location_id 恰好其一非空（CHECK XOR），不經審核、不落地 location 表，僅該 activity 可見"
         uuid proposed_by FK "app_user"
         timestamptz created_at "同票時最早提案者勝出的判準（v1.11）"
     }
@@ -158,7 +159,7 @@ erDiagram
     activity_location_vote {
         uuid activity_id PK, FK "複合 PK (activity_id, user_id)"
         uuid user_id PK, FK "一人一票，改票 = update 這筆"
-        uuid location_id FK "必須是該 activity 既有的 activity_location_option"
+        uuid option_id FK "指向 activity_location_option.id（v1.30，取代直接指向 location——自訂候選沒有 location_id 可投）"
         timestamptz voted_at
     }
 
@@ -369,3 +370,4 @@ erDiagram
 43. **`user_block` 不共用 `match_history_avoidance` 的表與正規化 pair 設計（v1.17）**：`match_history_avoidance`（設計備註 15）是系統自動寫入、7 天到期、正規化成無方向性的 pair（`user_a_id < user_b_id`，查詢只需一個方向）；`user_block` 是使用者主動、永久（不到期）、有方向性——A 封鎖 B 不代表 B 封鎖 A，且只有 blocker 能單方解除，兩者語意上不是同一件事，硬塞進同一張表只會讓「到期」「正規化」「誰能解除」這些欄位對一半的資料列沒有意義。代價是 Matching Engine 的封鎖檢查（`fn_run_matching_engine`）必須用 `or` 比對兩個方向（`(blocker=a and blocked=b) or (blocker=b and blocked=a)`），而不是 avoidance 那樣 `least`/`greatest` 正規化成單一查詢路徑——這是刻意的取捨，不是漏做正規化。RLS 也刻意跟 avoidance 不同：avoidance 兩個當事人都查不到（見設計備註 15 原文的「不歸因」設計，比封鎖更敏感），`user_block` 則是 blocker 自己能查（清單管理需求），blocked 方仍然永遠查不到（核心前提：被封鎖方不該知道自己被封鎖）。
 44. **`report` 沒有 admin API/介面，審核走 Supabase Studio 人工查詢（v1.18，比照設計備註 27 `pending_review` view 的既有慣例）**：`status='PENDING'` 的檢舉記錄由人工在 Studio 查詢處理，人工判斷後視情況手動更新對應使用者的 `suspended_until`——不新增獨立的懲罰機制，沿用既有停權欄位。與 `pending_review` view 不同的是這裡不另開 view（`report` 本身就是單一表，直接查 `status='PENDING'` 即可，不需要 UNION 多張來源表）。
 45. **NYCU 在校生年限軟性提醒不落地存欄位、也不新增任何 schema（v1.21）**：跟 `known_member_count`（設計備註 20）、得票數（設計備註 32）同一精神——入學年份（信箱本身）、`degree_level`、目前日期都已存在，註冊當下即時算即可；這個判斷只在註冊當下用一次，不需要之後反覆查詢，比前述兩者更沒有快取的理由。`fn_parse_nycu_enrollment_year`/`fn_seniority_reminder_needed` 刻意寫成 plain SQL/PL/pgSQL function（不是 RPC），方便 pgTAP 直接測、不需要模擬 `auth.uid()`；`check_enrollment_reminder` RPC 只是包一層 `auth.uid() → auth.users.email` 查詢再呼叫這兩個 helper。
+46. **自訂候選（`custom_name`）不新增 `location.status` 特殊值、不落地 `location` 表（v1.30）**：曾考慮比照既有 `PENDING`/`APPROVED` 模式新增一個如 `UNLISTED` 的 status，讓自訂地點也寫進 `location` 表、只是從一般下拉清單過濾掉——否決理由是這樣資料本質上仍是「永久增加到地點資料庫」，只是不顯示，隨活動數量線性累積孤兒列，且需要額外清理機制，跟使用者「不會永久增到預設地點資料庫」的訴求直接矛盾。改成 `activity_location_option.custom_name`（nullable text）與既有 `location_id`（改 nullable）恰好其一非空（CHECK XOR），資料只存在候選記錄本身，活動結束、候選未中選也不會留下任何 `location` 表痕跡。連帶把 `activity_location_vote.location_id`／`activity.activity_location_id` 都改成指向 `activity_location_option.id`（設計備註 31/32/33 的既有邏輯不變，只是計票/鎖定的對象從「地點」統一改成「候選記錄」）——這是唯一能讓 custom_name 候選跟既有 location_id 候選共用同一套計票/鎖定查詢、不必為兩種來源分岔邏輯的作法。

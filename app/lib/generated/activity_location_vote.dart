@@ -6,21 +6,21 @@ import 'supadart_header.dart';
 class ActivityLocationVote implements SupadartClass<ActivityLocationVote> {
   final String activityId;
   final String userId;
-  final String locationId;
   final DateTime votedAt;
+  final String optionId;
 
   const ActivityLocationVote({
     required this.activityId,
     required this.userId,
-    required this.locationId,
     required this.votedAt,
+    required this.optionId,
   });
 
   static String get table_name => 'activity_location_vote';
   static String get c_activityId => 'activity_id';
   static String get c_userId => 'user_id';
-  static String get c_locationId => 'location_id';
   static String get c_votedAt => 'voted_at';
+  static String get c_optionId => 'option_id';
 
   static List<ActivityLocationVote> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityLocationVote.fromJson).toList();
@@ -33,42 +33,42 @@ class ActivityLocationVote implements SupadartClass<ActivityLocationVote> {
   static Map<String, dynamic> _generateMap({
     String? activityId,
     String? userId,
-    String? locationId,
     DateTime? votedAt,
+    String? optionId,
   }) {
     return {
       if (activityId != null) 'activity_id': activityId,
       if (userId != null) 'user_id': userId,
-      if (locationId != null) 'location_id': locationId,
       if (votedAt != null) 'voted_at': votedAt.toUtc().toIso8601String(),
+      if (optionId != null) 'option_id': optionId,
     };
   }
 
   static Map<String, dynamic> insert({
     String? activityId,
     String? userId,
-    required String locationId,
     DateTime? votedAt,
+    required String optionId,
   }) {
     return _generateMap(
       activityId: activityId,
       userId: userId,
-      locationId: locationId,
       votedAt: votedAt,
+      optionId: optionId,
     );
   }
 
   static Map<String, dynamic> update({
     String? activityId,
     String? userId,
-    String? locationId,
     DateTime? votedAt,
+    String? optionId,
   }) {
     return _generateMap(
       activityId: activityId,
       userId: userId,
-      locationId: locationId,
       votedAt: votedAt,
+      optionId: optionId,
     );
   }
 
@@ -78,26 +78,24 @@ class ActivityLocationVote implements SupadartClass<ActivityLocationVote> {
           ? jsonn['activity_id'].toString()
           : '',
       userId: jsonn['user_id'] != null ? jsonn['user_id'].toString() : '',
-      locationId: jsonn['location_id'] != null
-          ? jsonn['location_id'].toString()
-          : '',
       votedAt: jsonn['voted_at'] != null
           ? DateTime.parse(jsonn['voted_at'].toString())
           : DateTime.fromMillisecondsSinceEpoch(0),
+      optionId: jsonn['option_id'] != null ? jsonn['option_id'].toString() : '',
     );
   }
 
   static Object New({
     String? activityId,
     String? userId,
-    String? locationId,
     DateTime? votedAt,
+    String? optionId,
   }) {
     return {
       if (activityId != null) 'activity_id': activityId,
       if (userId != null) 'user_id': userId,
-      if (locationId != null) 'location_id': locationId,
       if (votedAt != null) 'voted_at': votedAt,
+      if (optionId != null) 'option_id': optionId,
     };
   }
 
@@ -105,8 +103,8 @@ class ActivityLocationVote implements SupadartClass<ActivityLocationVote> {
     return _generateMap(
       activityId: activityId,
       userId: userId,
-      locationId: locationId,
       votedAt: votedAt,
+      optionId: optionId,
     );
   }
 
@@ -114,14 +112,14 @@ class ActivityLocationVote implements SupadartClass<ActivityLocationVote> {
   ActivityLocationVote copyWith({
     Object? activityId = _unset,
     Object? userId = _unset,
-    Object? locationId = _unset,
     Object? votedAt = _unset,
+    Object? optionId = _unset,
   }) {
     return ActivityLocationVote(
       activityId: activityId == _unset ? this.activityId : activityId as String,
       userId: userId == _unset ? this.userId : userId as String,
-      locationId: locationId == _unset ? this.locationId : locationId as String,
       votedAt: votedAt == _unset ? this.votedAt : votedAt as DateTime,
+      optionId: optionId == _unset ? this.optionId : optionId as String,
     );
   }
 }

@@ -223,6 +223,13 @@
 > 5. 🟢 **檢查過、確認沒問題、刻意不修的項目**：`subscribe_activity_alert` 的 5 筆上限檢查（`count>=5` 再 `INSERT`）有一樣的 check-then-act race，但程式碼註解已明講「純防呆防洗版，不是資安邊界」，極端併發下頂多多出 1-2 筆，不影響任何安全性質；`get_my_badges` 三段各自獨立 `SELECT` 之間沒有交易一致性保護，但每個徽章判準只依賴自己那一段查詢的單點快照，不存在跨段拼出錯誤徽章的情況；`activity_alert_subscription` 觸發邏輯（掛在 `submit_request` 內）純 `INSERT...SELECT`，走索引，不鎖任何跨交易共用資源，大量訂閱者/大量送出不構成死鎖或效能風險；`user_block` 與 alert 通知的交互——通知 payload 只有 `(activity_type_id, school, campus)`，不帶身份資訊，即使通知到封鎖/被封鎖對象也不違反盲配隱私設計；`feedback.message` 可能含 PII 但這張表本來就只有本人看得到，是否在刪帳號時一併清是資料保留政策問題而非資料外洩 bug，這輪不動。
 > 6. 🟢 **pgTAP 補齊**：`mark_arrived`/`update_vibe_tags` 補上 `ACTIVITY_NOT_FOUND` 測試；`unsubscribe_activity_alert` 補上「不能刪除別人的訂閱」測試（原本只測過刪不存在的 id）；六支受影響 RPC 各補一則 `ACCOUNT_DELETED` 回歸測試；`13_delete_account.test.sql` 補上 meeting_hint/vibe_tags 清除的回歸測試（含一筆早已 `COMPLETED` 活動上的歷史列，驗證不是只清目前進行中那筆）；新增 `30_alert_subscription_cleanup.test.sql` 涵蓋 `fn_cleanup_alert_subscriptions`。
 
+> **v1.30 變更紀錄**（Activity Location 投票候選開放自由輸入，§9.1）：
+> 1. 🔴 **反轉 v1.10/v1.11「候選地點不開放自由輸入，延續固定清單原則」**：使用者反饋活動類型已擴充到桌遊、麻將、校外咖啡廳等只會用這一次的地點，硬要求先送 `propose_location` 給 admin 審核、永久寫進全域 `location` 清單，既不合理（審核有延遲，等不到就先開始投票了）也造成清單污染（一次性地點沒有被其他活動複用的價值）。`propose_activity_location` 新增可選參數 `custom_name`：與既有 `location_id` 二擇一（皆不給或都給回 `INVALID_INPUT`），給 `custom_name` 時完全跳過審核與 `(school, campus)` 範圍檢查，直接建立僅該活動可見的候選，且刻意不寫入 `location` 表——不是新增一種 `location.status`（如 `UNLISTED`）讓它從清單過濾掉，那樣資料本質上還是「永久增加到地點資料庫」，只是不顯示，仍會隨活動數量累積孤兒列、需要額外清理機制，跟使用者「不會永久增到預設地點資料庫」的訴求不符。
+> 2. 🟢 **`propose_location`（送審加入全域清單）機制維持不變**：這輪只影響單一活動內的投票候選，不影響「這個地點以後其他活動也該看得到」時的正規新增路徑——兩者服務不同需求，前者是一次性協調工具，後者才是擴充共用資料。
+> 3. 🔴 **`activity_location_vote.location_id` → `option_id`，改投給候選記錄本身**：custom_name 候選沒有 `location_id` 可投，且改成統一投給 `activity_location_option.id` 後，location_id/custom_name 兩種候選的計票、鎖定邏輯完全共用同一套查詢，不必為 custom 候選另外分岔。`vote_activity_location(activity_id, location_id)` 隨之改成 `vote_activity_location(activity_id, option_id)`。
+> 4. 🔴 **`activity.activity_location_id` 的 FK 從指向 `location(id)` 改指向 `activity_location_option(id)`**：鎖定結果現在可能是一個 custom_name 候選，沒有對應的 `location` 列可指——`fn_start_activities()` 依得票數鎖定的邏輯不變（同票取最早提案者），只是鎖定寫入的值從「地點本身」改成「候選記錄」。前端（`_LockedLocationCard`）解析顯示名稱時要先查 `activity_location_option`，再依它是哪種來源（`location_id`/`custom_name`）決定顯示文字。
+> 5. 🟢 **`custom_name` 驗證**：RPC 層 trim 後長度需在 1~40 字（超出回 `INVALID_INPUT`），DB 層同步加 CHECK 雙重防線（同 `update_meeting_hint`/`update_vibe_tags` 既有慣例）；同一活動內同名（大小寫不敏感）重複提案退化成投票，不視為錯誤（延續既有 location_id 候選「提案已存在的候選 = 自動投票」精神）。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
@@ -476,8 +483,9 @@ Activity  （僅 merge 成功時產生）
 - id, activity_type_id,
   school, campus (Matching Scope 快照，撮合當下就有，取代 v1.10 及之前版本的
                   campus_location_id，v1.11),
-  activity_location_id (nullable；配對成立後才由參與者投票決定的精確地點，
-                         見第 9.1 節，v1.11),
+  activity_location_id (nullable；配對成立後才由參與者投票決定，FK 指向
+                         ActivityLocationOption.id（v1.30 起，不是直接指向
+                         location——候選可能是自訂地點，見第 9.1 節），v1.11),
   start_time,
   estimated_end_time (= start_time + activity_type.default_duration),
   status(MATCHED/ONGOING/COMPLETED/CANCELLED),
@@ -499,8 +507,8 @@ ActivityMember              # 取代 matched_request_ids[] / final_member_ids[]
 
 配對成立時（第 7 節），Request 只對齊到 `(school, campus)` 範圍，尚未對齊到同一個精確地點——這是真實的偏好分歧，用投票解決：
 
-- **候選範圍**：僅限該 Activity 的 `(school, campus)` 內、`location` 表既有 `status='APPROVED'` 的地點，不開放自由輸入，延續「固定清單」原則。這輪明確**不**做「候選地點依 `activity_type` 的 `category` 過濾」——`location.category` 目前不存在（跟 v1.10 討論中一度誤以為已定案不同，這輪確認未新增），日後若補上也僅供 UI 分組/搜尋用，不做為規則限制，避免過度設計。
-- **提案與投票**：任何活動成員可提案新候選（等同於自動投給自己提的候選）或對既有候選投票，可改票（一人一票，upsert）。
+- **候選範圍**：既有 `location` 表 `status='APPROVED'`、屬於該 Activity `(school, campus)` 範圍內的地點，**或**（v1.30）成員自己打的自訂候選（`custom_name`，1~40 字）。自訂候選不經審核、不寫入 `location` 表——只在該 Activity 的投票裡存在，不會被其他活動看到或複用；適合桌遊店、麻將館、校外咖啡廳這類一次性、沒有必要進全域清單的地點。想讓一個地點被其他活動也看得到，走既有的 `propose_location`（送 admin 審核加入清單）。這輪明確**不**做「候選地點依 `activity_type` 的 `category` 過濾」——`location.category` 目前不存在（跟 v1.10 討論中一度誤以為已定案不同，這輪確認未新增），日後若補上也僅供 UI 分組/搜尋用，不做為規則限制，避免過度設計。
+- **提案與投票**：任何活動成員可提案新候選（等同於自動投給自己提的候選，同名自訂候選重複提案退化成投票）或對既有候選投票，可改票（一人一票，upsert，投的是候選記錄 `activity_location_option.id`，不是地點本身——見下方 v1.30 備註）。
 - **截止時間**：直接復用 `activity.start_time`，不新增獨立的投票倒數欄位。鎖定候選地點的動作與 `MATCHED → ONGOING` 轉移（見 State Machine A2）合併在同一個背景任務裡完成，不另開排程。
 - **計票規則**：得票最高者勝出；同票取最早提案（`created_at`）者勝出，沿用「先到先得」而非再次投票的精簡原則；只有一個候選時，這條排序邏輯自然選中它，不需要為此特判計票邏輯。
 - 🟢 **零候選地點不代替使用者決定**：若到 `start_time` 時仍沒有任何候選地點，`activity_location_id` 維持 `NULL`，系統不自動選一個地點頂上（避免像「讀書活動最後鎖定南大門」這種跟活動性質無關的荒謬結果）。改成另開一個提醒任務：`start_time` 前 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）仍零候選時，向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知催促提案。
@@ -508,12 +516,15 @@ ActivityMember              # 取代 matched_request_ids[] / final_member_ids[]
 
 ```
 ActivityLocationOption
-- id, activity_id, location_id, proposed_by, created_at
+- id, activity_id, location_id (nullable), custom_name (nullable, 1~40 字), proposed_by, created_at
+# location_id/custom_name 恰好其一非空（v1.30，CHECK XOR）
 # unique(activity_id, location_id)：同一地點只能被提案一次
+# unique(activity_id, lower(custom_name)) where custom_name is not null：同活動內同名自訂候選（大小寫不敏感）只能被提案一次
 
 ActivityLocationVote
-- activity_id, user_id, location_id, voted_at
+- activity_id, user_id, option_id, voted_at
 # 複合 PK (activity_id, user_id)：一人一票，改票 = update 這筆
+# option_id 指向 ActivityLocationOption.id（v1.30 起投給候選記錄本身，不是投給地點——自訂候選沒有 location_id 可投）
 ```
 
 得票數不落地存欄位，查詢 `ActivityLocationVote` 即時算出，理由與 `known_member_count`/Reliability 分數相同：避免資料跟來源事實不同步。RLS 上，候選與得票對該 Activity 全體成員公開透明——跟 `PENDING_CONFIRMATION` 的刻意不歸因設計相反：地點偏好分歧是真實分歧，不是需要隱藏的個人選擇，公開透明才符合「大家一起選」的精神。

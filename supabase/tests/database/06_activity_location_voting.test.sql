@@ -1,10 +1,13 @@
 -- =============================================================================
--- pgTAP Test — Activity Location 投票機制 (docs/API.md §6.4/6.5, SPEC §9.1, v1.11)
+-- pgTAP Test — Activity Location 投票機制 (docs/API.md §6.4/6.5, SPEC §9.1/v1.30, v1.11)
 -- 涵蓋：NOT_ACTIVITY_MEMBER、INVALID_CAMPUS_SCOPE、提案=自動投票、改票、
 -- fn_start_activities 依得票鎖定 (含同票取最早提案者)、鎖定後 ACTIVITY_LOCATION_LOCKED、
 -- vote_activity_location 對不存在的候選回 NOT_FOUND、零候選 fallback
 -- （activity_location_id 維持 NULL，不代替使用者決定）+
--- fn_remind_missing_location_candidates 的通知與去重。
+-- fn_remind_missing_location_candidates 的通知與去重 +
+-- v1.30 自訂候選（custom_name，不經審核、不落地 location 表）：
+-- 同時給 location_id/custom_name 或都不給回 INVALID_INPUT、自訂候選可直接
+-- 得票鎖定為 activity_location_id、同名自訂候選重複提案退化成投票。
 --
 -- 執行：`supabase test db`
 -- 全檔包在 BEGIN;...ROLLBACK; 內，測試結束自動還原，不需手動清理資料。
@@ -15,7 +18,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(15);
+select plan(20);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -30,6 +33,7 @@ create temp table fixtures (
   t2_m2_id     uuid,  -- activity_2 member (tie-break)
   t3_m1_id     uuid,  -- activity_3 member (零候選)
   t3_m2_id     uuid,  -- activity_3 member (零候選)
+  t4_m1_id     uuid,  -- activity_4 member (自訂候選 custom_name)
   act_type_id  uuid,
   campus       text,
   loc_p_id     uuid,  -- 範圍內候選 P
@@ -37,7 +41,8 @@ create temp table fixtures (
   loc_out_id   uuid,  -- 範圍外地點（不同 campus）
   activity1_id uuid,
   activity2_id uuid,
-  activity3_id uuid
+  activity3_id uuid,
+  activity4_id uuid
 );
 insert into fixtures default values;
 
@@ -51,6 +56,7 @@ declare
   v_t2_m2     uuid := gen_random_uuid();
   v_t3_m1     uuid := gen_random_uuid();
   v_t3_m2     uuid := gen_random_uuid();
+  v_t4_m1     uuid := gen_random_uuid();
   v_act_type_id uuid;
   v_campus      text := '光復';
   v_loc_p       uuid;
@@ -59,15 +65,18 @@ declare
   v_req1        uuid;
   v_req2        uuid;
   v_req3        uuid;
+  v_req4        uuid;
   v_activity1   activity;
   v_activity2   activity;
   v_activity3   activity;
+  v_activity4   activity;
 begin
   insert into auth.users (id, email) values
     (v_m1, 'alv_m1@nycu.edu.tw'), (v_m2, 'alv_m2@nycu.edu.tw'), (v_m3, 'alv_m3@nycu.edu.tw'),
     (v_outsider, 'alv_outsider@nycu.edu.tw'),
     (v_t2_m1, 'alv_t2_m1@nycu.edu.tw'), (v_t2_m2, 'alv_t2_m2@nycu.edu.tw'),
-    (v_t3_m1, 'alv_t3_m1@nycu.edu.tw'), (v_t3_m2, 'alv_t3_m2@nycu.edu.tw');
+    (v_t3_m1, 'alv_t3_m1@nycu.edu.tw'), (v_t3_m2, 'alv_t3_m2@nycu.edu.tw'),
+    (v_t4_m1, 'alv_t4_m1@nycu.edu.tw');
 
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_line) values
     (v_m1, 'alv_m1@nycu.edu.tw', 'NYCU', 'Alv M1', 'https://avatar.alv_m1', 'MASTER', 'alv_m1_line'),
@@ -77,7 +86,8 @@ begin
     (v_t2_m1, 'alv_t2_m1@nycu.edu.tw', 'NYCU', 'Alv T2M1', 'https://avatar.alv_t2_m1', 'MASTER', 'alv_t2_m1_line'),
     (v_t2_m2, 'alv_t2_m2@nycu.edu.tw', 'NYCU', 'Alv T2M2', 'https://avatar.alv_t2_m2', 'MASTER', 'alv_t2_m2_line'),
     (v_t3_m1, 'alv_t3_m1@nycu.edu.tw', 'NYCU', 'Alv T3M1', 'https://avatar.alv_t3_m1', 'MASTER', 'alv_t3_m1_line'),
-    (v_t3_m2, 'alv_t3_m2@nycu.edu.tw', 'NYCU', 'Alv T3M2', 'https://avatar.alv_t3_m2', 'MASTER', 'alv_t3_m2_line');
+    (v_t3_m2, 'alv_t3_m2@nycu.edu.tw', 'NYCU', 'Alv T3M2', 'https://avatar.alv_t3_m2', 'MASTER', 'alv_t3_m2_line'),
+    (v_t4_m1, 'alv_t4_m1@nycu.edu.tw', 'NYCU', 'Alv T4M1', 'https://avatar.alv_t4_m1', 'MASTER', 'alv_t4_m1_line');
 
   select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
 
@@ -106,6 +116,10 @@ begin
   values (v_t3_m1, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 2, 4, 'MATCHED')
   returning id into v_req3;
 
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_t4_m1, v_act_type_id, 'NYCU', v_campus, now(), now() + interval '2 hours', 2, 4, 'MATCHED')
+  returning id into v_req4;
+
   -- activity_1：3 位成員，用來測 NOT_ACTIVITY_MEMBER / INVALID_CAMPUS_SCOPE /
   -- 提案=自動投票 / 改票 / 依得票鎖定 / 鎖定後 ACTIVITY_LOCATION_LOCKED
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
@@ -128,12 +142,22 @@ begin
   insert into activity_member (activity_id, user_id, source_request_id, status)
   select v_activity3.id, u, v_req3, 'JOINED' from unnest(array[v_t3_m1, v_t3_m2]) as u;
 
+  -- activity_4：1 位成員，用來測 v1.30 自訂候選（custom_name）：INVALID_INPUT
+  -- 二選一違規、自訂候選建立+自動投票、同名重複提案退化成投票、得票鎖定。
+  insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
+  values (v_act_type_id, 'NYCU', v_campus, now() + interval '1 hour', now() + interval '2 hours', 'MATCHED')
+  returning * into v_activity4;
+  insert into activity_member (activity_id, user_id, source_request_id, status)
+  select v_activity4.id, u, v_req4, 'JOINED' from unnest(array[v_t4_m1]) as u;
+
   update fixtures set
     m1_id = v_m1, m2_id = v_m2, m3_id = v_m3, outsider_id = v_outsider,
     t2_m1_id = v_t2_m1, t2_m2_id = v_t2_m2, t3_m1_id = v_t3_m1, t3_m2_id = v_t3_m2,
+    t4_m1_id = v_t4_m1,
     act_type_id = v_act_type_id, campus = v_campus,
     loc_p_id = v_loc_p, loc_q_id = v_loc_q, loc_out_id = v_loc_out,
-    activity1_id = v_activity1.id, activity2_id = v_activity2.id, activity3_id = v_activity3.id;
+    activity1_id = v_activity1.id, activity2_id = v_activity2.id, activity3_id = v_activity3.id,
+    activity4_id = v_activity4.id;
 end;
 $setup$;
 
@@ -185,10 +209,11 @@ select ok(
        and location_id = (select loc_p_id from fixtures)
        and proposed_by = (select m1_id from fixtures)
   ) and exists (
-    select 1 from activity_location_vote
-     where activity_id = (select activity1_id from fixtures)
-       and user_id = (select m1_id from fixtures)
-       and location_id = (select loc_p_id from fixtures)
+    select 1 from activity_location_vote v
+     join activity_location_option o on o.id = v.option_id
+     where v.activity_id = (select activity1_id from fixtures)
+       and v.user_id = (select m1_id from fixtures)
+       and o.location_id = (select loc_p_id from fixtures)
   ),
   'm1 提案候選 P 應同時建立候選記錄與自動投給自己的投票記錄'
 );
@@ -220,26 +245,28 @@ select ok(
 do $$ begin
   perform set_config('request.jwt.claim.sub', (select m3_id::text from fixtures), true);
   perform vote_activity_location(
-    (select activity1_id from fixtures), (select loc_p_id from fixtures)
+    (select activity1_id from fixtures),
+    (select id from activity_location_option
+      where activity_id = (select activity1_id from fixtures) and location_id = (select loc_p_id from fixtures))
   );
 end $$;
 
 select is(
-  (select location_id from activity_location_vote
-    where activity_id = (select activity1_id from fixtures) and user_id = (select m3_id from fixtures)),
+  (select o.location_id from activity_location_vote v join activity_location_option o on o.id = v.option_id
+    where v.activity_id = (select activity1_id from fixtures) and v.user_id = (select m3_id from fixtures)),
   (select loc_p_id from fixtures),
   'm3 投給候選 P 應正確記錄'
 );
 
 -- -----------------------------------------------------------------------------
--- 6. vote_activity_location 對不存在的候選（未被提案過的地點）應回 NOT_FOUND
+-- 6. vote_activity_location 對不存在的候選（隨機 option id）應回 NOT_FOUND
 -- -----------------------------------------------------------------------------
 
 select throws_ok(
   format($sql$select vote_activity_location(%L, %L)$sql$,
-    (select activity1_id from fixtures), (select loc_out_id from fixtures)),
+    (select activity1_id from fixtures), gen_random_uuid()),
   'NOT_FOUND',
-  '對尚未被提案過的地點投票應被 NOT_FOUND 擋下'
+  '對不存在的候選 id 投票應被 NOT_FOUND 擋下'
 );
 
 -- -----------------------------------------------------------------------------
@@ -255,7 +282,8 @@ end $$;
 
 select is(
   (select activity_location_id from activity where id = (select activity1_id from fixtures)),
-  (select loc_p_id from fixtures),
+  (select id from activity_location_option
+    where activity_id = (select activity1_id from fixtures) and location_id = (select loc_p_id from fixtures)),
   'fn_start_activities 應依得票數鎖定候選 P（2 票 > 1 票）'
 );
 
@@ -301,7 +329,8 @@ end $$;
 
 select is(
   (select activity_location_id from activity where id = (select activity2_id from fixtures)),
-  (select loc_p_id from fixtures),
+  (select id from activity_location_option
+    where activity_id = (select activity2_id from fixtures) and location_id = (select loc_p_id from fixtures)),
   '同票時 fn_start_activities 應取最早提案的候選 P（t2_m1 先提案）勝出'
 );
 
@@ -354,6 +383,98 @@ select is(
   (select status::text from activity where id = (select activity3_id from fixtures)),
   'ONGOING',
   '即使零候選，activity_3 仍應照常轉為 ONGOING（不卡狀態機）'
+);
+
+-- -----------------------------------------------------------------------------
+-- 13. v1.30 自訂候選：同時給 location_id 與 custom_name 應被 INVALID_INPUT 擋下
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select t4_m1_id::text from fixtures), true);
+end $$;
+
+select throws_ok(
+  format($sql$select propose_activity_location(%L, %L, %L)$sql$,
+    (select activity4_id from fixtures), (select loc_p_id from fixtures), '光復操場旁的桌遊店'),
+  'INVALID_INPUT',
+  '同時給 location_id 與 custom_name 應被 INVALID_INPUT 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 14. v1.30 自訂候選：兩者都不給也應被 INVALID_INPUT 擋下
+-- -----------------------------------------------------------------------------
+
+select throws_ok(
+  format($sql$select propose_activity_location(%L)$sql$, (select activity4_id from fixtures)),
+  'INVALID_INPUT',
+  '不給 location_id 也不給 custom_name 應被 INVALID_INPUT 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 15. v1.30 自訂候選：t4_m1 提案「光復操場旁的桌遊店」——不經審核、不落地
+--     location 表，應直接建立候選（location_id is null）+ 自動投給自己一票
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform propose_activity_location(
+    (select activity4_id from fixtures), null, '光復操場旁的桌遊店'
+  );
+end $$;
+
+select ok(
+  exists (
+    select 1 from activity_location_option
+     where activity_id = (select activity4_id from fixtures)
+       and custom_name = '光復操場旁的桌遊店'
+       and location_id is null
+       and proposed_by = (select t4_m1_id from fixtures)
+  ) and exists (
+    select 1 from activity_location_vote v
+     join activity_location_option o on o.id = v.option_id
+     where v.activity_id = (select activity4_id from fixtures)
+       and v.user_id = (select t4_m1_id from fixtures)
+       and o.custom_name = '光復操場旁的桌遊店'
+  ) and not exists (
+    -- 自訂候選不應在 location 表留下任何一筆——不落地是這次改動的核心訴求
+    select 1 from location where name = '光復操場旁的桌遊店'
+  ),
+  '自訂候選應直接建立（不經審核）、自動投給自己一票，且不落地到 location 表'
+);
+
+-- -----------------------------------------------------------------------------
+-- 16. v1.30 自訂候選：同名（大小寫不敏感）重複提案應退化成投票，不是錯誤，
+--     也不應建立第二筆候選記錄
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  perform propose_activity_location(
+    (select activity4_id from fixtures), null, '光復操場旁的桌遊店'
+  );
+end $$;
+
+select is(
+  (select count(*)::int from activity_location_option
+    where activity_id = (select activity4_id from fixtures) and custom_name = '光復操場旁的桌遊店'),
+  1,
+  '同名自訂候選重複提案應退化成投票，不應建立第二筆候選記錄'
+);
+
+-- -----------------------------------------------------------------------------
+-- 17. v1.30 自訂候選：到點時 fn_start_activities 應能鎖定自訂候選為
+--     activity_location_id（跟一般 location 候選走同一套鎖定邏輯）
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  update activity set start_time = now() - interval '1 minute'
+   where id = (select activity4_id from fixtures);
+  perform fn_start_activities();
+end $$;
+
+select is(
+  (select activity_location_id from activity where id = (select activity4_id from fixtures)),
+  (select id from activity_location_option
+    where activity_id = (select activity4_id from fixtures) and custom_name = '光復操場旁的桌遊店'),
+  'fn_start_activities 應能鎖定自訂候選為 activity_location_id'
 );
 
 select * from finish();

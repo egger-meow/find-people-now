@@ -341,12 +341,12 @@ void main() {
       final vote = await voteActivityLocation(
         clientB,
         activityId: activityId,
-        locationId: locationId,
+        optionId: option.id,
       );
       expect(vote.userId, userBId);
-      expect(vote.locationId, locationId);
+      expect(vote.optionId, option.id);
       // ignore: avoid_print
-      print('[vote_activity_location] B voted for locationId=${vote.locationId}');
+      print('[vote_activity_location] B voted for optionId=${vote.optionId}');
 
       // 9. Tally via a real authenticated PostgREST read of
       // activity_location_vote (RLS is deliberately transparent to activity
@@ -356,10 +356,10 @@ void main() {
           .from('activity_location_vote')
           .select()
           .eq('activity_id', activityId)
-          .eq('location_id', locationId);
+          .eq('option_id', option.id);
       expect(voteRows.length, 2, reason: 'both A (auto-vote) and B should have a vote row');
       // ignore: avoid_print
-      print('[tally] ${voteRows.length} votes for locationId=$locationId');
+      print('[tally] ${voteRows.length} votes for optionId=${option.id}');
 
       // 10. Backdate start_time and trigger fn_start_activities (same
       // pg_cron-only-function escape hatch as step 4) -> the single
@@ -385,7 +385,7 @@ void main() {
 
       final lockedRow = await clientB.from('activity').select().eq('id', activityId).single();
       final lockedActivity = Activity.fromJson(lockedRow);
-      expect(lockedActivity.activityLocationId, locationId);
+      expect(lockedActivity.activityLocationId, option.id);
       expect(lockedActivity.status, ACTIVITY_STATUS.ONGOING);
       // ignore: avoid_print
       print(
