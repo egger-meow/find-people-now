@@ -10,6 +10,7 @@ import '../rpc/confirmation_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/countdown_text.dart';
 import '../match/match_providers.dart' show myActiveActivityProvider, myActiveRequestProvider;
 import '../widgets/loading_indicator.dart';
@@ -185,27 +186,15 @@ class _PendingConfirmationCardState extends ConsumerState<PendingConfirmationCar
                   onPressed: _busy
                       ? null
                       : () async {
-                          final confirmDecline = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('這次先不要？'),
-                              content: const Text(
-                                '拒絕此候選配對後，系統將實施配對冷卻期（這段期間暫時無法發起新配對邀約）。\n\n'
+                          final confirmDecline = await showAppConfirmDialog(
+                            context,
+                            title: '這次先不要？',
+                            message: '拒絕此候選配對後，系統將實施配對冷卻期（這段期間暫時無法發起新配對邀約）。\n\n'
                                 '此操作屬於前置安全確認，不會記錄失信事件，也不會扣減您的信譽評分。',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(false),
-                                  child: const Text('再想想'),
-                                ),
-                                FilledButton(
-                                  onPressed: () => Navigator.of(context).pop(true),
-                                  child: const Text('確定拒絕'),
-                                ),
-                              ],
-                            ),
+                            cancelLabel: '再想想',
+                            confirmLabel: '確定拒絕',
                           );
-                          if (confirmDecline == true) {
+                          if (confirmDecline) {
                             _respond(false);
                           }
                         },

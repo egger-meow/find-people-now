@@ -1,4 +1,7 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import '../theme/platform_adaptive.dart';
 
 /// 主要行動按鈕（送出、確認參加…）。膠囊圓角 + 短暫按壓縮放回饋，
 /// 呼應品牌關鍵字「Instant」「Calm Energy」——有回饋但不誇張。
@@ -40,10 +43,12 @@ class _AppButtonState extends State<AppButton> {
         child: FilledButton(
           onPressed: enabled ? widget.onPressed : null,
           child: widget.loading
-              ? const SizedBox(
+              ? SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                  child: isCupertino
+                      ? CupertinoActivityIndicator(color: Theme.of(context).colorScheme.onPrimary)
+                      : const CircularProgressIndicator(strokeWidth: 2.4),
                 )
               : Row(
                   mainAxisSize: MainAxisSize.min,

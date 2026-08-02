@@ -7,6 +7,7 @@ import '../generated/supadart_header.dart' show DOWNGRADE_RESPONSE;
 import '../rpc/api_exception.dart';
 import '../rpc/downgrade_rpc.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/countdown_text.dart';
 import 'downgrade_providers.dart';
 
@@ -110,8 +111,8 @@ class _DowngradeConsentDialogState extends ConsumerState<_DowngradeConsentDialog
     final dg = widget.downgradeRequest;
     return PopScope(
       canPop: false,
-      child: AlertDialog(
-        title: const Text('人數調整需要你同意'),
+      child: AppAdaptiveDialog(
+        title: '人數調整需要你同意',
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,14 +133,8 @@ class _DowngradeConsentDialogState extends ConsumerState<_DowngradeConsentDialog
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: _busy ? null : () => _respond(false),
-            child: const Text('不同意'),
-          ),
-          FilledButton(
-            onPressed: _busy ? null : () => _respond(true),
-            child: const Text('同意'),
-          ),
+          AppDialogAction(label: '不同意', onPressed: _busy ? null : () => _respond(false)),
+          AppDialogAction(label: '同意', isDefault: true, onPressed: _busy ? null : () => _respond(true)),
         ],
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +8,7 @@ import '../data/school_labels.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS;
 import '../match/match_providers.dart' show activityTypesProvider;
 import '../theme/app_theme.dart';
+import '../theme/platform_adaptive.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/loading_indicator.dart';
@@ -87,11 +89,52 @@ String _formatWindow(DateTime a, DateTime b) {
 /// ——跟等待室/安全確認卡（已經有 icon、時間、人數等完整資訊）比起來明顯沒做
 /// 完。這裡補上活動類型 icon＋名稱、時間、校區、色調化狀態標籤，並讓空清單
 /// 有明確的下一步（見 [_EmptyState]），而不是一片空白文字。
-class MyActivitiesScreen extends StatelessWidget {
+/// 頂層分頁（進行中/已結束）依平台分岔：Android 用 Material
+/// `TabBar`+`TabBarView`；iOS 用 [CupertinoSlidingSegmentedControl] 驅動一個
+/// 普通 `int` 索引 + [IndexedStack]——Cupertino 沒有 `TabBarView` 對應物，
+/// 分段控制本身也不像 Material `TabBar` 支援手勢滑動切換，這是 HIG 慣例
+/// 的頂層分頁做法。兩邊底下都是同一個 [_ActivityList]，內容/資料邏輯不變。
+class MyActivitiesScreen extends StatefulWidget {
   const MyActivitiesScreen({super.key});
 
   @override
+  State<MyActivitiesScreen> createState() => _MyActivitiesScreenState();
+}
+
+class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
+  int _index = 0;
+
+  @override
   Widget build(BuildContext context) {
+    if (isCupertino) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('我的活動'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(52),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+              child: CupertinoSlidingSegmentedControl<int>(
+                groupValue: _index,
+                children: const {0: Text('進行中'), 1: Text('已結束')},
+                onValueChanged: (value) {
+                  if (value != null) setState(() => _index = value);
+                },
+              ),
+            ),
+          ),
+        ),
+        body: SafeArea(
+          child: IndexedStack(
+            index: _index,
+            children: const [
+              _ActivityList(showOngoing: true),
+              _ActivityList(showOngoing: false),
+            ],
+          ),
+        ),
+      );
+    }
     return DefaultTabController(
       length: 2,
       child: Scaffold(

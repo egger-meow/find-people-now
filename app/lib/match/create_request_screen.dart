@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,8 +13,10 @@ import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
+import '../theme/platform_adaptive.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
@@ -120,8 +123,8 @@ class CreateRequestScreen extends ConsumerWidget {
     final joined = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('輸入邀請碼'),
+        builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
+          title: '輸入邀請碼',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -138,14 +141,8 @@ class CreateRequestScreen extends ConsumerWidget {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => attemptJoin(dialogContext, setDialogState),
-              child: const Text('加入'),
-            ),
+            AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+            AppDialogAction(label: '加入', isDefault: true, onPressed: () => attemptJoin(dialogContext, setDialogState)),
           ],
         ),
       ),
@@ -321,8 +318,8 @@ class _AlertSubscriptionSection extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('設定提醒'),
+        builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
+          title: '設定提醒',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,8 +353,8 @@ class _AlertSubscriptionSection extends ConsumerWidget {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('設定提醒')),
+            AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+            AppDialogAction(label: '設定提醒', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
           ],
         ),
       ),
@@ -504,16 +501,21 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   Future<void> _pickCustomTime({required bool isEarliest}) async {
     final now = DateTime.now();
     final initial = (isEarliest ? _customEarliest : _customLatest) ?? now;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial.isBefore(now) ? now : initial,
-      firstDate: now,
-      lastDate: now.add(const Duration(hours: 24)),
-    );
-    if (date == null || !mounted) return;
-    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
-    if (time == null || !mounted) return;
-    final picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final clampedInitial = initial.isBefore(now) ? now : initial;
+    final maxDate = now.add(const Duration(hours: 24));
+
+    DateTime? picked;
+    if (isCupertino) {
+      picked = await _pickCupertinoDateTime(initial: clampedInitial, minDate: now, maxDate: maxDate);
+    } else {
+      final date = await showDatePicker(context: context, initialDate: clampedInitial, firstDate: now, lastDate: maxDate);
+      if (date == null || !mounted) return;
+      final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+      if (time == null || !mounted) return;
+      picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    }
+    if (picked == null || !mounted) return;
+
     final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = false;
@@ -525,6 +527,48 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       }
     });
     if (wasEmpty && _resolveWindow() != null) _scrollToNextAfterTime();
+  }
+
+  /// iOS 版自訂時間選擇——單一 [CupertinoDatePicker]（滾輪、日期+時間一次選）
+  /// 取代 Android 兩步驟的 `showDatePicker` + `showTimePicker`，符合 HIG 慣例。
+  /// 邊界跟 Android 分支完全一致：夾在 `[minDate, maxDate]`（now()~now()+24h）
+  /// 內，選完才回傳，取消回傳 null。
+  Future<DateTime?> _pickCupertinoDateTime({required DateTime initial, required DateTime minDate, required DateTime maxDate}) {
+    var selected = initial;
+    return showCupertinoModalPopup<DateTime>(
+      context: context,
+      builder: (popupContext) => Container(
+        height: 300,
+        color: CupertinoColors.systemBackground.resolveFrom(popupContext),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              SizedBox(
+                height: 44,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    CupertinoButton(onPressed: () => Navigator.of(popupContext).pop(), child: const Text('取消')),
+                    CupertinoButton(onPressed: () => Navigator.of(popupContext).pop(selected), child: const Text('完成')),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.dateAndTime,
+                  initialDateTime: initial,
+                  minimumDate: minDate,
+                  maximumDate: maxDate,
+                  use24hFormat: true,
+                  onDateTimeChanged: (value) => selected = value,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// 「多選收斂為單一連續區間」（UI_PLAN §7）：取所選桶中最早的起始～最晚的
@@ -604,12 +648,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     final controller = TextEditingController();
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('提議新活動類型'),
+      builder: (dialogContext) => AppAdaptiveDialog(
+        title: '提議新活動類型',
         content: AppTextField(controller: controller, label: '類型名稱', autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('送出')),
+          AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+          AppDialogAction(label: '送出', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
         ],
       ),
     );

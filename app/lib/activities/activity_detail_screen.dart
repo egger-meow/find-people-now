@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,8 +19,10 @@ import '../rpc/location_rpc.dart';
 import '../rpc/report_rpc.dart';
 import '../rpc/user_block_rpc.dart';
 import '../theme/app_theme.dart';
+import '../theme/platform_adaptive.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'activity_detail_providers.dart';
@@ -103,34 +106,20 @@ class ActivityDetailScreen extends ConsumerWidget {
     final now = DateTime.now();
     final isEarlyCancel = activity.startTime.difference(now).inMinutes >= 60;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isEarlyCancel ? '確定要退出活動？' : '⚠️ 確定要退出活動？'),
-        content: Text(
-          isEarlyCancel
-              ? '距離活動開始還有 1 小時以上。\n\n'
-                '取消參加屬於正常行程變更（Early Cancel），不會觸發配對冷卻期，也不會扣減您的信譽評分。'
-              : '距離活動開始已不足 1 小時（或活動進行中）。\n\n'
-                '⚠️ 退出將被記錄為 Late Cancel，並觸發配對冷卻期（期間無法發起新配對），同時會影響您的信譽評分與可信度等級。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('返回'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: isEarlyCancel ? null : Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('確定退出'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: isEarlyCancel ? '確定要退出活動？' : '⚠️ 確定要退出活動？',
+      message: isEarlyCancel
+          ? '距離活動開始還有 1 小時以上。\n\n'
+              '取消參加屬於正常行程變更（Early Cancel），不會觸發配對冷卻期，也不會扣減您的信譽評分。'
+          : '距離活動開始已不足 1 小時（或活動進行中）。\n\n'
+              '⚠️ 退出將被記錄為 Late Cancel，並觸發配對冷卻期（期間無法發起新配對），同時會影響您的信譽評分與可信度等級。',
+      cancelLabel: '返回',
+      confirmLabel: '確定退出',
+      isDestructive: !isEarlyCancel,
     );
 
-    if (confirmed != true || !context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     try {
       final client = ref.read(supabaseClientProvider);
@@ -201,34 +190,75 @@ class ActivityDetailScreen extends ConsumerWidget {
             if (activity == null) {
               return const Center(child: Text('找不到這個活動'));
             }
-            return DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                    child: Text(_activityStatusLabel(activity.status), style: Theme.of(context).textTheme.titleMedium),
-                  ),
-                  if (activity.status == ACTIVITY_STATUS.ONGOING)
-                    _CompletionReportBanner(activityId: activity.id),
-                  const TabBar(tabs: [Tab(text: '地點'), Tab(text: '成員')]),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        _LocationTab(activity: activity),
-                        _MembersTab(
-                          activityId: activity.id,
-                          activityStatus: activity.status,
-                          activityTypeId: activity.activityTypeId,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                  child: Text(_activityStatusLabel(activity.status), style: Theme.of(context).textTheme.titleMedium),
+                ),
+                if (activity.status == ACTIVITY_STATUS.ONGOING) _CompletionReportBanner(activityId: activity.id),
+                Expanded(child: _ActivityDetailTabs(activity: activity)),
+              ],
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// 「地點／成員」分頁依平台分岔：Android 用 Material `TabBar`+`TabBarView`；
+/// iOS 用 [CupertinoSlidingSegmentedControl] 驅動一個普通 `int` 索引 +
+/// [IndexedStack]——理由跟 [MyActivitiesScreen] 頂層分頁一樣（Cupertino
+/// 沒有對應 `TabBarView` 的手勢滑動元件）。底下兩個分頁內容
+/// （[_LocationTab]／[_MembersTab]）完全不變。
+class _ActivityDetailTabs extends StatefulWidget {
+  const _ActivityDetailTabs({required this.activity});
+
+  final Activity activity;
+
+  @override
+  State<_ActivityDetailTabs> createState() => _ActivityDetailTabsState();
+}
+
+class _ActivityDetailTabsState extends State<_ActivityDetailTabs> {
+  int _index = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final activity = widget.activity;
+    final locationTab = _LocationTab(activity: activity);
+    final membersTab = _MembersTab(
+      activityId: activity.id,
+      activityStatus: activity.status,
+      activityTypeId: activity.activityTypeId,
+    );
+
+    if (isCupertino) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+            child: CupertinoSlidingSegmentedControl<int>(
+              groupValue: _index,
+              children: const {0: Text('地點'), 1: Text('成員')},
+              onValueChanged: (value) {
+                if (value != null) setState(() => _index = value);
+              },
+            ),
+          ),
+          Expanded(child: IndexedStack(index: _index, children: [locationTab, membersTab])),
+        ],
+      );
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const TabBar(tabs: [Tab(text: '地點'), Tab(text: '成員')]),
+          Expanded(child: TabBarView(children: [locationTab, membersTab])),
+        ],
       ),
     );
   }
@@ -654,12 +684,12 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
     final nameController = TextEditingController();
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('提議新地點'),
+      builder: (dialogContext) => AppAdaptiveDialog(
+        title: '提議新地點',
         content: AppTextField(controller: nameController, label: '地點名稱', autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('送出')),
+          AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+          AppDialogAction(label: '送出', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
         ],
       ),
     );
@@ -852,7 +882,7 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
           ),
           if (widget.editable) ...[
             const SizedBox(height: AppSpacing.sm),
-            AppTextField(controller: _controller, hint: '例如：正門警衛室旁'),
+            AppTextField(controller: _controller, hint: '例如：正門警衛室旁', maxLength: 40),
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.xs),
               Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -1075,18 +1105,14 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
   bool _expanded = false;
 
   Future<void> _confirmBlock() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('封鎖這位成員？'),
-        content: const Text('封鎖後，未來不會再被配對在一起。這個動作不會通知對方。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('封鎖')),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '封鎖這位成員？',
+      message: '封鎖後，未來不會再被配對在一起。這個動作不會通知對方。',
+      confirmLabel: '封鎖',
+      isDestructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await blockUser(ref.read(supabaseClientProvider), blockedId: widget.member.userId);
     } on ApiException {
@@ -1114,8 +1140,8 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('這場你想怎麼參與？'),
+        builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
+          title: '這場你想怎麼參與？',
           content: Wrap(
             spacing: AppSpacing.xs,
             children: [
@@ -1134,8 +1160,8 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('儲存')),
+            AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
+            AppDialogAction(label: '儲存', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
           ],
         ),
       ),

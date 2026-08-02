@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
+import 'platform_adaptive.dart';
+
 /// 品牌 DNA：🌿 Fresh／⚡ Instant／🤝 Human／🎓 Campus／☀️ Optimistic／🎯 Minimal。
 /// 「校園裡有人正在做事，而你隨時可以加入。」— 清新綠為主色，天空藍/暖黃點綴，
 /// Material 3 為底層，但外觀（圓角、留白、無陰影卡片）刻意不是 Flutter 預設樣子。
@@ -93,12 +95,17 @@ abstract final class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.standard,
+      // iOS HIG：標題置中、44pt 高度、無 Material 3 的 tonal 上色（surfaceTint）
+      // ——那個「往下捲動就整條變色」的效果是 Material 特有語言，套用在 iOS
+      // 上反而不像原生導覽列。Android 維持原本靠左標題＋捲動變色。
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
         elevation: 0,
-        scrolledUnderElevation: 1,
-        centerTitle: false,
+        scrolledUnderElevation: isCupertino ? 0 : 1,
+        surfaceTintColor: isCupertino ? Colors.transparent : null,
+        centerTitle: isCupertino,
+        toolbarHeight: isCupertino ? 44 : null,
       ),
       cardTheme: CardThemeData(
         elevation: 0,

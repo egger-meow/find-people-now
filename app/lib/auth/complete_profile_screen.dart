@@ -11,6 +11,7 @@ import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/department_field.dart';
 import 'auth_providers.dart';
@@ -155,14 +156,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('在校生身份提醒'),
+      builder: (context) => AppAdaptiveDialog(
+        title: '在校生身份提醒',
         content: const Text('提醒你，若已畢業，請注意在校生身份是本平台社群互信的基礎。'),
         actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('我知道了，繼續'),
-          ),
+          AppDialogAction(label: '我知道了，繼續', isDefault: true, onPressed: () => Navigator.of(context).pop(true)),
         ],
       ),
     );

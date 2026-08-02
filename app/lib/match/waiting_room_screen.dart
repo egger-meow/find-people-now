@@ -13,6 +13,7 @@ import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
@@ -252,18 +253,14 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 
   Future<void> _leaveRequest(String requestId) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('確定要退出房間？'),
-        content: const Text('退出後您將離開此配對房間。\n\n此操作不會有冷卻時間或信譽扣分。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('返回')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('確定退出')),
-        ],
-      ),
+    final confirm = await showAppConfirmDialog(
+      context,
+      title: '確定要退出房間？',
+      message: '退出後您將離開此配對房間。\n\n此操作不會有冷卻時間或信譽扣分。',
+      cancelLabel: '返回',
+      confirmLabel: '確定退出',
     );
-    if (confirm != true || !mounted) return;
+    if (!confirm || !mounted) return;
 
     setState(() => _busy = true);
     try {
@@ -281,18 +278,14 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 
   Future<void> _cancelRequest(String requestId) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('確定要取消整個配對？'),
-        content: const Text('取消配對後房間將直接關閉，其他成員也會收到取消通知。\n\n此操作不會有冷卻時間或信譽扣分。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('返回')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('確定取消')),
-        ],
-      ),
+    final confirm = await showAppConfirmDialog(
+      context,
+      title: '確定要取消整個配對？',
+      message: '取消配對後房間將直接關閉，其他成員也會收到取消通知。\n\n此操作不會有冷卻時間或信譽扣分。',
+      cancelLabel: '返回',
+      confirmLabel: '確定取消',
     );
-    if (confirm != true || !mounted) return;
+    if (!confirm || !mounted) return;
 
     setState(() => _busy = true);
     try {

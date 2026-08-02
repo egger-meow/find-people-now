@@ -13,6 +13,7 @@ import '../rpc/auth_profile_rpc.dart' show AchievementBadge, ReliabilityTier;
 import '../theme/app_theme.dart';
 import '../theme/theme_providers.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/loading_indicator.dart';
 
 String _themeModeLabel(ThemeMode mode) => switch (mode) {
@@ -35,18 +36,13 @@ String _tierLabel(ReliabilityTier tier) => switch (tier) {
     };
 
 Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('登出？'),
-      content: const Text('登出後需要重新驗證信箱才能再次登入。'),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('登出')),
-      ],
-    ),
+  final confirmed = await showAppConfirmDialog(
+    context,
+    title: '登出？',
+    message: '登出後需要重新驗證信箱才能再次登入。',
+    confirmLabel: '登出',
   );
-  if (confirmed != true) return;
+  if (!confirmed) return;
   // authStateProvider 會觸發 router 的 refreshListenable 自動導回 /login
   // （見 app_router.dart 開頭註解、_DeleteAccountSectionState._delete 的同款用法），
   // 這裡不需要、也不應該手動導覽。
@@ -377,25 +373,14 @@ class _DeleteAccountSectionState extends ConsumerState<_DeleteAccountSection> {
   bool _busy = false;
   String? _error;
 
-  Future<bool> _confirm() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('刪除帳號？'),
-        content: const Text(
-          '這個動作無法復原：你的個人資料會被清除，進行中的配對／活動會自動退出或取消，歷史紀錄裡的其他人不會受影響。',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('取消')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(dialogContext).colorScheme.error),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('刪除帳號'),
-          ),
-        ],
-      ),
+  Future<bool> _confirm() {
+    return showAppConfirmDialog(
+      context,
+      title: '刪除帳號？',
+      message: '這個動作無法復原：你的個人資料會被清除，進行中的配對／活動會自動退出或取消，歷史紀錄裡的其他人不會受影響。',
+      confirmLabel: '刪除帳號',
+      isDestructive: true,
     );
-    return result ?? false;
   }
 
   Future<void> _delete() async {
