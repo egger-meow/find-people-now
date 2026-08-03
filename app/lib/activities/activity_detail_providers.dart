@@ -221,9 +221,14 @@ final activityMemberRosterProvider =
     FutureProvider.family<List<MemberRosterEntry>, String>((ref, activityId) async {
   final client = ref.watch(supabaseClientProvider);
 
-  final memberRows = await client.from('activity_member').select().eq('activity_id', activityId);
-  final contacts = await getActivityContacts(client, activityId);
-  final profiles = await getActivityMemberProfiles(client, activityId);
+  final results = await Future.wait<Object>([
+    client.from('activity_member').select().eq('activity_id', activityId),
+    getActivityContacts(client, activityId),
+    getActivityMemberProfiles(client, activityId),
+  ]);
+  final memberRows = results[0] as List<Map<String, dynamic>>;
+  final contacts = results[1] as ActivityContacts;
+  final profiles = results[2] as List<ActivityMemberProfile>;
 
   final contactByUser = {for (final m in contacts.members) m.userId: m};
   final profileByUser = {for (final p in profiles) p.userId: p};
