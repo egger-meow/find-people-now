@@ -40,6 +40,8 @@ import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/confirmation_rpc.dart';
 import 'package:find_people_now/rpc/match_request_rpc.dart';
 
+import 'local_supabase_guard.dart';
+
 const _myRequestListStatuses = ['REQUESTING', 'PENDING_CONFIRMATION', 'EXPIRED', 'CANCELLED'];
 
 Future<SupabaseClient> _createAndSignIn(
@@ -145,6 +147,7 @@ void main() {
   setUpAll(() async {
     await dotenv.load();
     supabaseUrl = dotenv.get('SUPABASE_URL');
+    assertLocalSupabaseUrl(supabaseUrl);
     anonKey = dotenv.get('SUPABASE_ANON_KEY');
     serviceRoleKey = dotenv.get('SUPABASE_SERVICE_ROLE_KEY');
   });
