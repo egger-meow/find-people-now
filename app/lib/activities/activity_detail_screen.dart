@@ -1340,10 +1340,26 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundImage: member.avatarUrl.isEmpty ? null : NetworkImage(member.avatarUrl),
-                child: member.avatarUrl.isEmpty ? const Icon(Icons.person_rounded) : null,
+              // v1.33 個人檔案卡：頭像本身有自己獨立的 tap target，跟外層
+              // AppCard 展開聯絡方式的 onTap 分開——同一顆卡片上
+              // _RematchButton/_ArrivalButton 也是各自獨立的按鈕、不會誤觸卡片
+              // 的展開/收合，這裡採用同樣的巢狀手勢寫法。只有非本人才能點開
+              // （自己的檔案卡意義不大，且原本 isSelf 時整張卡的 onTap 就是
+              // null）。
+              InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: isSelf
+                    ? null
+                    : () => showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (context) => _ProfileCardSheet(member: member),
+                        ),
+                child: CircleAvatar(
+                  radius: 22,
+                  backgroundImage: member.avatarUrl.isEmpty ? null : NetworkImage(member.avatarUrl),
+                  child: member.avatarUrl.isEmpty ? const Icon(Icons.person_rounded) : null,
+                ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -1450,6 +1466,76 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 個人檔案卡（v1.33）——點成員頭像開啟，唯讀展示照片＋自我介紹＋科系等。
+/// 版面參照 `profile_screen.dart` 的 `_ProfileHeaderCard`/`_MoreInfoSection`
+/// （大頭貼＋姓名＋學校/科系/學制 header，展開式自我介紹區塊），但這裡是看
+/// 別人、沒有編輯按鈕，且自我介紹一律直接展開顯示，不需要收合互動。
+/// `bio` 從 v1.33 起是註冊硬性門檻（見 SPEC.md v1.33），新使用者一定填過；
+/// 既有使用者若還沒補，走 fallback 文案，不是錯誤狀態。
+class _ProfileCardSheet extends StatelessWidget {
+  const _ProfileCardSheet({required this.member});
+
+  final MemberRosterEntry member;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: CircleAvatar(
+              radius: 40,
+              backgroundImage: member.avatarUrl.isEmpty ? null : NetworkImage(member.avatarUrl),
+              child: member.avatarUrl.isEmpty ? const Icon(Icons.person_rounded, size: 40) : null,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Center(
+            child: Text(
+              member.displayName,
+              style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              '${schoolLabel(member.school)} · ${member.department ?? '未填科系'} · ${_degreeLabel(member.degreeLevel)}',
+              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Center(
+            child: Text(
+              '可信度 ${_tierLabel(member.reliabilityTier)}',
+              style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const Divider(height: 1),
+          const SizedBox(height: AppSpacing.md),
+          Text('自我介紹', style: textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            member.bio.isNotEmpty ? member.bio : '還沒有寫自我介紹',
+            style: textTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppSpacing.lg),
         ],
       ),
     );

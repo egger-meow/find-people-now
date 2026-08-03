@@ -32,7 +32,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(25);
+select plan(26);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -363,10 +363,18 @@ select is(
 );
 
 select ok(
-  (select gender is null and bio is null and department is null
+  (select gender is null and department is null
      and contact_ig is null and contact_discord is null
      from app_user where id = (select actor1_id from fixtures)),
-  'gender/bio/department/contact_ig/contact_discord 皆應清空為 NULL'
+  'gender/department/contact_ig/contact_discord 皆應清空為 NULL'
+);
+
+-- v1.33：bio 從選填改 NOT NULL 後，delete_account 的清空值比照 avatar_url，
+-- 從 null 改成空字串（見 20260803150000_bio_avatar_hard_requirements.sql）。
+select is(
+  (select bio from app_user where id = (select actor1_id from fixtures)),
+  '',
+  'bio（NOT NULL 門檻，v1.33）應改成空字串佔位'
 );
 
 select is(

@@ -53,12 +53,6 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   List<String> _campusOptions = const [];
 
   @override
-  void initState() {
-    super.initState();
-    _rerollAvatar();
-  }
-
-  @override
   void dispose() {
     _displayNameController.dispose();
     _departmentController.dispose();
@@ -68,12 +62,6 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     _contactLineController.dispose();
     _contactDiscordController.dispose();
     super.dispose();
-  }
-
-  void _rerollAvatar() {
-    final seed =
-        '${_displayNameController.text.trim().isEmpty ? 'fpn-user' : _displayNameController.text.trim()}-${DateTime.now().millisecondsSinceEpoch}';
-    setState(() => _avatarUrl = 'https://api.dicebear.com/9.x/thumbs/png?seed=${Uri.encodeComponent(seed)}');
   }
 
   Future<void> _uploadAvatar() async {
@@ -99,6 +87,18 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
     if (displayName.isEmpty) {
       setState(() => _error = '請輸入顯示名稱');
+      return;
+    }
+    // v1.33 — 頭像跟自我介紹從選填改成硬性門檻，見 SPEC.md v1.33。這裡先做
+    // 客戶端檢查給友善的錯誤訊息，RPC 端（complete_profile 的
+    // AVATAR_URL_REQUIRED/PLACEHOLDER_AVATAR_NOT_ALLOWED/BIO_REQUIRED）是
+    // 真正擋住的地方，兩邊檢查條件必須一致。
+    if (_avatarUrl.isEmpty) {
+      setState(() => _error = '請上傳一張大頭貼');
+      return;
+    }
+    if (_bioController.text.trim().isEmpty) {
+      setState(() => _error = '請填寫自我介紹');
       return;
     }
     if (contactIg.isEmpty && contactLine.isEmpty && contactDiscord.isEmpty) {
@@ -134,7 +134,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         degreeLevel: _degreeLevel,
         department: _departmentController.text.trim().isEmpty ? null : _departmentController.text.trim(),
         gender: _genderController.text.trim().isEmpty ? null : _genderController.text.trim(),
-        bio: _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
+        bio: _bioController.text.trim(),
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
         contactDiscord: contactDiscord.isEmpty ? null : contactDiscord,
@@ -202,12 +202,23 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(onPressed: _uploadingAvatar ? null : _uploadAvatar, child: const Text('上傳照片')),
-                      TextButton(onPressed: _uploadingAvatar ? null : _rerollAvatar, child: const Text('隨機頭像')),
-                    ],
+                  TextButton(
+                    onPressed: _uploadingAvatar ? null : _uploadAvatar,
+                    child: Text(_avatarUrl.isEmpty ? '上傳照片' : '更換照片'),
+                  ),
+                  // v1.33 — 頭像從選填改硬性門檻，移除原本可以完全跳過上傳、
+                  // 靠 Dicebear 自動產生卡通頭像過關的「隨機頭像」按鈕（見
+                  // SPEC.md v1.33）；改用引導文案鼓勵上傳真人露臉照片，方便
+                  // 配對成立後彼此認出對方。
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    child: Text(
+                      '建議使用清楚露臉的個人照，配對成功後大家才容易認出你',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
                   ),
                 ],
               ),
@@ -278,7 +289,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: AppSpacing.md),
             AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
             const SizedBox(height: AppSpacing.md),
-            AppTextField(controller: _bioController, label: '自我介紹（選填）'),
+            AppTextField(
+              controller: _bioController,
+              label: '自我介紹',
+              hint: '一句話介紹自己；興趣、有什麼經驗或技能可以跟別人分享…',
+            ),
             const SizedBox(height: AppSpacing.lg),
             Text('聯絡方式（至少填一項）', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: AppSpacing.sm),

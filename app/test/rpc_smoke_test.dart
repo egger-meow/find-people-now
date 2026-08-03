@@ -81,6 +81,7 @@ void main() {
         displayName: 'Flutter Verify User',
         avatarUrl: 'https://example.com/avatar.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'flutter_verify_line',
       );
       expect(profile.id, userId);

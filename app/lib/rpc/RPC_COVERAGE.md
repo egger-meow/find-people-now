@@ -1166,6 +1166,89 @@ table proposal) in SPEC.md's v1.32 changelog entry; summary here:
    ready to be that filter's default once the feed screen exists — no schema
    rework needed then).
 
+## v1.33 update: `bio` becomes a hard registration gate + Dicebear placeholder rejection + profile card
+
+Found while scoping "can I tap a matched member's photo to see a bigger profile
+card?" — the answer was no (roster card only expanded to meeting hint +
+contacts), and `bio` wasn't even fetched for other members. Two follow-on
+decisions came out of that discussion, in SPEC.md's v1.33 changelog entry:
+
+1. **`app_user.bio` NOT NULL** (`20260803150000_bio_avatar_hard_requirements.sql`)
+   — backfills existing `null` rows to `''`, then `alter column bio set not
+   null, set default ''`. Same two-layer shape as `avatar_url`: DB `NOT NULL`
+   is belt-and-suspenders against direct-table writes, the real enforcement is
+   `complete_profile`'s new `trim(p_bio) = ''` check (`PROFILE_INCOMPLETE` /
+   `BIO_REQUIRED`).
+2. **`complete_profile` rejects Dicebear placeholder avatars**: no
+   face-detection exists anywhere in this repo (`avatar_upload.dart`'s
+   `pickAndUploadAvatar` just uploads raw picked bytes) so the only enforceable
+   rule is rejecting the one auto-generated non-uploaded source —
+   `complete_profile_screen.dart`'s `_rerollAvatar()` builds a
+   `https://api.dicebear.com/...` seed URL, which passed the existing
+   `AVATAR_URL_REQUIRED` "non-blank" check just fine. New check:
+   `p_avatar_url ~* 'dicebear\.com'` → `PROFILE_INCOMPLETE` /
+   `PLACEHOLDER_AVATAR_NOT_ALLOWED`.
+3. **Same 10-arg `complete_profile` signature, no `drop function` needed** —
+   unlike v1.32's `p_default_campus` addition, this round only adds validation
+   inside the existing param list, so `create or replace function
+   complete_profile(...)` with the identical signature is enough.
+4. **Both new checks apply uniformly to `edit_profile_screen.dart`'s reuse of
+   this RPC, not just registration** — same precedent as the pre-existing
+   `AVATAR_URL_REQUIRED` check, which already applies to every edit-profile
+   save today. There's no way for the RPC to distinguish "first-time
+   registration" from "editing an existing profile" (it's the same upsert), so
+   this isn't a new special case — it's the existing behavior extended to two
+   more fields. Practical effect: any pre-existing user with a blank `bio` or
+   still-Dicebear avatar gets asked to fix it the next time they save *any*
+   profile edit. Intentional, not a bug — flagged explicitly during planning.
+5. **`delete_account()` scrub updated**: `bio = null` → `bio = ''` (same file)
+   since `bio` is now `NOT NULL` — mirrors how `avatar_url` was already scrubbed
+   to `''` rather than `null` on account deletion.
+6. **`get_activity_member_profiles` gained `bio`**
+   (`20260803150100_activity_member_profiles_bio.sql`) — added to this RPC,
+   not `get_activity_contacts`, per the split both migrations already document:
+   `get_activity_contacts` owns identity + time-gated contact fields;
+   `get_activity_member_profiles` owns untimed general personal fields
+   (already home to `department`, which SPEC.md groups with `bio` as
+   "same tier, display-only"). Same signature/access-check, just one more key
+   in the `jsonb_build_object`.
+7. **Dart wrapper**: `ActivityMemberProfile` (`lib/rpc/activity_rpc.dart`)
+   gained a `bio` field; `MemberRosterEntry`
+   (`lib/activities/activity_detail_providers.dart`) gained `bio`, populated
+   from `profile?.bio`, threaded through both `copyWith*` methods.
+8. **UI — profile card** (`activity_detail_screen.dart`): tapping a member's
+   `CircleAvatar` specifically (wrapped in its own `InkWell`, separate from the
+   card's existing whole-card tap that expands contacts) opens a new
+   `showModalBottomSheet` (`isScrollControlled: true`, same pattern as the
+   existing `_ReportSheet`/`_RematchSheet`) showing a read-only profile card:
+   photo, name, school/department/degree line, full `bio` text (fallback
+   "還沒有寫自我介紹" for any legacy member who predates the hard requirement),
+   reliability tier.
+9. **UI — registration** (`complete_profile_screen.dart`): removed the
+   auto-`_rerollAvatar()` call and the "隨機頭像" button entirely — shows an
+   empty-state avatar until the user uploads a real photo. `_submit()` gained
+   blank-avatar and blank-bio guards (same manual-validation style as the
+   existing "至少一項聯絡方式" check). Bio field label changed from
+   "自我介紹（選填）" to "自我介紹", with a `hint` nudging content
+   ("興趣、有什麼經驗或技能可以跟別人分享…" — `AppTextField` already supports
+   `hint`, no widget change needed). Added helper copy near the upload button
+   suggesting an actual face photo for recognizability.
+10. **UI — `edit_profile_screen.dart`**: mirrors the same `_submit()` guards
+    and copy changes, so a legacy user hits a friendly inline error instead of
+    a raw `PROFILE_INCOMPLETE`/`e.code.name` string the first time this bites
+    them.
+11. **pgTAP**: new `32_profile_hard_requirements.test.sql` (8 assertions) —
+    covers `BIO_REQUIRED`, `PLACEHOLDER_AVATAR_NOT_ALLOWED`, the success path
+    persisting `bio` correctly, and `get_activity_member_profiles` returning
+    `bio`. Also closes a coverage gap found while scoping: **zero existing
+    pgTAP coverage of any of `complete_profile`'s required-field rejections**
+    (the only prior test touching this RPC, `31_default_campus.test.sql`,
+    only varies `p_default_campus` and always passes a full valid payload
+    otherwise) — backfilled `DISPLAY_NAME_REQUIRED`/`AVATAR_URL_REQUIRED`/
+    `DEGREE_LEVEL_REQUIRED`/`NO_CONTACT_METHOD` assertions too while in this
+    file. Also updated `31_default_campus.test.sql`'s four `complete_profile`
+    calls to pass `p_bio`, since they'd otherwise now fail `BIO_REQUIRED`.
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

@@ -150,6 +150,7 @@ void main() {
         avatarUrl: 'https://example.com/am-a.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
         department: '資工',
+        bio: 'Hi there',
         contactLine: 'am_a_line',
       );
       await completeProfile(
@@ -158,6 +159,7 @@ void main() {
         avatarUrl: 'https://example.com/am-b.png',
         degreeLevel: DEGREE_LEVEL.PHD,
         department: '應數',
+        bio: 'Hi there',
         contactLine: 'am_b_line',
       );
 

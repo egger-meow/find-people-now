@@ -128,9 +128,11 @@ final activityMeetingPointUpdatesStreamProvider =
 ///    `my_activity_members_select`）：`source_request_id`（分組用）+ `status`。
 /// 2. `get_activity_contacts`：`display_name`/`avatar_url`（無條件回傳）+
 ///    `contacts`（依 24h/再約規則決定 null 與否）。
-/// 3. `get_activity_member_profiles`（v1.23，這輪新增）：
-///    `school`/`department`/`degree_level`/可信度等級——`get_activity_contacts`
-///    沒有的欄位，`app_user` RLS 又擋掉直讀其他成員，見 SPEC.md v1.23。
+/// 3. `get_activity_member_profiles`（v1.23，`bio` 為 v1.33 新增）：
+///    `school`/`department`/`degree_level`/`bio`/可信度等級——`get_activity_contacts`
+///    沒有的欄位，`app_user` RLS 又擋掉直讀其他成員，見 SPEC.md v1.23/v1.33。
+///    `bio` 供個人檔案卡使用（`activity_detail_screen.dart` 的
+///    `_ProfileCardSheet`）。
 ///
 /// 不用 Realtime：成員名單/聯絡方式不像地點投票有「即時得票數」的明確需求
 /// （UI_PLAN §4.1 只有 Tab 1 提到即時），下拉刷新已足夠。
@@ -144,6 +146,7 @@ class MemberRosterEntry {
   final SCHOOL school;
   final String? department;
   final DEGREE_LEVEL degreeLevel;
+  final String bio;
   final ReliabilityTier reliabilityTier;
   final String? meetingHint;
   final DateTime? arrivedAt;
@@ -159,6 +162,7 @@ class MemberRosterEntry {
     required this.school,
     required this.department,
     required this.degreeLevel,
+    required this.bio,
     required this.reliabilityTier,
     required this.meetingHint,
     required this.arrivedAt,
@@ -175,6 +179,7 @@ class MemberRosterEntry {
         school: school,
         department: department,
         degreeLevel: degreeLevel,
+        bio: bio,
         reliabilityTier: reliabilityTier,
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
@@ -191,6 +196,7 @@ class MemberRosterEntry {
         school: school,
         department: department,
         degreeLevel: degreeLevel,
+        bio: bio,
         reliabilityTier: reliabilityTier,
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
@@ -223,6 +229,7 @@ final activityMemberRosterProvider =
       school: profile?.school ?? SCHOOL.NYCU,
       department: profile?.department,
       degreeLevel: profile?.degreeLevel ?? DEGREE_LEVEL.UNDERGRAD,
+      bio: profile?.bio ?? '',
       reliabilityTier: profile?.reliabilityTier ?? ReliabilityTier.unknown,
       meetingHint: row['meeting_hint'] as String?,
       arrivedAt: row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),

@@ -126,6 +126,7 @@ void main() {
         displayName: 'ArrivalCheck User A',
         avatarUrl: 'https://example.com/ac-a.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'ac_a_line',
       );
       await completeProfile(
@@ -133,6 +134,7 @@ void main() {
         displayName: 'ArrivalCheck User B',
         avatarUrl: 'https://example.com/ac-b.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'ac_b_line',
       );
 

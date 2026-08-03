@@ -181,6 +181,7 @@ void main() {
         avatarUrl: 'https://example.com/ma-a.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
         department: '資工',
+        bio: 'Hi there',
         contactLine: 'ma_a_line',
       );
       await completeProfile(
@@ -189,6 +190,7 @@ void main() {
         avatarUrl: 'https://example.com/ma-b.png',
         degreeLevel: DEGREE_LEVEL.PHD,
         department: '應數',
+        bio: 'Hi there',
         contactLine: 'ma_b_line',
       );
 
@@ -340,6 +342,7 @@ void main() {
         displayName: 'MyActivities Stranger',
         avatarUrl: 'https://example.com/ma-stranger.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'ma_stranger_line',
       );
       await expectLater(
@@ -406,6 +409,7 @@ void main() {
         displayName: 'MyActivities Cancel User',
         avatarUrl: 'https://example.com/ma-cancel.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'ma_cancel_line',
       );
 

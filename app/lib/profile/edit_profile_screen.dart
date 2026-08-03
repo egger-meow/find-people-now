@@ -57,11 +57,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     super.dispose();
   }
 
-  void _rerollAvatar() {
-    final seed = '${_displayNameController.text.trim()}-${DateTime.now().millisecondsSinceEpoch}';
-    setState(() => _avatarUrl = 'https://api.dicebear.com/9.x/thumbs/png?seed=${Uri.encodeComponent(seed)}');
-  }
-
   Future<void> _uploadAvatar() async {
     final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
@@ -87,6 +82,23 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       setState(() => _error = '請輸入顯示名稱');
       return;
     }
+    // v1.33 — 頭像跟自我介紹從選填改成硬性門檻（見 SPEC.md v1.33），這條 RPC
+    // 是註冊/編輯共用的同一個 upsert，既有使用者若還沒補（例如頭像還是舊的
+    // Dicebear 佔位頭像、或從沒填過自我介紹）第一次存編輯個人資料就會被要求
+    // 補上——這裡先做客戶端檢查給友善訊息，而不是讓使用者看到原始的
+    // PROFILE_INCOMPLETE 錯誤代碼。
+    if (_avatarUrl.isEmpty) {
+      setState(() => _error = '請上傳一張大頭貼');
+      return;
+    }
+    if (_avatarUrl.contains('dicebear.com')) {
+      setState(() => _error = '請上傳一張真人照片（不能是自動產生的卡通頭像）');
+      return;
+    }
+    if (_bioController.text.trim().isEmpty) {
+      setState(() => _error = '請填寫自我介紹');
+      return;
+    }
     if (contactIg.isEmpty && contactLine.isEmpty && contactDiscord.isEmpty) {
       setState(() => _error = '請至少填寫一項聯絡方式');
       return;
@@ -106,7 +118,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         degreeLevel: _degreeLevel,
         department: _departmentController.text.trim().isEmpty ? null : _departmentController.text.trim(),
         gender: _genderController.text.trim().isEmpty ? null : _genderController.text.trim(),
-        bio: _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
+        bio: _bioController.text.trim(),
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
         contactDiscord: contactDiscord.isEmpty ? null : contactDiscord,
@@ -138,7 +150,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               _displayNameController.text = user.displayName;
               _departmentController.text = user.department ?? '';
               _genderController.text = user.gender ?? '';
-              _bioController.text = user.bio ?? '';
+              _bioController.text = user.bio;
               _contactIgController.text = user.contactIg ?? '';
               _contactLineController.text = user.contactLine ?? '';
               _contactDiscordController.text = user.contactDiscord ?? '';
@@ -165,18 +177,21 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton(
-                            onPressed: _uploadingAvatar ? null : _uploadAvatar,
-                            child: const Text('上傳照片'),
-                          ),
-                          TextButton(
-                            onPressed: _uploadingAvatar ? null : _rerollAvatar,
-                            child: const Text('隨機頭像'),
-                          ),
-                        ],
+                      TextButton(
+                        onPressed: _uploadingAvatar ? null : _uploadAvatar,
+                        child: const Text('更換照片'),
+                      ),
+                      // v1.33 — 移除「隨機頭像」按鈕，頭像從選填改硬性門檻，
+                      // 見 SPEC.md v1.33。
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                        child: Text(
+                          '建議使用清楚露臉的個人照，配對成功後大家才容易認出你',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
                       ),
                     ],
                   ),
@@ -207,7 +222,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
                 const SizedBox(height: AppSpacing.md),
-                AppTextField(controller: _bioController, label: '自我介紹（選填）'),
+                AppTextField(
+                  controller: _bioController,
+                  label: '自我介紹',
+                  hint: '一句話介紹自己；興趣、有什麼經驗或技能可以跟別人分享…',
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 Text('聯絡方式（至少填一項）', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: AppSpacing.sm),

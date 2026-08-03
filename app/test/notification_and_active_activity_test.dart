@@ -164,6 +164,7 @@ void main() {
         displayName: 'NAA User A',
         avatarUrl: 'https://example.com/a.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'naa_a_line',
       );
       await completeProfile(
@@ -171,6 +172,7 @@ void main() {
         displayName: 'NAA User B',
         avatarUrl: 'https://example.com/b.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'naa_b_line',
       );
 

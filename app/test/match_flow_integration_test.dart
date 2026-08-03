@@ -99,6 +99,7 @@ void main() {
         displayName: 'Waiting Room Verify',
         avatarUrl: 'https://example.com/avatar.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'waiting_room_verify_line',
       );
       expect(profile.school, SCHOOL.NYCU);

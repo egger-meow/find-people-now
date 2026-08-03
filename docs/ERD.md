@@ -68,9 +68,9 @@ erDiagram
         text email "CHECK：完整比對 @nycu.edu.tw / @nthu.edu.tw 雙校網域"
         enum school "NYCU | NTHU，由 email 網域自動判定，非使用者自選（v1.2）"
         text display_name
-        text avatar_url "註冊硬性門檻，NOT NULL"
+        text avatar_url "註冊硬性門檻，NOT NULL；RPC 另擋 Dicebear 佔位頭像網址（v1.33）"
         text gender "nullable，僅展示，不進配對邏輯"
-        text bio "nullable，選填自我介紹，僅展示、不進配對邏輯（v1.3）"
+        text bio "註冊硬性門檻，NOT NULL DEFAULT ''，僅展示、不進配對邏輯（v1.3 新增／v1.33 改硬性門檻）"
         text department "nullable，選填科系，僅展示、不進配對邏輯（v1.4）"
         enum degree_level "UNDERGRAD | MASTER | PHD，NOT NULL，註冊時強制下拉，僅展示、不進配對邏輯（v1.4）"
         text contact_ig "nullable"
@@ -332,7 +332,7 @@ erDiagram
 7. **User 表命名為 `app_user`**：`user` 是 PostgreSQL 保留字；`id` 直接引用 `auth.users(id)`（Supabase Auth），不另存密碼/OTP 相關欄位。
 8. **`school` 用 enum、不開第 14 張 School 表**（v1.2）：學校清單由 email domain mapping 硬編碼決定（`nycu.edu.tw → NYCU`、`nthu.edu.tw → NTHU`），新增一間學校本來就得改 migration（新增網域規則），開表得不到任何彈性，enum 就夠。`app_user.school` 與 `location.school` 用同一個 enum；DB 層另加 CHECK 保證 `school` 與 email 網域一致（「不讓 user 自選」直接由 DB 保證，不只靠應用層）。
 9. **同校隔離不在 Matching Engine 加條件**（SPEC §7）：Request 建立時檢查 `campus_location_id` 屬於 owner 的 `school`，加上「地點必須完全相同才可 merge」，同校隔離天然成立；跨校 fallback matching 留 future，屆時才需要動引擎。
-10. **`bio` 選填、不做 CHECK**（v1.3）：跟 `gender` 同等級，純展示欄位。不像 `avatar_url`/`contact_*` 有 NOT NULL / at-least-one 約束——沒有值就是 `NULL`，不卡任何流程。
+10. **`bio` 從選填改為註冊硬性門檻**（v1.3 新增／v1.33 改硬性門檻）：純展示欄位，不進配對邏輯這點跟 `gender` 一樣，但不再共用「無 CHECK、值可為 `NULL`」的寬鬆待遇——現在跟 `avatar_url` 同一套兩層防護：DB 層 `NOT NULL DEFAULT ''`（防直接寫表繞過），真正擋空白值的是 `complete_profile` 的 `trim(p_bio) = ''` 檢查。改動原因見 SPEC.md v1.33：選填時大量使用者沒填，配對成立後的個人檔案卡形同虛設。
 11. **`degree_level` 用 enum、`department` 用純文字**（v1.4）：`degree_level` 是註冊時強制下拉的固定選項，enum 天然合適；`department` 各校系所清單龐雜且會變動，不值得為此開一張表或做 enum，純文字欄位即可，僅展示、不進查詢邏輯。
 12. **明確不新增 `grade_year`**（v1.4）：SPEC §2 已說明理由（階級感/圈層比較心態，與產品平等出發點衝突）；schema 層的落地就是 `app_user` 上不存在、也不會存在這個欄位。
 13. **`PENDING_CONFIRMATION` 選擇進 `request_status` enum，不做成 Downgrade 式的子流程表**（v1.4）：核心工程理由是查詢成本——Matching Engine 抓候選池時只需要 `WHERE status = 'REQUESTING'` 就能自然排除掉正卡在候選配對中的 Request；若做成子流程表（`match_request.status` 仍停在 `REQUESTING`，另外查 `pending_confirmation` 是否有進行中記錄），Matching Engine 每次掃描都要多 join 一層排除邏輯，容易漏寫，未來新增查詢路徑時也容易再次漏寫。這點與 Downgrade（SPEC §8）不同：Downgrade 是「原地詢問，不論成功與否都留在同一個 `required_total` 繼續撮合」的暫時性旁支決策；`PENDING_CONFIRMATION` 則是「配對本體是否成立」的核心狀態，值得佔一個 status 值。

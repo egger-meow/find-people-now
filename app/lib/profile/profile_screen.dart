@@ -309,7 +309,7 @@ class _MoreInfoSectionState extends State<_MoreInfoSection> {
             Text('性別：${widget.user.gender ?? '未填（僅供展示，不影響配對）'}',
                 style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: AppSpacing.xs),
-            Text('自我介紹：${widget.user.bio?.isNotEmpty == true ? widget.user.bio! : '還沒有寫自我介紹'}',
+            Text('自我介紹：${widget.user.bio.isNotEmpty ? widget.user.bio : '還沒有寫自我介紹'}',
                 style: Theme.of(context).textTheme.bodyMedium),
           ],
         ],

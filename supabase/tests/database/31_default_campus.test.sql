@@ -50,6 +50,7 @@ select complete_profile(
   p_display_name    := 'DC User',
   p_avatar_url      := 'https://avatar.dc_user',
   p_degree_level    := 'UNDERGRAD',
+  p_bio             := 'Hi there',
   p_contact_line    := 'dc_user_line',
   p_default_campus  := '光復'
 );
@@ -69,6 +70,7 @@ select complete_profile(
   p_display_name    := 'DC User Renamed',
   p_avatar_url      := 'https://avatar.dc_user',
   p_degree_level    := 'UNDERGRAD',
+  p_bio             := 'Hi there',
   p_contact_line    := 'dc_user_line'
 );
 
@@ -87,6 +89,7 @@ select complete_profile(
   p_display_name    := 'DC User Renamed',
   p_avatar_url      := 'https://avatar.dc_user',
   p_degree_level    := 'UNDERGRAD',
+  p_bio             := 'Hi there',
   p_contact_line    := 'dc_user_line',
   p_default_campus  := '博愛'
 );
@@ -122,6 +125,7 @@ select complete_profile(
   p_display_name    := 'DC User Two',
   p_avatar_url      := 'https://avatar.dc_user2',
   p_degree_level    := 'UNDERGRAD',
+  p_bio             := 'Hi there',
   p_contact_line    := 'dc_user2_line'
 );
 

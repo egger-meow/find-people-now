@@ -10,7 +10,7 @@ class AppUser implements SupadartClass<AppUser> {
   final String displayName;
   final String avatarUrl;
   final String? gender;
-  final String? bio;
+  final String bio;
   final String? contactIg;
   final String? contactLine;
   final String? contactDiscord;
@@ -30,7 +30,7 @@ class AppUser implements SupadartClass<AppUser> {
     required this.displayName,
     required this.avatarUrl,
     this.gender,
-    this.bio,
+    required this.bio,
     this.contactIg,
     this.contactLine,
     this.contactDiscord,
@@ -218,7 +218,7 @@ class AppUser implements SupadartClass<AppUser> {
           ? jsonn['avatar_url'].toString()
           : '',
       gender: jsonn['gender'] != null ? jsonn['gender'].toString() : null,
-      bio: jsonn['bio'] != null ? jsonn['bio'].toString() : null,
+      bio: jsonn['bio'] != null ? jsonn['bio'].toString() : '',
       contactIg: jsonn['contact_ig'] != null
           ? jsonn['contact_ig'].toString()
           : null,
@@ -351,7 +351,7 @@ class AppUser implements SupadartClass<AppUser> {
           : displayName as String,
       avatarUrl: avatarUrl == _unset ? this.avatarUrl : avatarUrl as String,
       gender: gender == _unset ? this.gender : gender as String?,
-      bio: bio == _unset ? this.bio : bio as String?,
+      bio: bio == _unset ? this.bio : bio as String,
       contactIg: contactIg == _unset ? this.contactIg : contactIg as String?,
       contactLine: contactLine == _unset
           ? this.contactLine

@@ -161,6 +161,7 @@ void main() {
         displayName: 'ALV User A',
         avatarUrl: 'https://example.com/a.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'alv_a_line',
       );
       await completeProfile(
@@ -168,6 +169,7 @@ void main() {
         displayName: 'ALV User B',
         avatarUrl: 'https://example.com/b.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'alv_b_line',
       );
 

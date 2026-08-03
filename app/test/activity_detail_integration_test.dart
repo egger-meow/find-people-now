@@ -212,6 +212,7 @@ void main() {
         displayName: 'ActivityDetail User A',
         avatarUrl: 'https://example.com/ad-a.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'ad_a_line',
       );
       await completeProfile(
@@ -219,6 +220,7 @@ void main() {
         displayName: 'ActivityDetail User B',
         avatarUrl: 'https://example.com/ad-b.png',
         degreeLevel: DEGREE_LEVEL.MASTER,
+        bio: 'Hi there',
         contactLine: 'ad_b_line',
       );
 

@@ -135,6 +135,7 @@ class ActivityMemberProfile {
   final SCHOOL school;
   final String? department;
   final DEGREE_LEVEL degreeLevel;
+  final String bio;
   final ReliabilityTier reliabilityTier;
 
   ActivityMemberProfile({
@@ -142,19 +143,21 @@ class ActivityMemberProfile {
     required this.school,
     required this.department,
     required this.degreeLevel,
+    required this.bio,
     required this.reliabilityTier,
   });
 }
 
 /// docs/API.md §6.1.1 — `rpc: get_activity_member_profiles(activity_id)`
-/// (v1.23). Fills the gap `get_activity_contacts` leaves: that RPC returns
-/// `display_name`/`avatar_url`/`contacts` for every member unconditionally,
-/// but never `school`/`department`/`degree_level`/reliability tier, and
-/// `app_user`'s RLS blocks reading another member's row directly. Callers
-/// merge this by `userId` with [getActivityContacts]'s member list — this
-/// RPC deliberately does not repeat `display_name`/`avatar_url`/`contacts`.
-/// Includes every member regardless of `status` (JOINED/CANCELLED), same as
-/// `getActivityContacts`.
+/// (v1.23, `bio` added v1.33). Fills the gap `get_activity_contacts` leaves:
+/// that RPC returns `display_name`/`avatar_url`/`contacts` for every member
+/// unconditionally, but never `school`/`department`/`degree_level`/`bio`/
+/// reliability tier, and `app_user`'s RLS blocks reading another member's row
+/// directly. Callers merge this by `userId` with [getActivityContacts]'s
+/// member list — this RPC deliberately does not repeat `display_name`/
+/// `avatar_url`/`contacts`. Includes every member regardless of `status`
+/// (JOINED/CANCELLED), same as `getActivityContacts`. `bio` powers the
+/// post-match profile card (`activity_detail_screen.dart`).
 Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
   SupabaseClient client,
   String activityId,
@@ -171,6 +174,7 @@ Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
           school: SCHOOL.values.byName(m['school'] as String),
           department: m['department'] as String?,
           degreeLevel: DEGREE_LEVEL.values.byName(m['degree_level'] as String),
+          bio: m['bio'] as String? ?? '',
           reliabilityTier: ReliabilityTier.fromValue(m['reliability_tier'] as String?),
         );
       }).toList();
