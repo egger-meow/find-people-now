@@ -65,46 +65,45 @@ final approvedLocationsProvider =
   return rows.map(Location.fromJson).toList();
 });
 
-/// Arrival Check（v1.24）——只訂閱 `activity_member` 的 `user_id`/`arrived_at`
-/// 兩欄變化，不把整個成員名單（[activityMemberRosterProvider]）改成
-/// Realtime：後者每次事件都要重新打 `get_activity_contacts`/
-/// `get_activity_member_profiles` 兩支 RPC，抵達狀態變化不需要那麼重的刷新，
-/// 這裡單獨用一個窄 stream 疊加在既有名單上即可。
-final activityArrivalStreamProvider =
-    StreamProvider.family<Map<String, DateTime?>, String>((ref, activityId) {
+/// Arrival Check（v1.24）+ Vibe Tags（v1.28）共用的底層 stream——兩者都只需要
+/// `activity_member` 的一小撮欄位（`arrived_at`/`vibe_tags`），不把整個成員
+/// 名單（[activityMemberRosterProvider]，每次事件都要重打
+/// `get_activity_contacts`/`get_activity_member_profiles` 兩支 RPC）改成
+/// Realtime。原本兩個 feature 各自對同一張表、同一個 activity_id 開一條獨立
+/// Realtime channel，這裡合併成一條底層 subscription，
+/// [activityArrivalStreamProvider]/[activityVibeTagsStreamProvider] 各自用
+/// `ref.watch(...stream)` 疊加 derived selector——Riverpod 依 family key
+/// 快取同一個 provider instance，底層 `.stream()` 只會真的呼叫一次。
+final _activityMemberFieldsStreamProvider =
+    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, activityId) {
   final client = ref.watch(supabaseClientProvider);
   return client
       .from('activity_member')
       .stream(primaryKey: ['activity_id', 'user_id'])
-      .eq('activity_id', activityId)
-      .map((rows) {
-        return {
-          for (final row in rows)
-            row['user_id'] as String:
-                row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),
-        };
-      });
+      .eq('activity_id', activityId);
 });
 
-/// Vibe Tags（v1.28）即時同步給其他成員看——跟 [activityArrivalStreamProvider]
-/// 同一種「窄 stream 疊加在既有名單上」手法：只訂閱 `vibe_tags` 這一欄，不把
-/// 整個 [activityMemberRosterProvider]（會連帶重打兩支聯絡方式/個資 RPC）改成
-/// Realtime。反饋：使用者編輯自己的 vibe tags 後，原本只在自己這端
-/// `ref.invalidate(activityMemberRosterProvider(...))`，其他正在看同一個活動
-/// 的成員完全不會知道，要等他們自己下拉刷新才看得到。
+final activityArrivalStreamProvider =
+    Provider.family<AsyncValue<Map<String, DateTime?>>, String>((ref, activityId) {
+  final asyncRows = ref.watch(_activityMemberFieldsStreamProvider(activityId));
+  return asyncRows.whenData((rows) {
+    return {
+      for (final row in rows)
+        row['user_id'] as String:
+            row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),
+    };
+  });
+});
+
 final activityVibeTagsStreamProvider =
-    StreamProvider.family<Map<String, List<String>>, String>((ref, activityId) {
-  final client = ref.watch(supabaseClientProvider);
-  return client
-      .from('activity_member')
-      .stream(primaryKey: ['activity_id', 'user_id'])
-      .eq('activity_id', activityId)
-      .map((rows) {
-        return {
-          for (final row in rows)
-            row['user_id'] as String: (row['vibe_tags'] as List?)?.cast<String>() ?? const <String>[],
-        };
-      });
+    Provider.family<AsyncValue<Map<String, List<String>>>, String>((ref, activityId) {
+  final asyncRows = ref.watch(_activityMemberFieldsStreamProvider(activityId));
+  return asyncRows.whenData((rows) {
+    return {
+      for (final row in rows)
+        row['user_id'] as String: (row['vibe_tags'] as List?)?.cast<String>() ?? const <String>[],
+    };
+  });
 });
 
 /// 集合地點更新紀錄（append-only，見 `update_meeting_point` 註解）——新到舊
