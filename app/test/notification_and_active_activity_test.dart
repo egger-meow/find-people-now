@@ -267,9 +267,15 @@ void main() {
       expect(notifRows.first['payload']['activity_id'], activityId);
 
       // --- 1b. ...and the Realtime channel actually delivered it (the bug this
-      // regression test exists for: RealtimeSubscribeException before the fix). ---
+      // regression test exists for: RealtimeSubscribeException before the fix).
+      // 100 * 200ms = 20s: a CI runner's Realtime relay can be considerably
+      // slower than a local dev machine (observed: the row lands well within
+      // step 1's 3s window locally, but step 1b's original 3s window flaked
+      // on GitHub Actions) — this matches the order of magnitude other
+      // Realtime-delivery waits in this suite already use, e.g.
+      // match_flow_integration_test.dart's _waitUntil default. ---
       var delivered = false;
-      for (var attempt = 0; attempt < 15; attempt++) {
+      for (var attempt = 0; attempt < 100; attempt++) {
         if (notificationEvents.any((rows) => rows.any((r) => r['event_type'] == 'MATCH_SUCCESS'))) {
           delivered = true;
           break;
