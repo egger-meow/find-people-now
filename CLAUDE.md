@@ -55,6 +55,16 @@ second changelog — check the last few before adding a new one to understand re
   `match_history_avoidance`) to force reads through a `SECURITY DEFINER` RPC that only reveals an
   aggregate status, never the other party's individual response (non-attribution is a deliberate
   privacy property — see SPEC.md §12.1).
+- **A "member of X can see other members of X" SELECT policy must not query its own table inside
+  its own `USING (...)` clause** — Postgres detects that as infinite recursion (`42P17`) and errors
+  outright, it doesn't just run slow. Wrap the membership check in a `stable security definer` helper
+  function instead (see `fn_is_activity_member`, `fn_is_request_member` —
+  `20260724121900_fix_activity_member_rls_recursion.sql` /
+  `20260724124900_fix_request_member_rls_recursion.sql`); the helper runs as its owner, so it never
+  re-triggers the caller's RLS. This bug shipped twice before being caught, both times because every
+  other pgTAP test queries as the `postgres` superuser (bypassing RLS) — `35_rls_no_self_reference_smoke.test.sql`
+  now walks every RLS-enabled public table as `authenticated` and asserts none of them raise `42P17`,
+  so a new self-referencing policy fails CI generically instead of waiting to be found by hand.
 - **Background jobs are plain callable SQL functions**, not automatically scheduled — e.g.
   `fn_run_matching_engine`, `fn_cleanup_pending_confirmations`, `fn_start_activities`,
   `fn_expire_requests`, `fn_expire_downgrades`, `fn_complete_activities`,
