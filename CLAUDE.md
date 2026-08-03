@@ -150,7 +150,7 @@ cd app
 flutter pub get
 flutter run
 flutter analyze                  # lint (flutter_lints)
-flutter test                     # all tests
+flutter test -j 1                # all tests — see -j 1 note below
 flutter test test/rpc_smoke_test.dart
 flutter test test/activity_location_voting_smoke_test.dart
 ```
@@ -162,6 +162,12 @@ mocked) and need a `location` row seeded first (no migration seeds `location` ro
 docker exec supabase_db_find-people-now psql -U postgres -d postgres -c \
   "insert into location (school, campus, name, is_active) values ('NYCU', '光復', 'Flutter 驗證測試地點', true) on conflict (school, name) do update set is_active = true, campus = excluded.campus;"
 ```
+
+Run the full suite (`flutter test`) with `-j 1`. The integration tests each open real Realtime
+subscriptions against the one local Supabase instance; at Flutter's default concurrency this causes
+cross-file resource contention that reliably times out `match_flow_integration_test.dart`'s
+Realtime-delivery wait (confirmed locally — fails at default concurrency, passes twice in a row
+serialized). Individual `flutter test test/<file>.dart` runs are unaffected.
 
 ## Commit convention
 

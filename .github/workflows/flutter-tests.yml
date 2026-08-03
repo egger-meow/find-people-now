@@ -32,9 +32,16 @@ jobs:
       - name: Start local Supabase stack
         run: supabase start
 
+      # `supabase status -o env` interleaves CLI noise (a "Stopped services:
+      # [...]" line, an update-available notice) with the actual KEY="value"
+      # lines, so eval-ing the whole output as shell breaks under GH Actions'
+      # `bash -e` — grep out only the three lines we need instead.
       - name: Write app/.env from supabase status
         run: |
-          eval "$(supabase status -o env | sed 's/^/export /')"
+          STATUS="$(supabase status -o env)"
+          API_URL="$(echo "$STATUS" | grep '^API_URL=' | cut -d'=' -f2- | tr -d '"')"
+          ANON_KEY="$(echo "$STATUS" | grep '^ANON_KEY=' | cut -d'=' -f2- | tr -d '"')"
+          SERVICE_ROLE_KEY="$(echo "$STATUS" | grep '^SERVICE_ROLE_KEY=' | cut -d'=' -f2- | tr -d '"')"
           cat > app/.env <<EOF
           SUPABASE_URL=$API_URL
           SUPABASE_ANON_KEY=$ANON_KEY
@@ -57,9 +64,15 @@ jobs:
         working-directory: app
         run: flutter analyze
 
+      # -j 1: the integration tests each open real Realtime subscriptions
+      # against the one local Supabase instance. Running them at Flutter's
+      # default concurrency causes cross-file resource contention that
+      # produces a real (confirmed locally, twice) Realtime-delivery
+      # timeout in match_flow_integration_test.dart; serial execution is
+      # reliable. ~20s serial vs. CI stability is the right trade here.
       - name: flutter test
         working-directory: app
-        run: flutter test
+        run: flutter test -j 1
 
       - name: Stop local Supabase stack
         if: always()
