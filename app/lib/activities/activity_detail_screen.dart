@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
+import '../data/skill_level_labels.dart';
 import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/location.dart';
@@ -1378,6 +1379,18 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                       isCancelled ? '已取消參加 · 可信度 ${_tierLabel(member.reliabilityTier)}' : '可信度 ${_tierLabel(member.reliabilityTier)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                    // v1.34/v1.35 — 該成員發起/加入配對當下指定的程度／讀書目標，
+                    // 兩者互斥（分屬不同活動類型），非 null 才顯示。
+                    if (member.skillLevel != null)
+                      Text(
+                        '程度：${skillLevelLabel(member.skillLevel!)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    if (member.studyTarget != null && member.studyTarget!.isNotEmpty)
+                      Text(
+                        '讀書目標：${member.studyTarget}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     if (showArrival && !isCancelled) ...[
                       const SizedBox(height: 2),
                       Row(
@@ -1526,6 +1539,24 @@ class _ProfileCardSheet extends StatelessWidget {
               style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ),
+          if (member.skillLevel != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Center(
+              child: Text(
+                '程度：${skillLevelLabel(member.skillLevel!)}',
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+          if (member.studyTarget != null && member.studyTarget!.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Center(
+              child: Text(
+                '讀書目標：${member.studyTarget}',
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           const Divider(height: 1),
           const SizedBox(height: AppSpacing.md),

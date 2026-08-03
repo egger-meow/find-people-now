@@ -12,6 +12,7 @@ import '../generated/request_member.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/auth_profile_rpc.dart';
+import '../rpc/match_request_rpc.dart' show decodeMatchRequest;
 
 /// Whether the signed-in user has an `app_user` row yet (`complete_profile`
 /// already ran once). Drives the go_router redirect to `/complete-profile`.
@@ -150,7 +151,7 @@ final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
       .eq('owner_id', userId)
       .inFilter('status', ['REQUESTING', 'PENDING_CONFIRMATION']);
   if (rows.isEmpty) return null;
-  return MatchRequest.fromJson(rows.first);
+  return decodeMatchRequest(rows.first);
 });
 
 /// 「現在是否有進行中的活動」（`MATCHED`/`ONGOING`）——直接鏡射
@@ -188,7 +189,7 @@ final matchRequestStreamProvider = StreamProvider.family<MatchRequest?, String>(
       .from('match_request')
       .stream(primaryKey: ['id'])
       .eq('id', requestId)
-      .map((rows) => rows.isEmpty ? null : MatchRequest.fromJson(rows.first));
+      .map((rows) => rows.isEmpty ? null : decodeMatchRequest(rows.first));
 });
 
 /// 等待室成員頭像列（UI_PLAN §3）背後的資料——即時反應人數變化。

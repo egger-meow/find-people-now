@@ -92,6 +92,7 @@ erDiagram
         int default_max_participants "nullable，null 時 fallback 6（v1.5）"
         int group_size_step "nullable，非 null 時離散化人數選項間隔；null = 連續區間（v1.6）"
         text description "nullable，前端「?」按鈕顯示的玩法說明；審核時由 admin 一併設定（v1.10）"
+        bool skill_level_enabled "預設 false；per-type 設定欄位，admin 審核時可打開，不需改程式碼（v1.34）"
         enum status "PENDING | APPROVED | REJECTED"
         uuid created_by FK
         timestamptz created_at
@@ -123,6 +124,9 @@ erDiagram
         timestamptz revoked_at "nullable，owner 主動撤銷邀請連結的時間（v1.5）"
         bool allow_downgrade
         enum status "DRAFT | REQUESTING | PENDING_CONFIRMATION | MATCHED | EXPIRED | CANCELLED（v1.4 新增 PENDING_CONFIRMATION）"
+        enum skill_level "nullable，BEGINNER|CASUAL|ADVANCED|COMPETITIVE；null=不限（wildcard）；只在 activity_type.skill_level_enabled=true 時有意義（v1.34）"
+        text study_target "nullable，使用者原始輸入（未清理）；只在讀書類型有意義；前端顯示讀這欄（v1.35）"
+        text study_target_normalized "nullable，正規化後字串；撮合比對只用這欄，不對外顯示（v1.35）"
         timestamptz created_at
     }
 
@@ -373,3 +377,5 @@ erDiagram
 45. **NYCU 在校生年限軟性提醒不落地存欄位、也不新增任何 schema（v1.21）**：跟 `known_member_count`（設計備註 20）、得票數（設計備註 32）同一精神——入學年份（信箱本身）、`degree_level`、目前日期都已存在，註冊當下即時算即可；這個判斷只在註冊當下用一次，不需要之後反覆查詢，比前述兩者更沒有快取的理由。`fn_parse_nycu_enrollment_year`/`fn_seniority_reminder_needed` 刻意寫成 plain SQL/PL/pgSQL function（不是 RPC），方便 pgTAP 直接測、不需要模擬 `auth.uid()`；`check_enrollment_reminder` RPC 只是包一層 `auth.uid() → auth.users.email` 查詢再呼叫這兩個 helper。
 46. **自訂候選（`custom_name`）不新增 `location.status` 特殊值、不落地 `location` 表（v1.30）**：曾考慮比照既有 `PENDING`/`APPROVED` 模式新增一個如 `UNLISTED` 的 status，讓自訂地點也寫進 `location` 表、只是從一般下拉清單過濾掉——否決理由是這樣資料本質上仍是「永久增加到地點資料庫」，只是不顯示，隨活動數量線性累積孤兒列，且需要額外清理機制，跟使用者「不會永久增到預設地點資料庫」的訴求直接矛盾。改成 `activity_location_option.custom_name`（nullable text）與既有 `location_id`（改 nullable）恰好其一非空（CHECK XOR），資料只存在候選記錄本身，活動結束、候選未中選也不會留下任何 `location` 表痕跡。連帶把 `activity_location_vote.location_id`／`activity.activity_location_id` 都改成指向 `activity_location_option.id`（設計備註 31/32/33 的既有邏輯不變，只是計票/鎖定的對象從「地點」統一改成「候選記錄」）——這是唯一能讓 custom_name 候選跟既有 location_id 候選共用同一套計票/鎖定查詢、不必為兩種來源分岔邏輯的作法。
 47. **`app_user.default_campus` 不開 `campuses` 表、不開 FK（v1.32）**：跟設計備註 46 同一類判斷——曾提案正規化成獨立 `campuses` 表（`id`/`university_id`/`name`），讓 `app_user.default_campus_id`、`activity.campus_id` 都改指向 FK，未來擴充英文名稱/排序/圖片/座標/管理後台/跨校一致 ID 時比較乾淨。否決理由不是技術上做不到，而是現在還沒有任何一個上述需求成立——`location.campus` 從 v1.11 起就是純文字、`select distinct` 就能衍生出校區清單（`campusOptionsProvider`），資料量小到不需要正規化管理；`default_campus` 存的只是「使用者上次/預設選哪個」，跟 `location.campus` 保持同一種資料形狀（純文字比對）反而更一致，也不用為了一個目前用不到的欄位（`university_id`）多繞一層 join。等真的出現上述需求，屆時把 `location.campus`/`app_user.default_campus` 的文字值遷移成 FK 即可，不影響現在的資料形狀。
+48. **`activity_type.skill_level_enabled` 沿用 `group_size_step`（設計備註 22）建立的「per-type 設定欄位」模式，不做成獨立表（v1.34）**：曾考慮開一張 `activity_type_skill_config` 之類的表承載未來可能的更多 per-type 篩選條件，否決理由跟設計備註 22 同源——目前只有一種篩選維度（程度），為此開一張表換不到任何實質彈性，只是多一層 join；`skill_level_enabled` 是單一 boolean，跟 `group_size_step` 一樣由 admin 直接在 Studio 設定，不需要專屬 admin RPC。`match_request.skill_level` 用 enum（`BEGINNER`/`CASUAL`/`ADVANCED`/`COMPETITIVE`）而非 int 等級碼：相容性判準（設計備註見 `fn_skill_level_match`）目前只有「相等或有一方 null」，不需要順序比較，enum 比 int 多一層型別安全（DB 直接擋掉非法字串），且錯誤訊息/前端顯示不需要額外的數字-文字對照表。
+49. **`match_request.study_target`/`study_target_normalized` 只綁定「讀書」固定類型，不比照 `skill_level_enabled` 做成通用 per-type flag（v1.35）**：曾考慮抽象成跟 skill_level 一樣的機制（例如 `activity_type.free_text_match_enabled`），否決理由是兩者性質不同——`skill_level` 是「選擇一個固定等級」，天生就是可以套用到任何新競技類型的通用機制；`study_target` 是「自由文字＋正規化比對」，這套正規化規則（全形轉半形、大小寫）只對「讀書」這種輸入科目/課程/考試名稱的情境有意義，套到其他類型（例如未來若有其他自由文字欄位）不會是同一套正規化規則，抽象成通用機制反而會綁死「所有自由文字欄位都用同一種正規化」這個不成立的假設。原文/正規化兩欄分開存也是同樣的「不過度抽象」精神的延伸：不做成「一個欄位 + 讀取時即時正規化」，是因為撮合是熱路徑（`fn_run_matching_engine`），每次比對都重新正規化雙方字串不如寫入時算好一次划算，且分兩欄後前端顯示（讀原文）與比對邏輯（讀正規化）天然不會互相干擾。

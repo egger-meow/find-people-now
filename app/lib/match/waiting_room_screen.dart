@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../activities/my_activities_providers.dart' show invalidateMyActivityList;
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
+import '../data/skill_level_labels.dart';
 import '../generated/match_request.dart';
 import '../generated/supadart_header.dart' show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
 import '../rpc/api_exception.dart';
@@ -476,6 +477,30 @@ class _RequestInfoCard extends ConsumerWidget {
               ),
             ],
           ),
+          if (request.skillLevel != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Icon(Icons.military_tech_rounded, size: 20, color: scheme.primary),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text('程度：${skillLevelLabel(request.skillLevel!)}', style: textTheme.bodyMedium),
+                ),
+              ],
+            ),
+          ],
+          if (request.studyTarget != null && request.studyTarget!.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Icon(Icons.menu_book_rounded, size: 20, color: scheme.primary),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text('讀書目標：${request.studyTarget}', style: textTheme.bodyMedium),
+                ),
+              ],
+            ),
+          ],
           if (request.allowDowngrade) ...[
             const SizedBox(height: AppSpacing.sm),
             Row(

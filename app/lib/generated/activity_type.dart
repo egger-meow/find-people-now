@@ -14,6 +14,7 @@ class ActivityType implements SupadartClass<ActivityType> {
   final int? defaultMaxParticipants;
   final int? groupSizeStep;
   final String? description;
+  final bool skillLevelEnabled;
 
   const ActivityType({
     required this.id,
@@ -26,6 +27,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     this.defaultMaxParticipants,
     this.groupSizeStep,
     this.description,
+    required this.skillLevelEnabled,
   });
 
   static String get table_name => 'activity_type';
@@ -39,6 +41,7 @@ class ActivityType implements SupadartClass<ActivityType> {
   static String get c_defaultMaxParticipants => 'default_max_participants';
   static String get c_groupSizeStep => 'group_size_step';
   static String get c_description => 'description';
+  static String get c_skillLevelEnabled => 'skill_level_enabled';
 
   static List<ActivityType> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityType.fromJson).toList();
@@ -59,6 +62,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMaxParticipants,
     int? groupSizeStep,
     String? description,
+    bool? skillLevelEnabled,
   }) {
     return {
       if (id != null) 'id': id,
@@ -74,6 +78,7 @@ class ActivityType implements SupadartClass<ActivityType> {
         'default_max_participants': defaultMaxParticipants,
       if (groupSizeStep != null) 'group_size_step': groupSizeStep,
       if (description != null) 'description': description,
+      if (skillLevelEnabled != null) 'skill_level_enabled': skillLevelEnabled,
     };
   }
 
@@ -88,6 +93,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMaxParticipants,
     int? groupSizeStep,
     String? description,
+    bool? skillLevelEnabled,
   }) {
     return _generateMap(
       id: id,
@@ -100,6 +106,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       defaultMaxParticipants: defaultMaxParticipants,
       groupSizeStep: groupSizeStep,
       description: description,
+      skillLevelEnabled: skillLevelEnabled,
     );
   }
 
@@ -114,6 +121,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMaxParticipants,
     int? groupSizeStep,
     String? description,
+    bool? skillLevelEnabled,
   }) {
     return _generateMap(
       id: id,
@@ -126,6 +134,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       defaultMaxParticipants: defaultMaxParticipants,
       groupSizeStep: groupSizeStep,
       description: description,
+      skillLevelEnabled: skillLevelEnabled,
     );
   }
 
@@ -157,6 +166,9 @@ class ActivityType implements SupadartClass<ActivityType> {
       description: jsonn['description'] != null
           ? jsonn['description'].toString()
           : null,
+      skillLevelEnabled: jsonn['skill_level_enabled'] != null
+          ? jsonn['skill_level_enabled'] as bool
+          : false,
     );
   }
 
@@ -171,6 +183,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? defaultMaxParticipants,
     int? groupSizeStep,
     String? description,
+    bool? skillLevelEnabled,
   }) {
     return {
       if (id != null) 'id': id,
@@ -186,6 +199,7 @@ class ActivityType implements SupadartClass<ActivityType> {
         'default_max_participants': defaultMaxParticipants,
       if (groupSizeStep != null) 'group_size_step': groupSizeStep,
       if (description != null) 'description': description,
+      if (skillLevelEnabled != null) 'skill_level_enabled': skillLevelEnabled,
     };
   }
 
@@ -201,6 +215,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       defaultMaxParticipants: defaultMaxParticipants,
       groupSizeStep: groupSizeStep,
       description: description,
+      skillLevelEnabled: skillLevelEnabled,
     );
   }
 
@@ -216,6 +231,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     Object? defaultMaxParticipants = _unset,
     Object? groupSizeStep = _unset,
     Object? description = _unset,
+    Object? skillLevelEnabled = _unset,
   }) {
     return ActivityType(
       id: id == _unset ? this.id : id as String,
@@ -238,6 +254,9 @@ class ActivityType implements SupadartClass<ActivityType> {
       description: description == _unset
           ? this.description
           : description as String?,
+      skillLevelEnabled: skillLevelEnabled == _unset
+          ? this.skillLevelEnabled
+          : skillLevelEnabled as bool,
     );
   }
 }

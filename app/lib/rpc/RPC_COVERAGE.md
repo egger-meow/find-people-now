@@ -1249,6 +1249,95 @@ decisions came out of that discussion, in SPEC.md's v1.33 changelog entry:
     file. Also updated `31_default_campus.test.sql`'s four `complete_profile`
     calls to pass `p_bio`, since they'd otherwise now fail `BIO_REQUIRED`.
 
+## v1.34/v1.35 update: Skill Level (`skill_level`) + 讀書「同伴目標」(`study_target`)
+
+Two independently-scoped additions to `create_request`/`match_request`,
+implemented together since both follow the same "compatibility check folds
+into the existing v1.15 N-way candidate-filtering query" shape. See SPEC.md's
+v1.34/v1.35 changelog entries and ERD.md design notes 48/49 for the product
+rationale; this section only covers implementation-level findings.
+
+1. **`create_request` signature changed twice in this round (7→8→9 params)
+   — each change required an explicit `drop function` first**, same class of
+   pitfall already documented above for `complete_profile`/
+   `propose_activity_location`. `create or replace function` on a *different*
+   parameter list doesn't replace the old function, it adds a second
+   overload — caught by `supabase test db` failing with `function
+   create_request(...) is not unique` on the very first run after adding
+   `p_skill_level`. Fixed by adding `drop function if exists
+   create_request(uuid, text, timestamptz, timestamptz, int, int, boolean);`
+   (and again for the 8-arg version before the `p_study_target` migration) —
+   see `20260803160100_skill_level_rpc.sql` / `20260803160300_study_target_rpc.sql`.
+2. **Found and did not silently accept: supadart's enum-column `fromJson()`
+   fallback bug also fires for *nullable* enum columns, not just NOT NULL
+   ones.** The existing "Table-generation notes" entry below only documents
+   the fallback firing for NOT NULL columns that come back null/missing. This
+   round found a worse variant: `match_request.skill_level` is genuinely
+   nullable (null = wildcard, the *normal* case for most requests), but
+   supadart's generated `fromJson()` still applies the same
+   `SKILL_LEVEL.values.first` fallback template regardless of the column's
+   actual nullability — turning every wildcard `null` into
+   `SKILL_LEVEL.BEGINNER` silently. Grep across `lib/generated/*` confirms
+   this `field != null ? Enum.values.byName(...) : Enum.values.first` shape
+   is supadart's unconditional template for every enum-typed column in this
+   schema; `match_request.skill_level` is simply the first genuinely nullable
+   enum column this repo has generated a model for (every other enum column,
+   e.g. `pending_confirmation.user_a_response`, is `NOT NULL DEFAULT
+   'NO_RESPONSE'`, so the bug is latent but never actually triggered there).
+   Not hand-edited (per this repo's "never hand-edit generated code" rule);
+   instead added `decodeMatchRequest()` in `lib/rpc/match_request_rpc.dart`
+   that re-nulls `skillLevel` when the raw JSON's `skill_level` key is null,
+   and every `MatchRequest.fromJson(...)` call site in the app (5 in
+   `match_request_rpc.dart`, 2 in `match_providers.dart`, 1 in
+   `my_activities_providers.dart`) was switched to call it instead of the raw
+   generated factory.
+3. **`get_activity_member_profiles` gained `skill_level`/`study_target`
+   without adding any new columns to `activity_member`** — both are read via
+   the existing `activity_member.source_request_id` join back to
+   `match_request`, which survives past the match (row stays, `status`
+   becomes `MATCHED`, never deleted). Same "don't duplicate data that's
+   already reachable via an existing FK" reasoning as `bio`'s v1.33 addition
+   above, just one join deeper.
+4. **`study_target` returned by `get_activity_member_profiles` is the raw
+   column, never `study_target_normalized`** — the normalized column exists
+   purely for the matching-engine's equality check and is never exposed to
+   any client-facing RPC; only `create_request`'s SQL and
+   `fn_run_matching_engine` ever reference it.
+5. **Dart wrappers**: `ActivityMemberProfile` (`lib/rpc/activity_rpc.dart`)
+   gained `skillLevel`/`studyTarget`; `MemberRosterEntry`
+   (`lib/activities/activity_detail_providers.dart`) gained the same two
+   fields, threaded through both `copyWith*` methods, populated from
+   `profile?.skillLevel`/`profile?.studyTarget`. New shared helper
+   `lib/data/skill_level_labels.dart` (`skillLevelLabel()`) avoids
+   duplicating the 新手/一般/進階/競技 label map across
+   `create_request_screen.dart`/`waiting_room_screen.dart`/
+   `activity_detail_screen.dart`.
+6. **`supadart.yaml` gained a `skill_level` enum entry** (`[BEGINNER, CASUAL,
+   ADVANCED, COMPETITIVE]`) — same manual-sync requirement as every other
+   Postgres enum in this file (supadart doesn't introspect enum labels on its
+   own).
+7. **pgTAP**: new `33_skill_level_matching.test.sql` (7 assertions:
+   wildcard/same-level/different-level/flag-disabled-write-enforcement, plus
+   an end-to-end test through a brand-new `skill_level_enabled=true`
+   activity type created inline in the test file — proving the mechanism
+   needs zero matching-engine code changes for a future type) and
+   `34_study_target_matching.test.sql` (9 assertions: normalization
+   equivalence, case-folding, null wildcard, mismatch, a deliberately
+   semantically-nonsensical "course name happens to equal exam name" case
+   proving the comparison is pure string equality with no understanding of
+   meaning, and a direct assertion that `study_target`/
+   `study_target_normalized` diverge for the same row while only the
+   normalized column affects matching). Both also caught real bugs before
+   landing: the two-person-match status assertions initially expected
+   `MATCHED` but actually land in `PENDING_CONFIRMATION` (no third invited
+   member pushes the accumulated count above 2, same branch
+   `15_matching_engine_nway.test.sql`'s scenario ② already documents); and
+   `fn_normalize_study_target`'s original implementation (`translate(btrim(p_text),
+   ...)`) left a stray trailing half-width space when the input's edge
+   whitespace was originally full-width, because `btrim()` only recognizes
+   half-width space and ran *before* the full-to-half-width conversion —
+   fixed by reordering to `btrim(translate(p_text, ...))`.
+
 ## Error codes documented in API.md but never raised
 
 **Status as of v1.14.1 (this round): 7 of the original 8 rows resolved, all

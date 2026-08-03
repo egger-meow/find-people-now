@@ -126,6 +126,8 @@ enum REQUEST_STATUS {
 
 enum SCHOOL { NYCU, NTHU }
 
+enum SKILL_LEVEL { BEGINNER, CASUAL, ADVANCED, COMPETITIVE }
+
 // Utils
 extension DurationFromString on Duration {
   static Duration fromString(String str) {

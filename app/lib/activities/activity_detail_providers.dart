@@ -7,7 +7,7 @@ import '../generated/activity_location_vote.dart';
 import '../generated/activity_meeting_point_update.dart';
 import '../generated/completion_report.dart';
 import '../generated/location.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_MEMBER_STATUS, DEGREE_LEVEL, SCHOOL;
+import '../generated/supadart_header.dart' show ACTIVITY_MEMBER_STATUS, DEGREE_LEVEL, SCHOOL, SKILL_LEVEL;
 import '../rpc/activity_rpc.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
 
@@ -152,6 +152,13 @@ class MemberRosterEntry {
   final DateTime? arrivedAt;
   final List<String> vibeTags;
 
+  /// v1.34/v1.35 — 該成員原始 Request 的程度/讀書目標，來自
+  /// `get_activity_member_profiles`（透過 `source_request_id` join 回
+  /// `match_request`，見該 RPC 的 migration 註解）。null = 沒指定，或該活動
+  /// 類型不適用。
+  final SKILL_LEVEL? skillLevel;
+  final String? studyTarget;
+
   MemberRosterEntry({
     required this.userId,
     required this.sourceRequestId,
@@ -167,6 +174,8 @@ class MemberRosterEntry {
     required this.meetingHint,
     required this.arrivedAt,
     required this.vibeTags,
+    required this.skillLevel,
+    required this.studyTarget,
   });
 
   MemberRosterEntry copyWithArrivedAt(DateTime? arrivedAt) => MemberRosterEntry(
@@ -184,6 +193,8 @@ class MemberRosterEntry {
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
         vibeTags: vibeTags,
+        skillLevel: skillLevel,
+        studyTarget: studyTarget,
       );
 
   MemberRosterEntry copyWithVibeTags(List<String> vibeTags) => MemberRosterEntry(
@@ -201,6 +212,8 @@ class MemberRosterEntry {
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
         vibeTags: vibeTags,
+        skillLevel: skillLevel,
+        studyTarget: studyTarget,
       );
 }
 
@@ -234,6 +247,8 @@ final activityMemberRosterProvider =
       meetingHint: row['meeting_hint'] as String?,
       arrivedAt: row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),
       vibeTags: (row['vibe_tags'] as List?)?.cast<String>() ?? const [],
+      skillLevel: profile?.skillLevel,
+      studyTarget: profile?.studyTarget,
     );
   }).toList();
 });

@@ -5,10 +5,11 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/activity_type_icons.dart';
+import '../data/skill_level_labels.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/match_request.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
+import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL, SKILL_LEVEL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
@@ -466,6 +467,36 @@ class _AlertSubscriptionSection extends ConsumerWidget {
   }
 }
 
+/// 讀書「同伴目標」熱門科目下拉（v1.35）——目前是合理猜測的通識/必修科目
+/// 佔位清單，之後再依實際選課資料調整。純粹是輔助輸入，選了就是把文字帶進
+/// 下面的自由輸入框，不是獨立的資料類型。
+const _popularStudySubjects = [
+  '微積分',
+  '普通物理',
+  '線性代數',
+  '演算法',
+  '離散數學',
+  '機率統計',
+  '作業系統',
+  '電路學',
+  '經濟學',
+  '會計學',
+];
+
+/// 鏡射 `fn_normalize_study_target`
+/// (supabase/migrations/20260803160200_study_target_schema.sql) 的正規化規則
+/// ——純粹是即時預覽用，實際比對值仍由後端 RPC 重新計算，這裡兩邊邏輯必須
+/// 保持一致才不會讓使用者看到的預覽跟後端實際儲存/比對的結果不一樣。
+///
+/// 順序刻意跟 SQL 版一致：先把全形括號/全形空白轉成半形，再裁頭尾空白、轉
+/// 小寫——如果先裁再轉，剛好卡在頭尾的全形空白會因為裁切階段還不認得它是
+/// 空白而被跳過，轉換後反而留下裁不掉的殘留空白（該檔案內有詳細說明）。
+String? _normalizeStudyTargetPreview(String input) {
+  final converted = input.replaceAll('（', '(').replaceAll('）', ')').replaceAll('　', ' ');
+  final normalized = converted.trim().toLowerCase();
+  return normalized.isEmpty ? null : normalized;
+}
+
 class _CreateRequestForm extends ConsumerStatefulWidget {
   const _CreateRequestForm();
 
@@ -486,6 +517,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   bool _submitting = false;
   String? _error;
 
+  // v1.34/v1.35 — 只在對應活動類型時才有意義，切換類型時一併清空（見
+  // 活動類型 _OptionCard 的 onTap）。
+  SKILL_LEVEL? _selectedSkillLevel;
+  final _studyTargetController = TextEditingController();
+
   late final List<_TimeBucket> _buckets = _generateBuckets(DateTime.now());
   final Set<int> _selectedBucketIndices = {};
   bool _nowSelected = false;
@@ -499,6 +535,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   final _timeSectionKey = GlobalKey();
   final _campusSectionKey = GlobalKey();
   final _headcountSectionKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _studyTargetController.dispose();
+    super.dispose();
+  }
 
   void _scrollToSection(GlobalKey key) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -666,6 +708,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         minParticipants: min,
         maxParticipants: max,
         allowDowngrade: _allowDowngrade,
+        skillLevel: _selectedSkillLevel,
+        studyTarget: _studyTargetController.text.isEmpty ? null : _studyTargetController.text,
       );
       await submitRequest(client, request.id);
       // v1.32 —「隨時可以改」：這次實際選的校區跟 default_campus 不同就回寫，
@@ -814,6 +858,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                           _selectedType = type;
                           _selectedMinHeadcount = null;
                           _selectedMaxHeadcount = null;
+                          _selectedSkillLevel = null;
+                          _studyTargetController.clear();
                         });
                         _scrollToSection(_timeSectionKey);
                       },
@@ -824,6 +870,62 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
               if (_selectedType?.description != null) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Text(_selectedType!.description!, style: textTheme.bodySmall),
+              ],
+              // v1.34 — 只有這個活動類型有開放 Skill Level 篩選才顯示，預設「不限」。
+              if (_selectedType?.skillLevelEnabled == true) ...[
+                const SizedBox(height: AppSpacing.lg),
+                Text('程度要求', style: textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xs),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('不限'),
+                      selected: _selectedSkillLevel == null,
+                      onSelected: (_) => setState(() => _selectedSkillLevel = null),
+                    ),
+                    for (final level in SKILL_LEVEL.values)
+                      ChoiceChip(
+                        label: Text(skillLevelLabel(level)),
+                        selected: _selectedSkillLevel == level,
+                        onSelected: (_) => setState(() => _selectedSkillLevel = level),
+                      ),
+                  ],
+                ),
+              ],
+              // v1.35 — 只有讀書類型顯示，選填。
+              if (_selectedType?.name == '讀書') ...[
+                const SizedBox(height: AppSpacing.lg),
+                Text('想找同樣在準備什麼的人？（選填）', style: textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xs),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final subject in _popularStudySubjects)
+                      ActionChip(
+                        label: Text(subject),
+                        onPressed: () => setState(() => _studyTargetController.text = subject),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  controller: _studyTargetController,
+                  label: '科目/課程/考試名稱',
+                  hint: '例如：微積分(一)、雅思、多益',
+                  onChanged: (_) => setState(() {}),
+                ),
+                if (_studyTargetController.text.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Builder(builder: (context) {
+                    final normalized = _normalizeStudyTargetPreview(_studyTargetController.text);
+                    return Text(
+                      normalized == null ? '目前輸入不會被當作指定條件（等同不限）' : '將以「$normalized」進行比對',
+                      style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    );
+                  }),
+                ],
               ],
               const SizedBox(height: AppSpacing.xl),
               KeyedSubtree(

@@ -43,3 +43,4 @@ enums:
   request_member_status: [JOINED, LEFT]
   request_status: [DRAFT, REQUESTING, PENDING_CONFIRMATION, MATCHED, EXPIRED, CANCELLED]
   school: [NYCU, NTHU]
+  skill_level: [BEGINNER, CASUAL, ADVANCED, COMPETITIVE]

@@ -4,6 +4,7 @@ import '../auth/auth_providers.dart';
 import '../generated/activity.dart';
 import '../generated/match_request.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS;
+import '../rpc/match_request_rpc.dart' show decodeMatchRequest;
 
 /// UI_PLAN.md §4 — 依狀態分類的「我的活動」清單。Round 1 只給
 /// REQUESTING/PENDING_CONFIRMATION/EXPIRED/CANCELLED 完整卡片，MATCHED/
@@ -65,7 +66,7 @@ final myMatchRequestsProvider = FutureProvider<List<MatchRequest>>((ref) async {
     'EXPIRED',
     'CANCELLED',
   ]);
-  return rows.map(MatchRequest.fromJson).toList();
+  return rows.map(decodeMatchRequest).toList();
 });
 
 /// 來源 2：`activity`，透過 `activity_member` embed 查「我是成員的活動」

@@ -19,6 +19,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   final DateTime? revokedAt;
   final SCHOOL school;
   final String campus;
+  final SKILL_LEVEL? skillLevel;
+  final String? studyTarget;
+  final String? studyTargetNormalized;
 
   const MatchRequest({
     required this.id,
@@ -36,6 +39,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     this.revokedAt,
     required this.school,
     required this.campus,
+    this.skillLevel,
+    this.studyTarget,
+    this.studyTargetNormalized,
   });
 
   static String get table_name => 'match_request';
@@ -54,6 +60,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   static String get c_revokedAt => 'revoked_at';
   static String get c_school => 'school';
   static String get c_campus => 'campus';
+  static String get c_skillLevel => 'skill_level';
+  static String get c_studyTarget => 'study_target';
+  static String get c_studyTargetNormalized => 'study_target_normalized';
 
   static List<MatchRequest> converter(List<Map<String, dynamic>> data) {
     return data.map(MatchRequest.fromJson).toList();
@@ -79,6 +88,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     DateTime? revokedAt,
     SCHOOL? school,
     String? campus,
+    SKILL_LEVEL? skillLevel,
+    String? studyTarget,
+    String? studyTargetNormalized,
   }) {
     return {
       if (id != null) 'id': id,
@@ -98,6 +110,11 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       if (revokedAt != null) 'revoked_at': revokedAt.toUtc().toIso8601String(),
       if (school != null) 'school': school.toString().split('.').last,
       if (campus != null) 'campus': campus,
+      if (skillLevel != null)
+        'skill_level': skillLevel.toString().split('.').last,
+      if (studyTarget != null) 'study_target': studyTarget,
+      if (studyTargetNormalized != null)
+        'study_target_normalized': studyTargetNormalized,
     };
   }
 
@@ -117,6 +134,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     DateTime? revokedAt,
     required SCHOOL school,
     required String campus,
+    SKILL_LEVEL? skillLevel,
+    String? studyTarget,
+    String? studyTargetNormalized,
   }) {
     return _generateMap(
       id: id,
@@ -134,6 +154,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       revokedAt: revokedAt,
       school: school,
       campus: campus,
+      skillLevel: skillLevel,
+      studyTarget: studyTarget,
+      studyTargetNormalized: studyTargetNormalized,
     );
   }
 
@@ -153,6 +176,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     DateTime? revokedAt,
     SCHOOL? school,
     String? campus,
+    SKILL_LEVEL? skillLevel,
+    String? studyTarget,
+    String? studyTargetNormalized,
   }) {
     return _generateMap(
       id: id,
@@ -170,6 +196,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       revokedAt: revokedAt,
       school: school,
       campus: campus,
+      skillLevel: skillLevel,
+      studyTarget: studyTarget,
+      studyTargetNormalized: studyTargetNormalized,
     );
   }
 
@@ -214,6 +243,15 @@ class MatchRequest implements SupadartClass<MatchRequest> {
           ? SCHOOL.values.byName(jsonn['school'].toString())
           : SCHOOL.values.first,
       campus: jsonn['campus'] != null ? jsonn['campus'].toString() : '',
+      skillLevel: jsonn['skill_level'] != null
+          ? SKILL_LEVEL.values.byName(jsonn['skill_level'].toString())
+          : SKILL_LEVEL.values.first,
+      studyTarget: jsonn['study_target'] != null
+          ? jsonn['study_target'].toString()
+          : null,
+      studyTargetNormalized: jsonn['study_target_normalized'] != null
+          ? jsonn['study_target_normalized'].toString()
+          : null,
     );
   }
 
@@ -233,6 +271,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     DateTime? revokedAt,
     SCHOOL? school,
     String? campus,
+    SKILL_LEVEL? skillLevel,
+    String? studyTarget,
+    String? studyTargetNormalized,
   }) {
     return {
       if (id != null) 'id': id,
@@ -250,6 +291,10 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       if (revokedAt != null) 'revoked_at': revokedAt,
       if (school != null) 'school': school,
       if (campus != null) 'campus': campus,
+      if (skillLevel != null) 'skill_level': skillLevel,
+      if (studyTarget != null) 'study_target': studyTarget,
+      if (studyTargetNormalized != null)
+        'study_target_normalized': studyTargetNormalized,
     };
   }
 
@@ -270,6 +315,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       revokedAt: revokedAt,
       school: school,
       campus: campus,
+      skillLevel: skillLevel,
+      studyTarget: studyTarget,
+      studyTargetNormalized: studyTargetNormalized,
     );
   }
 
@@ -290,6 +338,9 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     Object? revokedAt = _unset,
     Object? school = _unset,
     Object? campus = _unset,
+    Object? skillLevel = _unset,
+    Object? studyTarget = _unset,
+    Object? studyTargetNormalized = _unset,
   }) {
     return MatchRequest(
       id: id == _unset ? this.id : id as String,
@@ -323,6 +374,15 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       revokedAt: revokedAt == _unset ? this.revokedAt : revokedAt as DateTime?,
       school: school == _unset ? this.school : school as SCHOOL,
       campus: campus == _unset ? this.campus : campus as String,
+      skillLevel: skillLevel == _unset
+          ? this.skillLevel
+          : skillLevel as SKILL_LEVEL?,
+      studyTarget: studyTarget == _unset
+          ? this.studyTarget
+          : studyTarget as String?,
+      studyTargetNormalized: studyTargetNormalized == _unset
+          ? this.studyTargetNormalized
+          : studyTargetNormalized as String?,
     );
   }
 }

@@ -250,6 +250,22 @@
 > 3. 🟡 **上述兩條檢查透過 `complete_profile` 這個註冊/編輯共用的 upsert 一併套用到編輯個人資料，不特別區分「這是註冊還是編輯」**：跟 `avatar_url` 既有的 `AVATAR_URL_REQUIRED` 一樣套用到每次呼叫，不是新加的例外分支——RPC 結構上也沒有辦法區分呼叫端是初次註冊還是編輯個人資料。既有使用者若 bio 還是空的、或頭像還是 Dicebear，下次存編輯個人資料時會被要求補上，這是刻意的漸進式遷移，不視為缺陷。`delete_account` 的去識別化邏輯同步把 `bio` 的清空值從 `null` 改成 `''`（比照 `avatar_url` 既有的去識別化寫法），因應 `bio` 改 NOT NULL。
 > 4. 🟢 **個人檔案卡（配對成立後點開成員頭像）**：`get_activity_member_profiles`（v1.23）新增回傳 `bio`——這個欄位屬於「一般個人資料、不比照 `contacts` 加時效/再約閘門」（同 `department` 既有定位，見 API.md §6.1.1），因此加在這支 RPC，不是 `get_activity_contacts`（那支刻意只管身份＋有時效的聯絡方式，避免兩支 RPC 欄位重複）。前端在 `activity_detail_screen.dart` 新增一個獨立的頭像點擊入口（跟既有「點卡片展開聯絡方式」分開，互不影響），開啟一張唯讀的個人檔案卡（照片、顯示名稱、學校/科系/學制、自我介紹、可信度等級）。
 
+> **v1.34 變更紀錄**（Skill Level：競技類型技能程度篩選）：
+> 1. 🟢 **`activity_type.skill_level_enabled` 沿用 `group_size_step`（v1.6）建立的「per-type 設定欄位」模式**：matching engine 與前端都讀這個欄位決定要不要啟用程度篩選，不寫死判斷邏輯（例如 `if name = '籃球'`）。任何未來新增的競技類型（含使用者提案審核通過的）都能由 admin 在 Studio 審核當下直接打開這個 flag，不需要改任何 RPC 或前端程式碼。官方既有類型只有籃球、羽球開啟，其餘（含桌遊/麻將）維持預設 `false`。見 `20260803160000_skill_level_schema.sql`。
+> 2. 🟢 **新增 `skill_level` enum（`BEGINNER`/`CASUAL`/`ADVANCED`/`COMPETITIVE`，對應「新手/一般/進階/競技」），`match_request.skill_level` 為 nullable 欄位**：null = 不限（wildcard，可跟任何人配對，含其他 null 及任何指定等級）。`create_request` 新增 `p_skill_level` 參數；若該 activity_type 的 `skill_level_enabled = false`，一律把要寫入的值強制設為 null（DB 層靜默忽略，不新增錯誤碼）——即使有人繞過前端直接呼叫 RPC 也不會寫入不該存在的值。
+> 3. 🟢 **相容性判準抽成獨立函式 `fn_skill_level_match(a, b)`（null=wildcard、否則需相等）**，整合進 v1.15 N 方累積演算法既有的候選篩選 SQL（人數區間重疊那段查詢）新增一個 AND 條件，不寫平行邏輯。抽成獨立函式是為了未來若要放寬成非對稱相容規則（例如「競技」可以配「進階」），只改這支函式，不用回頭動已經很密集的候選篩選查詢。見 `20260803160100_skill_level_rpc.sql`。
+> 4. 🟢 **`get_activity_member_profiles` 新增回傳 `skill_level`**：透過既有的 `activity_member.source_request_id` join 回 `match_request` 取值——這筆 Request 撮合成立後仍會保留（`status` 改為 `MATCHED`，不刪除），不需要把 `skill_level` 另外複製一份到 `activity_member`。前端等待室、活動成員名單／個人檔案卡都顯示這個值。
+> 5. 🟢 **前端**：`create_request_screen.dart` 只有選到 `skill_level_enabled=true` 的活動類型時才顯示程度選擇 `ChoiceChip`，預設「不限」。
+> 6. 🟢 **pgTAP 補上可擴充性驗證**：`33_skill_level_matching.test.sql` 除了 wildcard/同級/不同級/flag 關閉四個基本案例外，額外測試檔案內臨時建立一個全新的、`skill_level_enabled=true` 的假設類型「排球」，走完整 `create_request → submit_request → fn_run_matching_engine` pipeline，驗證不改任何 matching engine 程式碼就能正確運作。
+
+> **v1.35 變更紀錄**（讀書類型「同伴目標」自由文字比對）：
+> 1. 🟢 **`match_request` 新增 `study_target`（原文）+ `study_target_normalized`（正規化後）兩個欄位，只綁定「讀書」這個固定活動類型**：不比照 v1.34 `skill_level` 做成通用 per-type flag——讀書細項（科目/課程/考試皆可）跟競技程度是兩種不同性質的設定，不需要共用同一套可擴充機制。兩欄分開存是刻意設計：`study_target` 存使用者原始輸入，未經任何清理，前端顯示一律讀這欄，避免使用者覺得自己打的字被系統悄悄改掉；`study_target_normalized` 存正規化後的字串，撮合比對只用這欄。兩者都是 null = 不限（wildcard）。見 `20260803160200_study_target_schema.sql`。
+> 2. 🟢 **正規化規則（`fn_normalize_study_target`）：去除頭尾空白、全形括號/全形空白轉半形、統一小寫，不做模糊比對**——只做確定性字串清理，正規化後為空字串一律視為 null。順序刻意是「先轉半形、再去頭尾空白」：`btrim()` 預設只認得半形空白字元，如果輸入頭尾剛好是全形空白，先 trim 會因為不認得而略過，之後才轉半形，結果變成頭尾殘留一個裁不掉的半形空白；先統一轉半形字元再 trim，才能正確裁掉「原本是全形」的頭尾空白。
+> 3. 🟢 **`create_request` 新增 `p_study_target` 參數，只有 activity_type 為「讀書」時才有意義**，否則兩欄一律強制設為 null（靜默忽略，理由同 v1.34 的 `skill_level_enabled=false` 處理）；是「讀書」時，原文與正規化值分開計算後一起寫入。
+> 4. 🟢 **比對邏輯比照 v1.34 的做法，整合進 v1.15 候選篩選 SQL 再新增一個 AND 條件（用 `study_target_normalized` 欄位比對）**，不寫平行邏輯：null=wildcard，非 null 需正規化後完全相同。`get_activity_member_profiles` 新增回傳 `study_target`（原文，不是正規化後的版本）。見 `20260803160300_study_target_rpc.sql`。
+> 5. 🟢 **前端**：`create_request_screen.dart` 只有選「讀書」類型時才顯示——熱門科目快速帶入（微積分/普通物理/線性代數/演算法/離散數學/機率統計/作業系統/電路學/經濟學/會計學，合理猜測的通識/必修科目佔位清單，之後依實際選課資料調整）+ 自由輸入框，並即時顯示正規化後的預覽文字（例如輸入「微積分（一）」，下方顯示「將以「微積分(一)」進行比對」），前端正規化邏輯必須跟 SQL 版本保持一致。等待室、活動成員名單／個人檔案卡顯示原文欄位。
+> 6. 🟢 **pgTAP 補上語意無關性驗證**：`34_study_target_matching.test.sql` 除了正規化前後比對（全形/半形括號、空白、大小寫）、null wildcard、不同字串不相容外，額外測試「一個填課名、一個填考試名稱剛好字串相同」的情境，驗證系統確實是純字串比對、不理解語意（刻意的設計限制），並驗證 `study_target`/`study_target_normalized` 在同一筆 insert 後確實不同、原文欄位差異不影響撮合結果。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）

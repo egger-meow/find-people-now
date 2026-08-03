@@ -4,7 +4,7 @@ import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
 import '../generated/activity_meeting_point_update.dart';
 import '../generated/activity_member.dart';
-import '../generated/supadart_header.dart' show DEGREE_LEVEL, RELIABILITY_EVENT_TYPE, SCHOOL;
+import '../generated/supadart_header.dart' show DEGREE_LEVEL, RELIABILITY_EVENT_TYPE, SCHOOL, SKILL_LEVEL;
 import 'auth_profile_rpc.dart' show ReliabilityTier;
 import 'rpc_client.dart';
 
@@ -138,6 +138,16 @@ class ActivityMemberProfile {
   final String bio;
   final ReliabilityTier reliabilityTier;
 
+  /// v1.34 — the member's original `match_request.skill_level` (via
+  /// `activity_member.source_request_id`). Null = didn't specify (or the
+  /// activity type doesn't have skill_level_enabled).
+  final SKILL_LEVEL? skillLevel;
+
+  /// v1.35 — the member's original `match_request.study_target` **raw text**
+  /// (not the normalized column) — only ever non-null for 讀書 activities.
+  /// Always the raw column so display matches exactly what the member typed.
+  final String? studyTarget;
+
   ActivityMemberProfile({
     required this.userId,
     required this.school,
@@ -145,19 +155,22 @@ class ActivityMemberProfile {
     required this.degreeLevel,
     required this.bio,
     required this.reliabilityTier,
+    required this.skillLevel,
+    required this.studyTarget,
   });
 }
 
 /// docs/API.md §6.1.1 — `rpc: get_activity_member_profiles(activity_id)`
-/// (v1.23, `bio` added v1.33). Fills the gap `get_activity_contacts` leaves:
-/// that RPC returns `display_name`/`avatar_url`/`contacts` for every member
-/// unconditionally, but never `school`/`department`/`degree_level`/`bio`/
-/// reliability tier, and `app_user`'s RLS blocks reading another member's row
-/// directly. Callers merge this by `userId` with [getActivityContacts]'s
-/// member list — this RPC deliberately does not repeat `display_name`/
-/// `avatar_url`/`contacts`. Includes every member regardless of `status`
-/// (JOINED/CANCELLED), same as `getActivityContacts`. `bio` powers the
-/// post-match profile card (`activity_detail_screen.dart`).
+/// (v1.23, `bio` added v1.33, `skill_level`/`study_target` added v1.34/v1.35).
+/// Fills the gap `get_activity_contacts` leaves: that RPC returns
+/// `display_name`/`avatar_url`/`contacts` for every member unconditionally,
+/// but never `school`/`department`/`degree_level`/`bio`/reliability
+/// tier/skill_level/study_target, and `app_user`'s RLS blocks reading another
+/// member's row directly. Callers merge this by `userId` with
+/// [getActivityContacts]'s member list — this RPC deliberately does not
+/// repeat `display_name`/`avatar_url`/`contacts`. Includes every member
+/// regardless of `status` (JOINED/CANCELLED), same as `getActivityContacts`.
+/// `bio` powers the post-match profile card (`activity_detail_screen.dart`).
 Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
   SupabaseClient client,
   String activityId,
@@ -176,6 +189,8 @@ Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
           degreeLevel: DEGREE_LEVEL.values.byName(m['degree_level'] as String),
           bio: m['bio'] as String? ?? '',
           reliabilityTier: ReliabilityTier.fromValue(m['reliability_tier'] as String?),
+          skillLevel: m['skill_level'] != null ? SKILL_LEVEL.values.byName(m['skill_level'] as String) : null,
+          studyTarget: m['study_target'] as String?,
         );
       }).toList();
     },
