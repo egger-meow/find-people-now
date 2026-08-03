@@ -122,6 +122,14 @@ documented per-file CLI flag, so isolate by temporarily moving other files out i
 CI (`.github/workflows/supabase-db-tests.yml`) runs `supabase db start` + `supabase test db` on any
 push/PR touching `supabase/**`.
 
+A second workflow (`.github/workflows/flutter-tests.yml`) runs the Flutter suite — including the
+integration tests in `app/test/` that drive a real local Supabase instance — on push/PR touching
+`app/**` **or** `supabase/**` (a backend migration can break the RPC contract the Flutter layer
+relies on without touching `app/` at all). It starts `supabase start`, writes `app/.env` from
+`supabase status -o env`, seeds the `光復` test location row the same way
+[app/README.md](app/README.md) documents for local runs, then runs `flutter analyze` and
+`flutter test`.
+
 ### Flutter app (from `app/`)
 
 ```bash

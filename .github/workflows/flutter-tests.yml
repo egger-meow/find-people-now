@@ -1,0 +1,66 @@
+name: Flutter Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'supabase/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'supabase/**'
+
+jobs:
+  flutter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Write app/.env from supabase status
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          cat > app/.env <<EOF
+          SUPABASE_URL=$API_URL
+          SUPABASE_ANON_KEY=$ANON_KEY
+          SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY
+          EOF
+
+      # Same fixture app/README.md documents for local runs — no migration
+      # seeds `location` rows (only `activity_type` does), and several
+      # integration tests read the '光復' campus by name.
+      - name: Seed test location row
+        run: |
+          docker exec supabase_db_find-people-now psql -U postgres -d postgres -c \
+            "insert into location (school, campus, name, is_active) values ('NYCU', '光復', 'Flutter 驗證測試地點', true) on conflict (school, name) do update set is_active = true, campus = excluded.campus;"
+
+      - name: flutter pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: flutter analyze
+        working-directory: app
+        run: flutter analyze
+
+      - name: flutter test
+        working-directory: app
+        run: flutter test
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop
