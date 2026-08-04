@@ -11,7 +11,18 @@
 // RPC_COVERAGE.md's v1.24 entry), and the shape `notifications_screen.dart`
 // actually reads off `payload`.
 //
+// The Realtime step subscribes via a raw `RealtimeChannel` and waits for
+// `RealtimeSubscribeStatus.subscribed` before writing, rather than using
+// `.stream()` — same root cause and same fix as
+// notification_and_active_activity_test.dart (see that file's header):
+// `.stream()`'s initial fetch races the WebSocket handshake and never
+// re-fetches on first connect, so a write that lands before the channel is
+// truly live misses its event permanently, and no amount of post-write
+// polling recovers it. This file hit exactly that flake in a full-suite run
+// (passed standalone, failed under `flutter test -j 1`) before this fix.
+//
 // Run: flutter test test/arrival_check_integration_test.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -206,16 +217,40 @@ void main() {
       print('[setup] reached MATCHED activity_id=$activityId');
 
       // -----------------------------------------------------------------
-      // Subscribe to activity_member BEFORE calling mark_arrived, so the
-      // Realtime channel — not a later poll — is what proves
-      // 20260801100200_realtime_activity_member.sql actually works.
+      // Subscribe to activity_member UPDATEs BEFORE calling mark_arrived, so
+      // the Realtime channel — not a later poll — is what proves
+      // 20260801100200_realtime_activity_member.sql actually works. Wait for
+      // the server to confirm the channel is live first (see file header).
       // -----------------------------------------------------------------
-      final memberEvents = <List<Map<String, dynamic>>>[];
-      final sub = clientB
-          .from('activity_member')
-          .stream(primaryKey: ['activity_id', 'user_id'])
-          .eq('activity_id', activityId)
-          .listen(memberEvents.add);
+      final memberUpdates = <Map<String, dynamic>>[];
+      final channelSubscribed = Completer<void>();
+      final channel = clientB.channel('ac-member-$stamp');
+      channel.onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'activity_member',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'activity_id',
+          value: activityId,
+        ),
+        callback: (payload) => memberUpdates.add(payload.newRecord),
+      );
+      channel.subscribe((status, [error]) {
+        if (channelSubscribed.isCompleted) return;
+        if (status == RealtimeSubscribeStatus.subscribed) {
+          channelSubscribed.complete();
+        } else if (status == RealtimeSubscribeStatus.channelError ||
+            status == RealtimeSubscribeStatus.timedOut) {
+          channelSubscribed.completeError(RealtimeSubscribeException(status, error));
+        }
+      });
+      await channelSubscribed.future.timeout(const Duration(seconds: 20));
+      // The `subscribed` ack only means the Phoenix channel join completed;
+      // Realtime's server-side WAL listener wiring this filter into its
+      // broadcast list lags slightly behind that. Same empirically-derived
+      // buffer as notification_and_active_activity_test.dart.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
 
       // -----------------------------------------------------------------
       // 1. A marks arrived. Real DB write via the real markArrived() wrapper.
@@ -225,18 +260,19 @@ void main() {
       // ignore: avoid_print
       print('[mark_arrived] A arrived at ${resultA.arrivedAt}');
 
+      // Channel was confirmed SUBSCRIBED before the write above, so this is
+      // just waiting out normal WAL-to-websocket latency — 100 * 200ms = 20s
+      // of headroom for a slower CI relay.
       var delivered = false;
-      for (var attempt = 0; attempt < 15; attempt++) {
-        if (memberEvents.any(
-          (rows) => rows.any((r) => r['user_id'] == userAId && r['arrived_at'] != null),
-        )) {
+      for (var attempt = 0; attempt < 100; attempt++) {
+        if (memberUpdates.any((r) => r['user_id'] == userAId && r['arrived_at'] != null)) {
           delivered = true;
           break;
         }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
-      await sub.cancel();
-      expect(delivered, isTrue, reason: 'activity_member Realtime stream should deliver the arrived_at update');
+      await channel.unsubscribe();
+      expect(delivered, isTrue, reason: 'activity_member Realtime channel should deliver the arrived_at update');
 
       // -----------------------------------------------------------------
       // 2. B should have exactly one MEMBER_ARRIVED notification about A;
