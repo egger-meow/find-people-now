@@ -36,11 +36,25 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
+// 全面檢查發現：這支 Function 完全沒處理 CORS。`client.functions.invoke()`
+// 在 Flutter Web 上底層是瀏覽器 fetch，會先送 OPTIONS 預檢請求——這支
+// Function 原本對非 POST 一律回 405，OPTIONS 也不例外，預檢一定失敗，等於
+// Web 版帳號刪除功能整個打不通（原生 iOS/Android 走的是 HTTP client，不受
+// CORS 限制，才沒被先發現）。
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'METHOD_NOT_ALLOWED' }), {
       status: 405,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
@@ -48,7 +62,7 @@ Deno.serve(async (req: Request) => {
   if (!authHeader) {
     return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
@@ -67,7 +81,7 @@ Deno.serve(async (req: Request) => {
   if (userError || !userData?.user) {
     return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
@@ -79,12 +93,12 @@ Deno.serve(async (req: Request) => {
   if (deleteError) {
     return new Response(JSON.stringify({ error: 'AUTH_DELETE_FAILED', detail: deleteError.message }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
   return new Response(JSON.stringify({ success: true }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 })
