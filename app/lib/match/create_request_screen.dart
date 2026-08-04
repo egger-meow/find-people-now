@@ -916,6 +916,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   hint: '例如：微積分(一)、雅思、多益',
                   onChanged: (_) => setState(() {}),
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
+                  '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
+                  style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
                 if (_studyTargetController.text.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Builder(builder: (context) {
