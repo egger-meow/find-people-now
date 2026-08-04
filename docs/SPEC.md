@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.21 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.36 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -265,6 +265,12 @@
 > 4. 🟢 **比對邏輯比照 v1.34 的做法，整合進 v1.15 候選篩選 SQL 再新增一個 AND 條件（用 `study_target_normalized` 欄位比對）**，不寫平行邏輯：null=wildcard，非 null 需正規化後完全相同。`get_activity_member_profiles` 新增回傳 `study_target`（原文，不是正規化後的版本）。見 `20260803160300_study_target_rpc.sql`。
 > 5. 🟢 **前端**：`create_request_screen.dart` 只有選「讀書」類型時才顯示——熱門科目快速帶入（微積分/普通物理/線性代數/演算法/離散數學/機率統計/作業系統/電路學/經濟學/會計學，合理猜測的通識/必修科目佔位清單，之後依實際選課資料調整）+ 自由輸入框，並即時顯示正規化後的預覽文字（例如輸入「微積分（一）」，下方顯示「將以「微積分(一)」進行比對」），前端正規化邏輯必須跟 SQL 版本保持一致。等待室、活動成員名單／個人檔案卡顯示原文欄位。
 > 6. 🟢 **pgTAP 補上語意無關性驗證**：`34_study_target_matching.test.sql` 除了正規化前後比對（全形/半形括號、空白、大小寫）、null wildcard、不同字串不相容外，額外測試「一個填課名、一個填考試名稱剛好字串相同」的情境，驗證系統確實是純字串比對、不理解語意（刻意的設計限制），並驗證 `study_target`/`study_target_normalized` 在同一筆 insert 後確實不同、原文欄位差異不影響撮合結果。
+
+> **v1.36 變更紀錄**（`fn_run_matching_engine()` 修正單一大 group 的 seed 選取效能，純內部效能修正，不改任何產品行為）：
+> 1. 🟢 **上線前 QA load test 發現：3000 筆 REQUESTING Request 集中在同一個 `(activity_type_id, school, campus)` group 時，單次 `fn_run_matching_engine()` 耗時 9.08 秒**；同數量級但分散在 10 個 group（每組最多 120 筆）只要 ~200ms——`idx_request_queue` 本身健康（`EXPLAIN ANALYZE` 確認是 Index Scan），瓶頸在 `seed_loop` 每輪重新查詢下一個 seed 時用的 `not (id = any(v_tried_seed_ids))` 陣列排除法：`v_tried_seed_ids` 每輪成長一個元素，一個 3000 筆的 group 需要約 1500 輪 seed 迭代，每輪都要對 group 內剩餘所有列做一次陣列成員檢查，退化成 O(n²)。這是效能問題，不是正確性問題——所有配對結果在修正前後都是對的（3000/3000 精確配成 1500 對，0 錯誤）。
+> 2. 🟢 **修法：seed 選取改用 keyset pagination，取代陣列排除法**。既有邏輯保證 seed 永遠照 `created_at asc` 依序、且一旦被選為 seed 就不會在同一輪內重選，因此「已試過的 seed」在 created_at 順序上必然是目前為止已掃過的前綴；改成只記錄上一個 seed 的 `(created_at, id)`，下一輪直接 `WHERE (created_at, id) > (上一輪)` 撈下一筆，讓查詢用得上索引，不用再線性排除整個已試清單。新增 `idx_request_queue_seed_order`（`activity_type_id, school, campus, created_at, id` where `status='REQUESTING'`）支援這個查詢；candidate loop 本來就是 `order by created_at asc`，一併受惠。篩選/配對邏輯本身完全不變，照抄 `20260803160300_study_target_rpc.sql`。見 `20260804000000_matching_engine_seed_scan_perf.sql`。
+> 3. 🟢 **實測效果**：同樣 3000 筆同 group 的情境，修正後從 9.08s 降到 ~0.7s；`36_matching_engine_seed_scan_perf.test.sql` 新增 pgTAP 回歸測試鎖住這個情境（門檻抓 3000ms，容忍 CI 機器較慢），同時驗證正確性不變（精確配成 1500 對）。既有 `20_matching_engine_scan_budget.test.sql`（測「永遠配不成」時的 scan budget 保護）與 `15_matching_engine_nway.test.sql`（測 N 方累積邏輯正確性）不受影響、全數維持通過。
+> 4. 🔴 **範圍限定**：MVP 是單一校區的人口規模，一個活動類型同時累積到三千筆同 group 的 `REQUESTING` Request 是極端邊界情境，不是正常流量；這次修正解決的是「萬一真的出現大量湧入的熱門場次，撮合排程（每 30 秒一次、全域 advisory lock）不會被單一大 group 拖慢到影響其他所有 group」，不是為了應對 MVP 階段預期的真實流量。
 
 ---
 
