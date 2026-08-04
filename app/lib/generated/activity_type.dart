@@ -15,6 +15,7 @@ class ActivityType implements SupadartClass<ActivityType> {
   final int? groupSizeStep;
   final String? description;
   final bool skillLevelEnabled;
+  final int sortOrder;
 
   const ActivityType({
     required this.id,
@@ -28,6 +29,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     this.groupSizeStep,
     this.description,
     required this.skillLevelEnabled,
+    required this.sortOrder,
   });
 
   static String get table_name => 'activity_type';
@@ -42,6 +44,7 @@ class ActivityType implements SupadartClass<ActivityType> {
   static String get c_groupSizeStep => 'group_size_step';
   static String get c_description => 'description';
   static String get c_skillLevelEnabled => 'skill_level_enabled';
+  static String get c_sortOrder => 'sort_order';
 
   static List<ActivityType> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityType.fromJson).toList();
@@ -63,6 +66,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? groupSizeStep,
     String? description,
     bool? skillLevelEnabled,
+    int? sortOrder,
   }) {
     return {
       if (id != null) 'id': id,
@@ -79,6 +83,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       if (groupSizeStep != null) 'group_size_step': groupSizeStep,
       if (description != null) 'description': description,
       if (skillLevelEnabled != null) 'skill_level_enabled': skillLevelEnabled,
+      if (sortOrder != null) 'sort_order': sortOrder,
     };
   }
 
@@ -94,6 +99,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? groupSizeStep,
     String? description,
     bool? skillLevelEnabled,
+    required int sortOrder,
   }) {
     return _generateMap(
       id: id,
@@ -107,6 +113,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       groupSizeStep: groupSizeStep,
       description: description,
       skillLevelEnabled: skillLevelEnabled,
+      sortOrder: sortOrder,
     );
   }
 
@@ -122,6 +129,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? groupSizeStep,
     String? description,
     bool? skillLevelEnabled,
+    int? sortOrder,
   }) {
     return _generateMap(
       id: id,
@@ -135,6 +143,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       groupSizeStep: groupSizeStep,
       description: description,
       skillLevelEnabled: skillLevelEnabled,
+      sortOrder: sortOrder,
     );
   }
 
@@ -169,6 +178,9 @@ class ActivityType implements SupadartClass<ActivityType> {
       skillLevelEnabled: jsonn['skill_level_enabled'] != null
           ? jsonn['skill_level_enabled'] as bool
           : false,
+      sortOrder: jsonn['sort_order'] != null
+          ? int.parse(jsonn['sort_order'].toString())
+          : 0,
     );
   }
 
@@ -184,6 +196,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     int? groupSizeStep,
     String? description,
     bool? skillLevelEnabled,
+    int? sortOrder,
   }) {
     return {
       if (id != null) 'id': id,
@@ -200,6 +213,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       if (groupSizeStep != null) 'group_size_step': groupSizeStep,
       if (description != null) 'description': description,
       if (skillLevelEnabled != null) 'skill_level_enabled': skillLevelEnabled,
+      if (sortOrder != null) 'sort_order': sortOrder,
     };
   }
 
@@ -216,6 +230,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       groupSizeStep: groupSizeStep,
       description: description,
       skillLevelEnabled: skillLevelEnabled,
+      sortOrder: sortOrder,
     );
   }
 
@@ -232,6 +247,7 @@ class ActivityType implements SupadartClass<ActivityType> {
     Object? groupSizeStep = _unset,
     Object? description = _unset,
     Object? skillLevelEnabled = _unset,
+    Object? sortOrder = _unset,
   }) {
     return ActivityType(
       id: id == _unset ? this.id : id as String,
@@ -257,6 +273,7 @@ class ActivityType implements SupadartClass<ActivityType> {
       skillLevelEnabled: skillLevelEnabled == _unset
           ? this.skillLevelEnabled
           : skillLevelEnabled as bool,
+      sortOrder: sortOrder == _unset ? this.sortOrder : sortOrder as int,
     );
   }
 }
