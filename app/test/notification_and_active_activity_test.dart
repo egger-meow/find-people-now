@@ -8,6 +8,22 @@
 //    MATCH_SUCCESS notification row lands in the table (RLS: readable by its
 //    own user) and that the Realtime channel actually delivers it.
 //
+//    Step 1b subscribes via a raw `RealtimeChannel` (not `.stream()`) and
+//    explicitly waits for `RealtimeSubscribeStatus.subscribed` before
+//    triggering the match. `.stream()`'s own initial fetch
+//    (`SupabaseStreamBuilder._getStreamData()` in package:supabase) fires an
+//    unawaited postgrest query immediately after calling `.subscribe()`,
+//    with no wait for the server to confirm the channel is live, and only
+//    re-fetches on a later *reconnect* — never on the first connect. If the
+//    row this test waits for gets written before that WebSocket handshake
+//    completes, the INSERT event is missed permanently: no realtime
+//    fallback catches it, and no amount of post-hoc polling recovers it.
+//    That raced intermittently on GitHub Actions' colder containers even
+//    after commit c76fd1b widened the *post-write* poll window from 3s to
+//    20s — widening the wrong wait doesn't help a genuinely missed event.
+//    Gating on `subscribed` before writing removes the race instead of
+//    papering over it with a longer timeout.
+//
 // 2. `myActiveRequestProvider` used to treat `match_request.status == MATCHED`
 //    as "still has an active flow" — but per docs/STATE_MACHINE.md,
 //    MatchRequest freezes at MATCHED permanently and is never updated again,
@@ -25,6 +41,7 @@
 // matching engine trigger and fixture seeding no client RPC can do).
 //
 // Run: flutter test test/notification_and_active_activity_test.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -216,15 +233,43 @@ void main() {
       );
       await submitRequest(clientB, requestB.id);
 
-      // Subscribe to A's notification stream *before* triggering the match,
-      // so the Realtime channel (not just a later poll) is what proves the
-      // 20260730090000_realtime_notification.sql fix actually works.
-      final notificationEvents = <List<Map<String, dynamic>>>[];
-      final sub = clientA
-          .from('notification')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', userAId)
-          .listen(notificationEvents.add);
+      // Subscribe to A's notification INSERTs *before* triggering the match,
+      // and wait for the server to actually confirm the channel is live
+      // (see the file-header comment for why: `.stream()`'s initial fetch
+      // races the WebSocket handshake with no fallback re-fetch on first
+      // connect, so a channel that isn't truly SUBSCRIBED yet can miss the
+      // INSERT permanently).
+      final notificationInserts = <Map<String, dynamic>>[];
+      final channelSubscribed = Completer<void>();
+      final channel = clientA.channel('naa-notification-$stamp');
+      channel.onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'notification',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'user_id',
+          value: userAId,
+        ),
+        callback: (payload) => notificationInserts.add(payload.newRecord),
+      );
+      channel.subscribe((status, [error]) {
+        if (channelSubscribed.isCompleted) return;
+        if (status == RealtimeSubscribeStatus.subscribed) {
+          channelSubscribed.complete();
+        } else if (status == RealtimeSubscribeStatus.channelError ||
+            status == RealtimeSubscribeStatus.timedOut) {
+          channelSubscribed.completeError(RealtimeSubscribeException(status, error));
+        }
+      });
+      await channelSubscribed.future.timeout(const Duration(seconds: 20));
+      // The client-visible `subscribed` ack only means the Phoenix channel
+      // join completed — Realtime's server-side WAL listener wiring this
+      // channel's filter into its broadcast list lags slightly behind that,
+      // observed empirically (a write immediately after `subscribed` still
+      // intermittently missed its event even with the gate above). Small
+      // fixed buffer to close that remaining gap.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
 
       await _runMatchingEngineUntil(() async {
         try {
@@ -268,22 +313,19 @@ void main() {
 
       // --- 1b. ...and the Realtime channel actually delivered it (the bug this
       // regression test exists for: RealtimeSubscribeException before the fix).
-      // 100 * 200ms = 20s: a CI runner's Realtime relay can be considerably
-      // slower than a local dev machine (observed: the row lands well within
-      // step 1's 3s window locally, but step 1b's original 3s window flaked
-      // on GitHub Actions) — this matches the order of magnitude other
-      // Realtime-delivery waits in this suite already use, e.g.
-      // match_flow_integration_test.dart's _waitUntil default. ---
+      // Channel was already confirmed SUBSCRIBED before the write above, so
+      // this is just waiting out normal WAL-to-websocket delivery latency —
+      // 100 * 200ms = 20s of headroom for a slower CI relay. ---
       var delivered = false;
       for (var attempt = 0; attempt < 100; attempt++) {
-        if (notificationEvents.any((rows) => rows.any((r) => r['event_type'] == 'MATCH_SUCCESS'))) {
+        if (notificationInserts.any((r) => r['event_type'] == 'MATCH_SUCCESS')) {
           delivered = true;
           break;
         }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
-      await sub.cancel();
-      expect(delivered, isTrue, reason: 'notification Realtime stream should deliver the MATCH_SUCCESS row');
+      await channel.unsubscribe();
+      expect(delivered, isTrue, reason: 'notification Realtime channel should deliver the MATCH_SUCCESS insert');
 
       // --- 2. Active-activity gating: MatchRequest is permanently MATCHED... ---
       final frozenRequestA = await clientA.from('match_request').select().eq('id', requestA.id).single();
