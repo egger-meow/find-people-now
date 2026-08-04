@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.36 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.37 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -271,6 +271,14 @@
 > 2. 🟢 **修法：seed 選取改用 keyset pagination，取代陣列排除法**。既有邏輯保證 seed 永遠照 `created_at asc` 依序、且一旦被選為 seed 就不會在同一輪內重選，因此「已試過的 seed」在 created_at 順序上必然是目前為止已掃過的前綴；改成只記錄上一個 seed 的 `(created_at, id)`，下一輪直接 `WHERE (created_at, id) > (上一輪)` 撈下一筆，讓查詢用得上索引，不用再線性排除整個已試清單。新增 `idx_request_queue_seed_order`（`activity_type_id, school, campus, created_at, id` where `status='REQUESTING'`）支援這個查詢；candidate loop 本來就是 `order by created_at asc`，一併受惠。篩選/配對邏輯本身完全不變，照抄 `20260803160300_study_target_rpc.sql`。見 `20260804000000_matching_engine_seed_scan_perf.sql`。
 > 3. 🟢 **實測效果**：同樣 3000 筆同 group 的情境，修正後從 9.08s 降到 ~0.7s；`36_matching_engine_seed_scan_perf.test.sql` 新增 pgTAP 回歸測試鎖住這個情境（門檻抓 3000ms，容忍 CI 機器較慢），同時驗證正確性不變（精確配成 1500 對）。既有 `20_matching_engine_scan_budget.test.sql`（測「永遠配不成」時的 scan budget 保護）與 `15_matching_engine_nway.test.sql`（測 N 方累積邏輯正確性）不受影響、全數維持通過。
 > 4. 🔴 **範圍限定**：MVP 是單一校區的人口規模，一個活動類型同時累積到三千筆同 group 的 `REQUESTING` Request 是極端邊界情境，不是正常流量；這次修正解決的是「萬一真的出現大量湧入的熱門場次，撮合排程（每 30 秒一次、全域 advisory lock）不會被單一大 group 拖慢到影響其他所有 group」，不是為了應對 MVP 階段預期的真實流量。
+
+> **v1.37 變更紀錄**（刪除 `ACTIVITY_LOCATION_LOCKED`，Activity Location 改成持續即時計票，§9.1）：
+> 1. 🟢 **真實使用者回報的 bug**：一個活動到 `start_time` 時零候選（設計原則見下方第 6 點/ERD 設計備註 33，`activity_location_id` 依規則維持 `NULL`），`fn_start_activities()` 照常把它轉成 `ONGOING`。使用者在這之後才想到要提案/投票，畫面上「還沒有人提案候選地點」照常顯示提案/投票按鈕（因為 `activity_location_id` 仍是 `NULL`，前端沒有理由隱藏），但一按下去 RPC 一律回 `ACTIVITY_LOCATION_LOCKED`——舊版判斷式是 `status <> 'MATCHED' or activity_location_id is not null`，只要活動一過 `start_time` 就整組鎖死，不管有沒有候選、有沒有鎖定出結果。體驗上等於「畫面叫你做一件系統早就決定拒絕的事」，且前端把這個內部錯誤碼原樣印在畫面上（`新增失敗：activityLocationLock`），對一般使用者完全無意義（另一個獨立問題，見第 4 點）。
+> 2. 🟢 **根本原因**：舊設計把「投票該不該截止」跟「這個 Activity 算不算還在進行中」綁死成同一個判斷式，導致唯一的截止時機（`start_time`）本身就是一個常見情境（零候選）會撞上的死路。第 9.2 節的 Meeting Point/Hint 從 v1.11.1 起就刻意設計成獨立於 `activity_location_id` 是否鎖定，這次直接把 Activity Location 的閘門改成完全比照它們——`activity.status in (MATCHED, ONGOING)` 就能提案/投票，`COMPLETED`/`CANCELLED` 才擋，回 `ACTIVITY_NOT_ACTIVE`（沿用既有碼，不是新碼）。`ACTIVITY_LOCATION_LOCKED` 這個錯誤碼**從系統完全移除**（migration、pgTAP test、`docs/API.md`、`docs/STATE_MACHINE.md`、`app/lib/rpc/api_exception.dart` 的 `activityLocationLocked` enum 一併刪除）。
+> 3. 🟢 **`activity_location_id` 語意從「一次性凍結」改成「持續即時計票」**：拿掉閘門後，`fn_start_activities()` 不再是唯一的寫入時機（因為之後還能繼續提案/投票）。新增共用 helper `fn_recompute_activity_location(activity_id)`（得票最高者勝出、同票取最早提案 `created_at` 者、零候選寫 `NULL`——計票規則本身完全不變），`propose_activity_location`/`vote_activity_location` 成功後都會呼叫它即時覆寫 `activity.activity_location_id`；`fn_start_activities()` 轉 `ONGOING` 前一樣呼叫同一個 helper，但只是保底防禦，不再是唯一寫入者。零候選不代替使用者決定的既有原則（ERD 設計備註 33）完全不變。
+> 4. 🟡 **順帶修正（非本輪核心，但同一個 bug 回報一起發現）**：`activity_detail_screen.dart` 多處把 `ApiException` 直接印成 `'OO失敗：${e.code.name}'`（enum 名稱，不是人話）——這是全 app 既有的 fallback 慣例，這輪不改動其他 20+ 處既有呼叫點；但 Activity Location 這個路徑本身的錯誤已經因為第 2 點幾乎不會再發生於常見情境（僅剩 `NOT_ACTIVITY_MEMBER`/`INVALID_INPUT`/`INVALID_CAMPUS_SCOPE` 這些本來就邊緣的情境會落到這個 fallback）。`_LocationTab` 同步調整：不再有「鎖定後只顯示唯讀卡片、拿掉投票按鈕」這個畫面（`_LockedLocationCard` 移除），改成永遠顯示可投票列表，目前領先的候選加一個小標記。
+> 5. 🔴 **代價與取捨**：拿掉截止時間後，理論上 `ONGOING` 之後、成員實際碰面前仍可能因為有人改票而換候選地點——這輪判斷這個代價遠小於「投票有一個不可預期的截止時間，撞上了就卡死使用者」的體驗成本。沒有引入任何新 schema（`activity_location_id` 型別、`activity_location_option`/`activity_location_vote` 表結構都不變），純粹是「誰在什麼時候寫這個欄位」的邏輯調整。
+> 6. 🟢 **不受影響、確認維持不變的既有原則**：零候選地點不代替使用者決定（`activity_location_id` 維持 `NULL`，見 ERD 設計備註 33）；`fn_remind_missing_location_candidates()` 零候選提醒任務；自訂候選（`custom_name`，v1.30）不經審核、不落地 `location` 表；候選範圍限定活動所在 `(school, campus)` 已核准地點（`INVALID_CAMPUS_SCOPE` 不變）。這些都不是這次使用者訴求（「校區地點清單不該綁死在單一活動」「投票要能決定結果」）真正卡住的地方——校區地點清單本來就不綁定單一活動、任一活動都能選用同校區任何已核准地點，自訂候選本來就毫無審核限制；真正的 bug 只有 `ACTIVITY_LOCATION_LOCKED` 這一個閘門條件。
 
 ---
 
@@ -551,8 +559,8 @@ ActivityMember              # 取代 matched_request_ids[] / final_member_ids[]
 
 - **候選範圍**：既有 `location` 表 `status='APPROVED'`、屬於該 Activity `(school, campus)` 範圍內的地點，**或**（v1.30）成員自己打的自訂候選（`custom_name`，1~40 字）。自訂候選不經審核、不寫入 `location` 表——只在該 Activity 的投票裡存在，不會被其他活動看到或複用；適合桌遊店、麻將館、校外咖啡廳這類一次性、沒有必要進全域清單的地點。想讓一個地點被其他活動也看得到，走既有的 `propose_location`（送 admin 審核加入清單）。這輪明確**不**做「候選地點依 `activity_type` 的 `category` 過濾」——`location.category` 目前不存在（跟 v1.10 討論中一度誤以為已定案不同，這輪確認未新增），日後若補上也僅供 UI 分組/搜尋用，不做為規則限制，避免過度設計。
 - **提案與投票**：任何活動成員可提案新候選（等同於自動投給自己提的候選，同名自訂候選重複提案退化成投票）或對既有候選投票，可改票（一人一票，upsert，投的是候選記錄 `activity_location_option.id`，不是地點本身——見下方 v1.30 備註）。
-- **截止時間**：直接復用 `activity.start_time`，不新增獨立的投票倒數欄位。鎖定候選地點的動作與 `MATCHED → ONGOING` 轉移（見 State Machine A2）合併在同一個背景任務裡完成，不另開排程。
-- **計票規則**：得票最高者勝出；同票取最早提案（`created_at`）者勝出，沿用「先到先得」而非再次投票的精簡原則；只有一個候選時，這條排序邏輯自然選中它，不需要為此特判計票邏輯。
+- 🟡 **不設投票截止時間（v1.37 起）**：`propose_activity_location`/`vote_activity_location` 只要求 `activity.status in (MATCHED, ONGOING)`，`COMPLETED`/`CANCELLED` 之後才擋（回 `ACTIVITY_NOT_ACTIVE`）——跟第 9.2 節 Meeting Point/Hint 用同一組閘門。v1.11～v1.36 曾經是「過了 `start_time`（此時 `status` 已轉 `ONGOING`）就整組鎖死，回 `ACTIVITY_LOCATION_LOCKED`」，這個錯誤碼已於 v1.37 整個移除，理由見下方變更紀錄。
+- **計票規則**：得票最高者勝出；同票取最早提案（`created_at`）者勝出，沿用「先到先得」而非再次投票的精簡原則；只有一個候選時，這條排序邏輯自然選中它，不需要為此特判計票邏輯。🟡 **v1.37**：這條規則不再只在 `start_time` 那一刻算一次——`propose_activity_location`/`vote_activity_location` 每次成功後都會即時重新計算並覆寫 `activity.activity_location_id`（共用 helper `fn_recompute_activity_location()`），`fn_start_activities()` 轉 `ONGOING` 前一樣呼叫它當保底防禦，但已經不是唯一寫入者，`ONGOING` 之後仍可能因為改票而換候選。
 - 🟢 **零候選地點不代替使用者決定**：若到 `start_time` 時仍沒有任何候選地點，`activity_location_id` 維持 `NULL`，系統不自動選一個地點頂上（避免像「讀書活動最後鎖定南大門」這種跟活動性質無關的荒謬結果）。改成另開一個提醒任務：`start_time` 前 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）仍零候選時，向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知催促提案。
 - 🔴 **前瞻性設計原則（Meeting Point 尚未實作）**：即使 `activity_location_id` 為 `NULL`，未來實作「集合地點」（Meeting Point，成員自由文字描述實際集合點，例如「光復北大門」）這類協調工具時，必須設計成**獨立於 `activity_location_id` 是否鎖定**才能使用——不能讓「正式候選地點沒投出結果」等於「系統內沒有任何協調工具可用，只能靠外部私訊」。這條原則先寫進文件供未來遵守，本輪不新增任何 Meeting Point 相關 schema。
 

@@ -590,10 +590,11 @@ class _LocationTab extends ConsumerWidget {
         children: [
           Text('活動地點', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: AppSpacing.sm),
-          if (activity.activityLocationId != null)
-            _LockedLocationCard(activity: activity)
-          else
-            _LocationVoting(activity: activity),
+          // v1.37：activity_location_id 不再是「投票結束、鎖定唯讀」的凍結值，
+          // 而是持續即時計票的目前領先候選——即使已經有領先者，投票畫面仍要
+          // 保持互動，只是把目前領先的那個標出來（見 _LocationVoting 內的
+          // 「目前領先」標記），不再切成一張唯讀卡片。
+          _LocationVoting(activity: activity),
           const SizedBox(height: AppSpacing.lg),
           Text('集合地點', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: AppSpacing.sm),
@@ -608,50 +609,6 @@ class _LocationTab extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           _MeetingHintSection(activityId: activity.id, editable: canEdit),
         ],
-      ),
-    );
-  }
-}
-
-class _LockedLocationCard extends ConsumerWidget {
-  const _LockedLocationCard({required this.activity});
-
-  final Activity activity;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // v1.30：activity.activityLocationId 現在指向 activity_location_option.id
-    // （可能是既有 location 候選，也可能是自訂候選），不再直接指向 location(id)，
-    // 所以要先從候選清單找出得票勝出的那筆，再視它是哪種來源解析顯示名稱。
-    final optionsAsync = ref.watch(activityLocationOptionsStreamProvider(activity.id));
-    final locationsAsync = ref.watch(
-      approvedLocationsProvider((activity.school, activity.campus)),
-    );
-    return AppCard(
-      child: optionsAsync.when(
-        loading: () => const LoadingIndicator(),
-        error: (error, stack) => Text('載入失敗：$error'),
-        data: (options) {
-          final locked = options.where((o) => o.id == activity.activityLocationId).toList();
-          String name = '（地點已鎖定）';
-          if (locked.isNotEmpty) {
-            final option = locked.first;
-            if (option.customName != null) {
-              name = option.customName!;
-            } else {
-              final locations = locationsAsync.value ?? const <Location>[];
-              final matching = locations.where((l) => l.id == option.locationId);
-              name = matching.isEmpty ? '（地點已鎖定）' : matching.first.name;
-            }
-          }
-          return Row(
-            children: [
-              const Icon(Icons.lock_rounded, size: 20),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(child: Text(name, style: Theme.of(context).textTheme.titleSmall)),
-            ],
-          );
-        },
       ),
     );
   }
@@ -848,12 +805,21 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
           for (final option in options) ...[
             AppCard(
               key: ValueKey(option.id),
+              // v1.37：activity_location_id 是即時計算出的目前領先候選（不是
+              // 投票截止後才鎖定的凍結值），這裡標出來讓大家知道「現在是這個
+              // 領先」，但不代表投票已經結束——大家還是可以繼續投票把它換掉。
               child: Row(
                 children: [
+                  if (option.id == widget.activity.activityLocationId) ...[
+                    Icon(Icons.chat_bubble_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 4),
+                  ],
                   Expanded(
                     child: Text(
                       option.customName ?? locations[option.locationId]?.name ?? '（地點）',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: option.id == widget.activity.activityLocationId ? FontWeight.bold : null,
+                          ),
                     ),
                   ),
                   Text(
@@ -869,6 +835,16 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                 ],
               ),
             ),
+            if (option.id == widget.activity.activityLocationId)
+              Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.sm, bottom: AppSpacing.xs),
+                child: Text(
+                  '目前領先（投票隨時可能改變結果）',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                ),
+              ),
             const SizedBox(height: AppSpacing.xs),
           ],
         const SizedBox(height: AppSpacing.sm),
@@ -1338,6 +1314,15 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 反饋：「見面提示我怎麼沒看到別人的更新」——原本只在展開卡片後才顯示
+          // 一行小字，且對方不設定就完全看不到「這功能存在」的痕跡。改成不用
+          // 展開就看得到、貼在頭像旁邊的漫畫講話框，非本人且有填才顯示。
+          if (!isSelf && member.meetingHint != null && member.meetingHint!.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 8, bottom: 2),
+              child: _MeetingHintBubble(text: member.meetingHint!),
+            ),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1454,17 +1439,6 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
             const SizedBox(height: AppSpacing.sm),
             const Divider(height: 1),
             const SizedBox(height: AppSpacing.sm),
-            if (member.meetingHint?.isNotEmpty == true) ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.face_retouching_natural_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(child: Text(member.meetingHint!, style: Theme.of(context).textTheme.bodyMedium)),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
             _MemberContactSection(contacts: member.contacts),
             const SizedBox(height: AppSpacing.sm),
             Row(
@@ -1479,6 +1453,50 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 見面提示漫畫講話框——貼在成員頭像正上方，不用展開卡片就看得到，取代原本
+/// 埋在展開區塊裡的一行小字。純展示用（沒有互動），用 Stack 疊一個旋轉 45°
+/// 的小方塊當講話框尾巴，跟主體同色，指向下方的頭像。
+class _MeetingHintBubble extends StatelessWidget {
+  const _MeetingHintBubble({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                text,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onPrimaryContainer),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            bottom: -5,
+            child: Transform.rotate(
+              angle: 0.78539816339744830961, // 45°
+              child: Container(width: 10, height: 10, color: scheme.primaryContainer),
+            ),
+          ),
         ],
       ),
     );

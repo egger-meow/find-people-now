@@ -1,13 +1,15 @@
 -- =============================================================================
 -- pgTAP Test — Activity Location 投票機制 (docs/API.md §6.4/6.5, SPEC §9.1/v1.30, v1.11)
 -- 涵蓋：NOT_ACTIVITY_MEMBER、INVALID_CAMPUS_SCOPE、提案=自動投票、改票、
--- fn_start_activities 依得票鎖定 (含同票取最早提案者)、鎖定後 ACTIVITY_LOCATION_LOCKED、
+-- fn_start_activities 依得票即時計算 activity_location_id（含同票取最早提案
+-- 者）、ONGOING 後仍可繼續提案/投票並即時翻票（v1.37，ACTIVITY_LOCATION_LOCKED
+-- 已整個移除）、COMPLETED/CANCELLED 後才擋（ACTIVITY_NOT_ACTIVE）、
 -- vote_activity_location 對不存在的候選回 NOT_FOUND、零候選 fallback
 -- （activity_location_id 維持 NULL，不代替使用者決定）+
 -- fn_remind_missing_location_candidates 的通知與去重 +
 -- v1.30 自訂候選（custom_name，不經審核、不落地 location 表）：
 -- 同時給 location_id/custom_name 或都不給回 INVALID_INPUT、自訂候選可直接
--- 得票鎖定為 activity_location_id、同名自訂候選重複提案退化成投票。
+-- 得票成為 activity_location_id、同名自訂候選重複提案退化成投票。
 --
 -- 執行：`supabase test db`
 -- 全檔包在 BEGIN;...ROLLBACK; 內，測試結束自動還原，不需手動清理資料。
@@ -18,7 +20,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(20);
+select plan(22);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -294,23 +296,53 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 8. 鎖定後再提案應被 ACTIVITY_LOCATION_LOCKED 擋下
+-- 8. v1.37：ONGOING 之後仍可繼續投票（不再有 ACTIVITY_LOCATION_LOCKED）——
+--    m1 把票從 P 改投給 Q，這次呼叫本身不應拋錯
 -- -----------------------------------------------------------------------------
 
 do $$ begin
   perform set_config('request.jwt.claim.sub', (select m1_id::text from fixtures), true);
 end $$;
 
-select throws_ok(
-  format($sql$select propose_activity_location(%L, %L)$sql$,
-    (select activity1_id from fixtures), (select loc_q_id from fixtures)),
-  'ACTIVITY_LOCATION_LOCKED',
-  '已鎖定 Activity Location 後再提案應被 ACTIVITY_LOCATION_LOCKED 擋下'
+select lives_ok(
+  format($sql$select vote_activity_location(%L, %L)$sql$,
+    (select activity1_id from fixtures),
+    (select id from activity_location_option
+      where activity_id = (select activity1_id from fixtures) and location_id = (select loc_q_id from fixtures))),
+  'v1.37：activity 已 ONGOING 也仍可投票，不再被 ACTIVITY_LOCATION_LOCKED 擋下'
 );
 
 -- -----------------------------------------------------------------------------
--- 9. activity_2：t2_m1 提案 P、t2_m2 提案 Q，1:1 平票 → fn_start_activities
---    應取最早提案者（t2_m1 的 P，因為先建立）勝出
+-- 9. 承上：翻票後 P 剩 1 票（m3）、Q 變 2 票（m1, m2）——activity_location_id
+--    應立即即時更新成 Q，不需要再跑一次 fn_start_activities
+-- -----------------------------------------------------------------------------
+
+select is(
+  (select activity_location_id from activity where id = (select activity1_id from fixtures)),
+  (select id from activity_location_option
+    where activity_id = (select activity1_id from fixtures) and location_id = (select loc_q_id from fixtures)),
+  'v1.37：ONGOING 期間改票應即時翻轉 activity_location_id（Q 2 票 > P 1 票），不必等排程'
+);
+
+-- -----------------------------------------------------------------------------
+-- 10. v1.37：activity 真正結束（COMPLETED）後才擋，回 ACTIVITY_NOT_ACTIVE
+--     （沿用 update_meeting_point/update_meeting_hint 既有的碼，不是新碼）
+-- -----------------------------------------------------------------------------
+
+do $$ begin
+  update activity set status = 'COMPLETED' where id = (select activity1_id from fixtures);
+end $$;
+
+select throws_ok(
+  format($sql$select propose_activity_location(%L, %L)$sql$,
+    (select activity1_id from fixtures), (select loc_p_id from fixtures)),
+  'ACTIVITY_NOT_ACTIVE',
+  'v1.37：activity 已 COMPLETED 後提案應被 ACTIVITY_NOT_ACTIVE 擋下'
+);
+
+-- -----------------------------------------------------------------------------
+-- 11. activity_2：t2_m1 提案 P、t2_m2 提案 Q，1:1 平票 → fn_start_activities
+--     應取最早提案者（t2_m1 的 P，因為先建立）勝出
 -- -----------------------------------------------------------------------------
 
 do $$ begin
@@ -335,7 +367,7 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 10. activity_3：零候選 → fn_remind_missing_location_candidates 應通知全體成員
+-- 12. activity_3：零候選 → fn_remind_missing_location_candidates 應通知全體成員
 -- -----------------------------------------------------------------------------
 
 select is(
@@ -353,7 +385,7 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 11. 去重：再次呼叫不應重複發送
+-- 13. 去重：再次呼叫不應重複發送
 -- -----------------------------------------------------------------------------
 
 select is(
@@ -363,7 +395,7 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 12. activity_3 到點仍零候選：fn_start_activities 不代替使用者決定，
+-- 14. activity_3 到點仍零候選：fn_start_activities 不代替使用者決定，
 --     activity_location_id 維持 NULL，仍照常轉 ONGOING
 -- -----------------------------------------------------------------------------
 
@@ -386,7 +418,7 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 13. v1.30 自訂候選：同時給 location_id 與 custom_name 應被 INVALID_INPUT 擋下
+-- 15. v1.30 自訂候選：同時給 location_id 與 custom_name 應被 INVALID_INPUT 擋下
 -- -----------------------------------------------------------------------------
 
 do $$ begin
@@ -401,7 +433,7 @@ select throws_ok(
 );
 
 -- -----------------------------------------------------------------------------
--- 14. v1.30 自訂候選：兩者都不給也應被 INVALID_INPUT 擋下
+-- 16. v1.30 自訂候選：兩者都不給也應被 INVALID_INPUT 擋下
 -- -----------------------------------------------------------------------------
 
 select throws_ok(
@@ -411,7 +443,7 @@ select throws_ok(
 );
 
 -- -----------------------------------------------------------------------------
--- 15. v1.30 自訂候選：t4_m1 提案「光復操場旁的桌遊店」——不經審核、不落地
+-- 17. v1.30 自訂候選：t4_m1 提案「光復操場旁的桌遊店」——不經審核、不落地
 --     location 表，應直接建立候選（location_id is null）+ 自動投給自己一票
 -- -----------------------------------------------------------------------------
 
@@ -442,7 +474,7 @@ select ok(
 );
 
 -- -----------------------------------------------------------------------------
--- 16. v1.30 自訂候選：同名（大小寫不敏感）重複提案應退化成投票，不是錯誤，
+-- 18. v1.30 自訂候選：同名（大小寫不敏感）重複提案應退化成投票，不是錯誤，
 --     也不應建立第二筆候選記錄
 -- -----------------------------------------------------------------------------
 
@@ -460,8 +492,8 @@ select is(
 );
 
 -- -----------------------------------------------------------------------------
--- 17. v1.30 自訂候選：到點時 fn_start_activities 應能鎖定自訂候選為
---     activity_location_id（跟一般 location 候選走同一套鎖定邏輯）
+-- 19. v1.30 自訂候選：到點時 fn_start_activities 應能把自訂候選算成
+--     activity_location_id（跟一般 location 候選走同一套計票邏輯）
 -- -----------------------------------------------------------------------------
 
 do $$ begin

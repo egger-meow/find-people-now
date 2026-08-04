@@ -7,11 +7,16 @@
 /// from the DB never crashes the client; it carries the raw string through.
 ///
 /// IMPORTANT: this list reflects what the migrations under supabase/migrations
-/// actually raise as of 2026-07-27, cross-checked function-by-function against
+/// actually raise as of 2026-08-04, cross-checked function-by-function against
 /// docs/API.md. Several codes documented in API.md are never raised by any
 /// migration — see RPC_COVERAGE.md for the full discrepancy list. Do not
 /// add a code here just because API.md mentions it; add it when a migration
 /// actually raises it.
+///
+/// `activityLocationLocked` ('ACTIVITY_LOCATION_LOCKED') existed here through
+/// v1.36 and was removed in v1.37 — `propose_activity_location`/
+/// `vote_activity_location` now reuse `activityNotActive` instead, see
+/// docs/SPEC.md v1.37 changelog.
 enum ApiErrorCode {
   unauthorized('UNAUTHORIZED'),
   userSuspended('USER_SUSPENDED'),
@@ -42,7 +47,6 @@ enum ApiErrorCode {
   alreadyReported('ALREADY_REPORTED'),
   consentWindowClosed('CONSENT_WINDOW_CLOSED'),
   alreadyResponded('ALREADY_RESPONDED'),
-  activityLocationLocked('ACTIVITY_LOCATION_LOCKED'),
   activityNotActive('ACTIVITY_NOT_ACTIVE'),
   meetingPointUpdateCooldown('MEETING_POINT_UPDATE_COOLDOWN'),
   accountDeleted('ACCOUNT_DELETED'),

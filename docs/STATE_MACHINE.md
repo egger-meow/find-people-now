@@ -72,7 +72,7 @@ stateDiagram-v2
 | # | 轉移 | 觸發者 | 條件 | 副作用 |
 |---|---|---|---|---|
 | A1 | `[*] → MATCHED` | Matching Engine（= R3a 的另一面）或使用者雙方確認（= PC1 的另一面） | 候選池達到 `min_participants` 貪婪成局後，本次實際撮合人數 `> 2` 直接達標，或 `≤ 2` 經 `PENDING_CONFIRMATION` 雙方確認 | 設定 `contact_visible_until = 本 activity.created_at + 24h`（**不是** Request 的 created_at，SPEC v1.1 變更 5）；聯絡方式立即對成員互相顯示 |
-| A2 | `MATCHED → ONGOING` | 排程（時間觸發，`fn_start_activities()`，v1.11 第一次落地成 SQL） | `current_time ≥ start_time`，**不用人工按開始** | 🟢 **v1.11**：若 `activity_location_id` 仍為 `NULL`，**先**依 Activity Location 投票結果鎖定候選（得票最高者勝出，同票取最早提案者；零候選則維持 `NULL`，不代替使用者決定，見下方「Activity Location 子流程」），**再**轉 `ONGOING`；發送 `ACTIVITY_REMINDER` 通知 |
+| A2 | `MATCHED → ONGOING` | 排程（時間觸發，`fn_start_activities()`，v1.11 第一次落地成 SQL） | `current_time ≥ start_time`，**不用人工按開始** | 🟢 **v1.11**：轉 `ONGOING` 前重新計算一次 Activity Location 目前得票最高的候選寫入 `activity_location_id`（同票取最早提案者；零候選則維持 `NULL`，不代替使用者決定，見下方「Activity Location 子流程」）；發送 `ACTIVITY_REMINDER` 通知。🟡 **v1.37**：這裡的計票只是保底防禦——`activity_location_id` 已經由 `propose_activity_location`/`vote_activity_location` 持續即時維護，不再是「只在這一刻凍結一次」的動作 |
 | A3 | `ONGOING → COMPLETED` | 系統（由回報驅動） | `completion_report` 回報數 ≥ 50% 參與者（法定人數門檻） | 結算多數決：被半數以上回報「沒來」者記 `NO_SHOW`；正常出席者記 `ATTENDED`；**2 人活動互咬特例**：雙方各說對方沒來 → 不判、雙方都不記事件。結算後檢查「連續 3 次 No-show」→ 是則寫 `app_user.suspended_until = now + 7 天` |
 | A4 | `ONGOING → COMPLETED` | 排程（時間觸發） | `start_time + 24h` 仍未達回報門檻 | 自動轉 COMPLETED，**不做任何 No-show 判定**、不記任何事件（未達法定人數不判任何人） |
 | A5 | `MATCHED → CANCELLED` | 使用者主動取消（`cancel_activity_participation`） | 個別成員取消：`activity_member.status → CANCELLED`；全體取消或人數跌破可成行下限時整個 Activity → `CANCELLED` | 依取消時點記 `user_reliability_event`：開始前 ≥1h → `EARLY_CANCEL`（不計入記錄）；<1h → `LATE_CANCEL`（記 1 次取消，**並對該使用者寫入 `app_user.next_request_allowed_at = now() + 30 分鐘`**，v1.7 冷卻機制，SPEC §6.3，`EARLY_CANCEL` 不觸發）。🟢 **v1.14 帳號刪除**（`delete_account()`）對個別成員觸發同一個 `activity_member.status → CANCELLED`，但**刻意不比照上述寫 `user_reliability_event`、不觸發冷卻**——這是使用者離開平台，不是失信行為，沒有未來需要懲罰或冷卻的對象 |
@@ -84,10 +84,10 @@ stateDiagram-v2
 
 | 情境 | 行為 |
 |---|---|
-| Activity 建立（A1）到 `start_time` 之間 | 任何 `activity_member` 可呼叫 `propose_activity_location`/`vote_activity_location` 提案或投票，可改票（見 API.md 6.4/6.5） |
-| `start_time` 到（A2，`fn_start_activities()`） | 若已有候選：得票最高者勝出，同票取最早提案（`created_at`）者勝出，鎖定 `activity_location_id` 後才轉 `ONGOING`；若零候選：`activity_location_id` 維持 `NULL`，**不代替使用者決定**，同樣照常轉 `ONGOING` |
+| Activity 建立（A1）起，`status in (MATCHED, ONGOING)` 期間 | 任何 `activity_member` 可呼叫 `propose_activity_location`/`vote_activity_location` 提案或投票、可改票（見 API.md 6.4/6.5）。🟡 **v1.37**：不再有「過了某個時間點就整組擋掉」這件事——跟 Meeting Point/Hint（9.2 節）用同一組閘門，`status` 不是 `MATCHED`/`ONGOING`（即 `COMPLETED`/`CANCELLED`）才擋，回 `ACTIVITY_NOT_ACTIVE`（沿用既有碼，不是新碼） |
+| 每次提案/投票後 | 🟡 **v1.37**：即時依目前得票數重新計算並覆寫 `activity_location_id`（得票最高者勝出，同票取最早提案 `created_at` 者勝出）——不再是「背景任務在 `start_time` 那一刻凍結寫死一次」的欄位，`ONGOING` 之後仍可能因為改票而換人 |
+| `start_time` 到（A2，`fn_start_activities()`） | 依當下得票結果轉 `ONGOING`（若零候選：`activity_location_id` 維持 `NULL`，**不代替使用者決定**），同樣照常轉 `ONGOING` |
 | `start_time` 前 `app_config.location_reminder_lead_minutes`（預設 30 分鐘）仍零候選 | 背景任務 `fn_remind_missing_location_candidates()` 向全體成員發送 `LOCATION_NOT_YET_PROPOSED` 通知；去重靠查詢 `notification` 表本身是否已發過，不另存欄位 |
-| `activity_location_id` 已鎖定後 | `propose_activity_location`/`vote_activity_location` 一律回 `ACTIVITY_LOCATION_LOCKED` |
 
 🟢 **Meeting Point / Meeting Hint 已於 v1.11.1 正式實作**（原 v1.11 這裡只寫了前瞻性原則，未落地），見下方子流程；`activity_location_id` 是否鎖定不影響這兩者是否可用。
 

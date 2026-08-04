@@ -208,7 +208,10 @@ Future<List<ActivityMemberProfile>> getActivityMemberProfiles(
 /// review or permanently pollute the shared directory). Proposing also casts
 /// the caller's own vote for it — a second call for a candidate someone else
 /// already proposed (by `location_id`, or by case-insensitive `custom_name`)
-/// just re-votes, it's not an error.
+/// just re-votes, it's not an error. Only requires `activity.status in
+/// (MATCHED, ONGOING)`, otherwise `ACTIVITY_NOT_ACTIVE` (v1.37 — there is no
+/// more "locked" state; each call re-tallies votes and live-updates
+/// `activity.activity_location_id`, see [voteActivityLocation]).
 Future<ActivityLocationOption> proposeActivityLocation(
   SupabaseClient client, {
   required String activityId,
@@ -237,7 +240,13 @@ Future<ActivityLocationOption> proposeActivityLocation(
 /// candidate record itself now, not a location — a v1.30 custom-name
 /// candidate has no `location_id` to vote for. One vote per user per
 /// activity; calling again with a different `optionId` changes the vote
-/// (upsert on `(activity_id, user_id)`).
+/// (upsert on `(activity_id, user_id)`). Only requires `activity.status in
+/// (MATCHED, ONGOING)`, otherwise `ACTIVITY_NOT_ACTIVE` (v1.37). Every
+/// successful call re-tallies votes (highest count wins, ties go to the
+/// earliest-proposed option) and writes the current leader to
+/// `activity.activity_location_id` — that field is a live "currently
+/// leading" pointer now, not a one-time freeze; it can keep changing for as
+/// long as the activity stays `MATCHED`/`ONGOING`, even after `start_time`.
 Future<ActivityLocationVote> voteActivityLocation(
   SupabaseClient client, {
   required String activityId,
