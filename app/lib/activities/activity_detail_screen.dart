@@ -938,10 +938,26 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
           updatesAsync.when(
             loading: () => const LoadingIndicator(),
             error: (error, stack) => Text('載入失敗：$error'),
-            data: (updates) => Text(
-              updates.isEmpty ? '目前還沒有人設定集合地點' : updates.first.description,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            data: (updates) => updates.isEmpty
+                ? Text(
+                    '目前還沒有人設定集合地點',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.pin_drop_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          updates.first.description,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                    ],
+                  ),
           ),
           if (widget.editable) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -1069,6 +1085,7 @@ class _MembersTab extends ConsumerWidget {
     final rosterAsync = ref.watch(activityMemberRosterProvider(activityId));
     final arrivalOverride = ref.watch(activityArrivalStreamProvider(activityId)).value;
     final vibeTagsOverride = ref.watch(activityVibeTagsStreamProvider(activityId)).value;
+    final meetingHintOverride = ref.watch(activityMeetingHintStreamProvider(activityId)).value;
     final showArrival = activityStatus == ACTIVITY_STATUS.MATCHED || activityStatus == ACTIVITY_STATUS.ONGOING;
     final typesAsync = ref.watch(activityTypesProvider);
     final matchingTypes = typesAsync.value?.where((t) => t.id == activityTypeId) ?? const Iterable.empty();
@@ -1087,6 +1104,9 @@ class _MembersTab extends ConsumerWidget {
               }
               if (vibeTagsOverride != null && vibeTagsOverride.containsKey(m.userId)) {
                 m = m.copyWithVibeTags(vibeTagsOverride[m.userId]!);
+              }
+              if (meetingHintOverride != null && meetingHintOverride.containsKey(m.userId)) {
+                m = m.copyWithMeetingHint(meetingHintOverride[m.userId]);
               }
               return m;
             }(),

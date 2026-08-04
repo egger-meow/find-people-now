@@ -106,6 +106,20 @@ final activityVibeTagsStreamProvider =
   });
 });
 
+/// 見面提示——反饋：「見面提示這邊我怎麼沒看到別人會看到妳的更新」。根因跟
+/// arrival/vibeTags 是同一類：[activityMemberRosterProvider] 是
+/// `FutureProvider`，只在初次進頁時抓一次 `meeting_hint`，其他成員之後更新
+/// 不會自動反映。修法跟 arrival/vibeTags 一樣接到同一條底層 stream 上疊加，
+/// 而不是把整個名單（含 `get_activity_contacts`/`get_activity_member_profiles`
+/// 兩支 RPC）都改成 Realtime。
+final activityMeetingHintStreamProvider =
+    Provider.family<AsyncValue<Map<String, String?>>, String>((ref, activityId) {
+  final asyncRows = ref.watch(_activityMemberFieldsStreamProvider(activityId));
+  return asyncRows.whenData((rows) {
+    return {for (final row in rows) row['user_id'] as String: row['meeting_hint'] as String?};
+  });
+});
+
 /// 集合地點更新紀錄（append-only，見 `update_meeting_point` 註解）——新到舊
 /// 排序，畫面只需要顯示最新一筆＋歷史。
 final activityMeetingPointUpdatesStreamProvider =
@@ -197,6 +211,25 @@ class MemberRosterEntry {
       );
 
   MemberRosterEntry copyWithVibeTags(List<String> vibeTags) => MemberRosterEntry(
+        userId: userId,
+        sourceRequestId: sourceRequestId,
+        status: status,
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+        contacts: contacts,
+        school: school,
+        department: department,
+        degreeLevel: degreeLevel,
+        bio: bio,
+        reliabilityTier: reliabilityTier,
+        meetingHint: meetingHint,
+        arrivedAt: arrivedAt,
+        vibeTags: vibeTags,
+        skillLevel: skillLevel,
+        studyTarget: studyTarget,
+      );
+
+  MemberRosterEntry copyWithMeetingHint(String? meetingHint) => MemberRosterEntry(
         userId: userId,
         sourceRequestId: sourceRequestId,
         status: status,
