@@ -7,6 +7,7 @@ import '../activities/my_activities_providers.dart';
 import '../downgrade/downgrade_consent_dialog.dart';
 import '../notifications/notification_providers.dart';
 import '../onboarding/onboarding_overlay.dart';
+import '../theme/app_haptics.dart';
 import '../theme/platform_adaptive.dart';
 
 /// UI_PLAN.md §1 — 底部導覽（4 個主 tab）。`StatefulShellRoute.indexedStack`
@@ -32,6 +33,10 @@ class AppShell extends ConsumerWidget {
     final unreadCount = ref.watch(unreadNotificationCountProvider);
 
     void onDestinationSelected(int index) {
+      // 切分頁是這支 App 最高頻的操作，iOS 原生 Tab Bar 每次切換都有一下輕
+      // 觸覺；沒有的話會明顯「鈍」。同一個 tab 再按一次是「回到該分支根部」
+      // （見下方 initialLocation），也算一次狀態變化，一樣給回饋。
+      AppHaptics.selection();
       // 反饋：活動狀態可能在使用者離開「活動」分頁時，被背景排程（如
       // fn_complete_activities）在背後推進，myActivityListProvider 是快取的
       // FutureProvider、IndexedStack 又讓分頁常駐，不會自動重查——每次切回這個

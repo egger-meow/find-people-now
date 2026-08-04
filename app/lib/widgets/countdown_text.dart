@@ -47,10 +47,21 @@ class _CountdownTextState extends State<CountdownText> {
     super.dispose();
   }
 
+  /// 等寬數字（tabular figures）。這個 widget 每秒重繪一次，而多數字型的
+  /// 比例數字（proportional figures）裡「1」比「8」窄——`00:11` 換到 `00:08`
+  /// 整串文字的寬度就變了，倒數會一直左右抽動，旁邊的元素跟著被推。
+  /// `tnum` 讓所有數字佔一樣寬，倒數就穩在原地。
+  ///
+  /// 用 [FontFeature] 而不是換成 monospace 字型：只改數字寬度，中文與標點
+  /// 仍然用原本的系統字型（iOS 的 SF Pro 支援 `tnum`，Android 的 Roboto 也是）。
+  TextStyle _withTabularFigures(TextStyle? style) =>
+      (style ?? const TextStyle()).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+
   @override
   Widget build(BuildContext context) {
     final remaining = widget.deadline.difference(DateTime.now());
     if (remaining.isNegative) {
+      // 逾時文字是中文、不是數字，不需要等寬處理。
       return Text(widget.expiredLabel, style: widget.style);
     }
     final minutes = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -61,9 +72,9 @@ class _CountdownTextState extends State<CountdownText> {
     final urgentColor = widget.urgentColor;
     final isUrgent = urgentColor != null && remaining <= widget.urgentThreshold;
     if (!isUrgent) {
-      return Text(text, style: widget.style);
+      return Text(text, style: _withTabularFigures(widget.style));
     }
-    final urgentStyle = (widget.style ?? const TextStyle()).copyWith(
+    final urgentStyle = _withTabularFigures(widget.style).copyWith(
       color: urgentColor,
       fontWeight: FontWeight.bold,
     );

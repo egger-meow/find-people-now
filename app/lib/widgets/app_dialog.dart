@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/app_haptics.dart';
 import '../theme/platform_adaptive.dart';
 
 /// [AppAdaptiveDialog] 的單一動作按鈕描述——外觀（Cupertino
@@ -100,5 +101,10 @@ Future<bool> showAppConfirmDialog(
       ],
     ),
   );
+  // 破壞性操作（取消配對、退出活動、封鎖、刪除帳號）被確認的當下給一次較重
+  // 的觸覺——iOS 原生的刪除確認就是這個手感，作用是「這件事真的發生了」的
+  // 生理層級確認，比事後才跳出來的提示更早到達。非破壞性的確認不給，
+  // 否則每個「確定」都在震，回饋就失去意義（HIG：不要濫用）。
+  if (isDestructive && (result ?? false)) AppHaptics.warning();
   return result ?? false;
 }
