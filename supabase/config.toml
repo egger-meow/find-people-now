@@ -196,6 +196,10 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
+# Left low (2) for local dev to avoid burning through the built-in mailer's own limits by
+# accident. Once [auth.email.smtp] (Gmail) is enabled for the real hosted project, raise this —
+# a personal Gmail account tops out around 500 sends/day, so ~30/hour is a safe sustained rate
+# that leaves headroom for the account's other mail.
 email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
@@ -234,14 +238,28 @@ otp_length = 6
 otp_expiry = 3600
 
 # Use a production-ready SMTP server
+#
+# Init production phase: no custom domain yet, so we're using a personal Gmail account via SMTP
+# instead of the built-in Supabase mailer (which is hard-capped to a handful of emails/hour and
+# not configurable — see the `email_sent` comment in [auth.rate_limit] above). To activate:
+#   1. Enable 2FA on the Gmail account, then create an "App Password" at
+#      https://myaccount.google.com/apppasswords (the normal account password will NOT work over
+#      SMTP once 2FA is on).
+#   2. Create `supabase/.env` (already git-ignored, see supabase/.gitignore) with:
+#        GMAIL_SMTP_USER=youraccount@gmail.com
+#        GMAIL_SMTP_PASS=<16-char app password, no spaces>
+#   3. Uncomment the block below and run `supabase start` (local) — for the actual hosted project,
+#      run `supabase config push` with the same `supabase/.env` present locally; that reads these
+#      values and pushes them to the linked project's Auth SMTP config via the Management API, it
+#      does not commit them anywhere.
 # [auth.email.smtp]
 # enabled = true
-# host = "smtp.sendgrid.net"
+# host = "smtp.gmail.com"
 # port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# user = "env(GMAIL_SMTP_USER)"
+# pass = "env(GMAIL_SMTP_PASS)"
+# admin_email = "env(GMAIL_SMTP_USER)"
+# sender_name = "敢不敢揪"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
