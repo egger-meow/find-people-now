@@ -7,11 +7,13 @@ import '../data/activity_type_icons.dart';
 import '../data/school_labels.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS;
 import '../match/match_providers.dart' show activityTypesProvider;
+import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
+import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/skeleton.dart';
 import 'my_activities_providers.dart';
 import 'pending_confirmation_card.dart';
 
@@ -118,7 +120,9 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
                 groupValue: _index,
                 children: const {0: Text('進行中'), 1: Text('已結束')},
                 onValueChanged: (value) {
-                  if (value != null) setState(() => _index = value);
+                  if (value == null) return;
+                  AppHaptics.selection();
+                  setState(() => _index = value);
                 },
               ),
             ),
@@ -166,44 +170,90 @@ class _ActivityList extends ConsumerWidget {
     final typesAsync = ref.watch(activityTypesProvider);
     final typeNames = {for (final t in typesAsync.value ?? const []) t.id: t.name};
 
-    return listAsync.when(
-      loading: () => const LoadingIndicator(),
-      error: (error, stack) => Center(child: Text('載入失敗：$error')),
-      data: (items) {
-        final filtered = items.where((item) => item.isOngoing == showOngoing).toList();
-        return RefreshIndicator(
-          onRefresh: () async => invalidateMyActivityList(ref),
-          child: filtered.isEmpty
-              ? ListView(
-                  children: [
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.6,
-                      child: showOngoing
-                          ? _EmptyState(
-                              icon: Icons.explore_outlined,
-                              message: '目前沒有進行中的活動',
-                              ctaLabel: '找人一起做點事',
-                              onCta: () => context.go('/match'),
-                            )
-                          : const _EmptyState(
-                              icon: Icons.history_rounded,
-                              message: '還沒有已結束的活動\n完成的活動會出現在這裡',
-                            ),
-                    ),
-                  ],
+    // 骨架屏 → 真實內容之間用淡入交叉取代硬切（guideline: fade-crossfade）：
+    // 同一個容器內的內容替換，硬切會讓整塊「閃」一下，交叉淡入則讀起來是
+    // 「同一塊東西變清楚了」。
+    return AnimatedSwitcher(
+      duration: AppMotion.duration(context, AppMotion.normal),
+      child: listAsync.when(
+        // 清單型內容用卡片骨架而不是置中轉圈圈——版面先撐在正確位置，
+        // 資料到位時不會整頁跳一下。
+        loading: () => const ActivityListSkeleton(),
+        error: (error, stack) => _ErrorState(onRetry: () => invalidateMyActivityList(ref)),
+        data: (items) {
+          final filtered = items.where((item) => item.isOngoing == showOngoing).toList();
+          return AdaptiveRefresh(
+            key: ValueKey('list-$showOngoing'),
+            onRefresh: () async => invalidateMyActivityList(ref),
+            slivers: [
+              if (filtered.isEmpty)
+                // 原本用「螢幕高度 * 0.6 的 SizedBox」硬撐出置中效果，在小螢幕
+                // 或橫向時會算錯位置。[SliverFillRemaining] 直接吃掉剩餘空間，
+                // 不需要知道螢幕多高。
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: showOngoing
+                      ? _EmptyState(
+                          icon: Icons.explore_outlined,
+                          message: '目前沒有進行中的活動',
+                          ctaLabel: '找人一起做點事',
+                          onCta: () => context.go('/match'),
+                        )
+                      : const _EmptyState(
+                          icon: Icons.history_rounded,
+                          message: '還沒有已結束的活動\n完成的活動會出現在這裡',
+                        ),
                 )
-              : ListView.separated(
+              else
+                SliverPadding(
                   padding: const EdgeInsets.all(AppSpacing.lg),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-                  itemBuilder: (context, index) => _ActivityListEntry(
-                    key: ValueKey(filtered[index].id),
-                    item: filtered[index],
-                    typeName: typeNames[filtered[index].activityTypeId] ?? '活動',
+                  sliver: SliverList.separated(
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+                    itemBuilder: (context, index) => _ActivityListEntry(
+                      key: ValueKey(filtered[index].id),
+                      item: filtered[index],
+                      typeName: typeNames[filtered[index].activityTypeId] ?? '活動',
+                    ),
                   ),
                 ),
-        );
-      },
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 載入失敗——原本只有一行 `載入失敗：$error`（把 Dart 例外字串直接丟給使用者
+/// 看，跟先前「不要把內部錯誤碼露到 UI」的反饋是同一類問題），而且沒有任何
+/// 恢復路徑，使用者只能切分頁碰運氣。改成人話說明 + 明確的重試按鈕。
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              '載入不到活動清單\n檢查一下網路，再試一次',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            SizedBox(width: 220, child: AppButton(label: '重新載入', onPressed: onRetry)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -297,6 +347,10 @@ class _ActivityCard extends StatelessWidget {
 
     return AppCard(
       onTap: onTap,
+      // VoiceOver 預設會把卡片裡的五段文字（類型／狀態／時間／校區／箭頭）
+      // 各唸成一個節點，聽起來像散落的詞。合併成一句完整敘述，順序照視覺
+      // 閱讀順序，狀態放後面當結論。
+      semanticLabel: '$typeName，$timeLabel，$campusLabel，$statusLabel',
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

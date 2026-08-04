@@ -12,6 +12,7 @@ import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show AchievementBadge, ReliabilityTier;
 import '../theme/app_theme.dart';
 import '../theme/theme_providers.dart';
+import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/loading_indicator.dart';
@@ -134,99 +135,101 @@ class ProfileScreen extends ConsumerWidget {
           error: (error, stack) => Center(child: Text('載入失敗：$error')),
           data: (user) {
             if (user == null) return const LoadingIndicator();
-            return RefreshIndicator(
+            return AdaptiveRefresh(
               onRefresh: () async {
                 ref.invalidate(myAppUserProvider);
                 ref.invalidate(myReliabilityProvider);
               },
-              child: ListView(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                children: [
-                  _ProfileHeaderCard(user: user),
-                  const SizedBox(height: AppSpacing.sm),
-                  reliabilityAsync.when(
-                    loading: () => const SizedBox.shrink(),
-                    error: (error, stack) => const SizedBox.shrink(),
-                    data: (reliability) => AppCard(
-                      child: Row(
-                        children: [
-                          Icon(Icons.verified_rounded, color: Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text('可信度等級：${_tierLabel(reliability.tier)}',
-                              style: Theme.of(context).textTheme.titleSmall),
-                        ],
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  sliver: SliverList.list(children: [
+                    _ProfileHeaderCard(user: user),
+                    const SizedBox(height: AppSpacing.sm),
+                    reliabilityAsync.when(
+                      loading: () => const SizedBox.shrink(),
+                      error: (error, stack) => const SizedBox.shrink(),
+                      data: (reliability) => AppCard(
+                        child: Row(
+                          children: [
+                            Icon(Icons.verified_rounded, color: Theme.of(context).colorScheme.primary),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text('可信度等級：${_tierLabel(reliability.tier)}',
+                                style: Theme.of(context).textTheme.titleSmall),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  const _BadgesSection(),
-                  const SizedBox(height: AppSpacing.lg),
-                  const _SectionLabel('設定'),
-                  AppCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.all(AppSpacing.md),
-                          child: _ThemeModeSection(),
-                        ),
-                        const Divider(height: 1),
-                        Padding(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          child: _MoreInfoSection(user: user),
-                        ),
-                        const Divider(height: 1),
-                        Padding(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          child: _ContactsSection(user: user),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  const _SectionLabel('說明與回饋'),
-                  AppCard(
-                    padding: EdgeInsets.zero,
-                    // AppCard 沒帶 onTap 時只有 Container/DecoratedBox，沒有
-                    // Material 祖先給裡面的 ListTile 畫 ink splash——自己補一層
-                    // 透明 Material。
-                    child: Material(
-                      type: MaterialType.transparency,
+                    const SizedBox(height: AppSpacing.sm),
+                    const _BadgesSection(),
+                    const SizedBox(height: AppSpacing.lg),
+                    const _SectionLabel('設定'),
+                    AppCard(
+                      padding: EdgeInsets.zero,
                       child: Column(
                         children: [
-                          ListTile(
-                            leading: const Icon(Icons.question_answer_outlined),
-                            title: const Text('反饋 / 常見問答'),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => context.push('/profile/feedback'),
+                          const Padding(
+                            padding: EdgeInsets.all(AppSpacing.md),
+                            child: _ThemeModeSection(),
                           ),
                           const Divider(height: 1),
-                          ListTile(
-                            leading: const Icon(Icons.menu_book_outlined),
-                            title: const Text('使用說明'),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => context.push('/help'),
+                          Padding(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            child: _MoreInfoSection(user: user),
+                          ),
+                          const Divider(height: 1),
+                          Padding(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            child: _ContactsSection(user: user),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  AppCard(
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: ListTile(
-                        leading: const Icon(Icons.logout_rounded),
-                        title: const Text('登出'),
-                        onTap: () => _confirmSignOut(context, ref),
+                    const SizedBox(height: AppSpacing.lg),
+                    const _SectionLabel('說明與回饋'),
+                    AppCard(
+                      padding: EdgeInsets.zero,
+                      // AppCard 沒帶 onTap 時只有 Container/DecoratedBox，沒有
+                      // Material 祖先給裡面的 ListTile 畫 ink splash——自己補一層
+                      // 透明 Material。
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: Column(
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.question_answer_outlined),
+                              title: const Text('反饋 / 常見問答'),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: () => context.push('/profile/feedback'),
+                            ),
+                            const Divider(height: 1),
+                            ListTile(
+                              leading: const Icon(Icons.menu_book_outlined),
+                              title: const Text('使用說明'),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: () => context.push('/help'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  _DeleteAccountSection(),
-                ],
-              ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppCard(
+                      padding: EdgeInsets.zero,
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: ListTile(
+                          leading: const Icon(Icons.logout_rounded),
+                          title: const Text('登出'),
+                          onTap: () => _confirmSignOut(context, ref),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    _DeleteAccountSection(),
+                    ]),
+                ),
+              ],
             );
           },
         ),

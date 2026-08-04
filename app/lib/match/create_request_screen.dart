@@ -14,11 +14,13 @@ import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
+import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
@@ -336,7 +338,7 @@ class _CampusPulseBanner extends ConsumerWidget {
                 Chip(
                   avatar: Icon(activityTypeIcon(entry.activityTypeName), size: 16, color: scheme.primary),
                   label: Text('${entry.activityTypeName} · ${entry.requestCount} 組配對中'),
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
                 ),
             ],
           ),
@@ -393,7 +395,7 @@ class _AlertSubscriptionSection extends ConsumerWidget {
                     ChoiceChip(
                       label: Text('$option 小時'),
                       selected: hours == option,
-                      onSelected: (_) => setDialogState(() => hours = option),
+                      onSelected: AppHaptics.select((_) => setDialogState(() => hours = option)),
                     ),
                 ],
               ),
@@ -420,7 +422,7 @@ class _AlertSubscriptionSection extends ConsumerWidget {
     } on ApiException catch (e) {
       if (!context.mounted) return;
       final message = e.code == ApiErrorCode.tooManyAlertSubscriptions ? '同時最多只能設定 5 個提醒，先取消一些吧' : '設定失敗：${e.code.name}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
 
@@ -765,13 +767,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     try {
       await proposeActivityType(client, name);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已送出「$name」，審核通過後才會出現在清單中')),
-      );
+      showAppSnackBar(context, '已送出「$name」，審核通過後才會出現在清單中', kind: AppSnackKind.success);
     } on ApiException catch (e) {
       if (!mounted) return;
       final message = e.code == ApiErrorCode.duplicateTypeName ? '這個類型已經存在了' : '送出失敗：${e.code.name}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
 
@@ -882,13 +882,13 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     ChoiceChip(
                       label: const Text('不限'),
                       selected: _selectedSkillLevel == null,
-                      onSelected: (_) => setState(() => _selectedSkillLevel = null),
+                      onSelected: AppHaptics.select((_) => setState(() => _selectedSkillLevel = null)),
                     ),
                     for (final level in SKILL_LEVEL.values)
                       ChoiceChip(
                         label: Text(skillLevelLabel(level)),
                         selected: _selectedSkillLevel == level,
-                        onSelected: (_) => setState(() => _selectedSkillLevel = level),
+                        onSelected: AppHaptics.select((_) => setState(() => _selectedSkillLevel = level)),
                       ),
                   ],
                 ),
@@ -1114,14 +1114,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                     selected: _selectedMinHeadcount == n,
                                     onSelected: (n <= 2 && reliability.isNewUser)
                                         ? null
-                                        : (_) => setState(() {
+                                        : AppHaptics.select((_) => setState(() {
                                               _selectedMinHeadcount = n;
                                               // 最多不能小於最少——若原本選的最多比新的
                                               // 最少還小，直接清掉讓使用者重選。
                                               if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
                                                 _selectedMaxHeadcount = null;
                                               }
-                                            }),
+                                            })),
                                   ),
                                 ),
                             ],
@@ -1156,7 +1156,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                     ChoiceChip(
                                       label: Text('$n 人'),
                                       selected: _selectedMaxHeadcount == n,
-                                      onSelected: (_) => setState(() => _selectedMaxHeadcount = n),
+                                      onSelected: AppHaptics.select((_) => setState(() => _selectedMaxHeadcount = n)),
                                     ),
                               ],
                             ),
@@ -1217,7 +1217,12 @@ class _OptionCard extends StatelessWidget {
       color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
-        onTap: onTap,
+        // 選取類觸覺集中在這三個自訂選擇卡的定義裡，而不是散在十幾個呼叫點
+        // ——活動類型格、時段桶、校區全都走這條路徑。
+        onTap: () {
+          AppHaptics.selection();
+          onTap();
+        },
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: Container(
           decoration: BoxDecoration(
@@ -1263,7 +1268,12 @@ class _AddOptionCard extends StatelessWidget {
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
-        onTap: onTap,
+        // 選取類觸覺集中在這三個自訂選擇卡的定義裡，而不是散在十幾個呼叫點
+        // ——活動類型格、時段桶、校區全都走這條路徑。
+        onTap: () {
+          AppHaptics.selection();
+          onTap();
+        },
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: Container(
           decoration: BoxDecoration(
@@ -1302,7 +1312,12 @@ class _TimeChip extends StatelessWidget {
       color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(AppRadius.pill),
       child: InkWell(
-        onTap: onTap,
+        // 選取類觸覺集中在這三個自訂選擇卡的定義裡，而不是散在十幾個呼叫點
+        // ——活動類型格、時段桶、校區全都走這條路徑。
+        onTap: () {
+          AppHaptics.selection();
+          onTap();
+        },
         borderRadius: BorderRadius.circular(AppRadius.pill),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),

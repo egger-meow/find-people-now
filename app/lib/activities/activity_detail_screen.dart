@@ -19,11 +19,15 @@ import '../rpc/completion_rpc.dart';
 import '../rpc/location_rpc.dart';
 import '../rpc/report_rpc.dart';
 import '../rpc/user_block_rpc.dart';
+import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
+import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_sheet.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'activity_detail_providers.dart';
@@ -135,13 +139,11 @@ class ActivityDetailScreen extends ConsumerWidget {
           ? '已退出活動（Early Cancel，無冷卻）'
           : '已退出活動（Late Cancel，已觸發配對冷卻期）';
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      showAppSnackBar(context, msg);
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('退出活動失敗：${e.code.name}')),
-      );
+      showAppSnackBar(context, '退出活動失敗：${e.code.name}', kind: AppSnackKind.error);
     }
   }
 
@@ -308,12 +310,17 @@ class _CompletionReportBanner extends ConsumerWidget {
                 const SizedBox(width: AppSpacing.sm),
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                    // 觸控目標：`VisualDensity.compact` 的調整量是 -2（＝-8 邏輯像素），
+                    // 會把按鈕的可點區域從 Flutter 預設的 48 縮到 **40**，低於
+                    // Apple HIG 的 44pt 下限（這是 guideline 裡標成 CRITICAL 的
+                    // 項目）。視覺上要維持小顆是刻意的（次要動作），所以不是把
+                    // 密度整個拿掉，而是只放寬垂直方向到 -1（48-4＝44），水平
+                    // 仍然收緊——外觀幾乎不變，手指打得到。
+                    visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
                     minimumSize: const Size(64, 36),
                   ),
-                  onPressed: () => showModalBottomSheet<void>(
-                    context: context,
-                    isScrollControlled: true,
+                  onPressed: () => showAppSheet<void>(
+                    context,
                     builder: (context) => _CompletionReportSheet(activityId: activityId),
                   ),
                   child: const Text('回報'),
@@ -373,9 +380,8 @@ class _CompletionReportSheetState extends ConsumerState<_CompletionReportSheet> 
               !absentUserIds.contains(m.userId))
           .toList();
       if (!mounted || rematchTargets.isEmpty) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
+      await showAppSheet<void>(
+        context,
         builder: (context) => _RematchSheet(activityId: widget.activityId, targets: rematchTargets),
       );
     } on ApiException catch (e) {
@@ -517,8 +523,7 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
       if (!mounted) return;
       setState(() => _voted.add(toUserId));
       if (result.isMutual) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('雙方都按了再約，永久保留聯絡方式囉！')));
+        showAppSnackBar(context, '雙方都按了再約，永久保留聯絡方式囉！', kind: AppSnackKind.success);
       }
     } on ApiException {
       // 安靜失敗，使用者可再試一次——跟封鎖/檢舉一樣不特別解讀錯誤碼。
@@ -559,7 +564,7 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
               title: Text(m.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
                   minimumSize: const Size(64, 36),
                 ),
                 onPressed: _voted.contains(m.userId) || _busy.contains(m.userId) ? null : () => _vote(m.userId),
@@ -582,34 +587,36 @@ class _LocationTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canEdit = activity.status == ACTIVITY_STATUS.MATCHED || activity.status == ACTIVITY_STATUS.ONGOING;
-    return RefreshIndicator(
+    return AdaptiveRefresh(
       onRefresh: () async =>
           ref.invalidate(approvedLocationsProvider((activity.school, activity.campus))),
-      child: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        children: [
-          Text('活動地點', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          // v1.37：activity_location_id 不再是「投票結束、鎖定唯讀」的凍結值，
-          // 而是持續即時計票的目前領先候選——即使已經有領先者，投票畫面仍要
-          // 保持互動，只是把目前領先的那個標出來（見 _LocationVoting 內的
-          // 「目前領先」標記），不再切成一張唯讀卡片。
-          _LocationVoting(activity: activity),
-          const SizedBox(height: AppSpacing.lg),
-          Text('集合地點', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          _MeetingPointSection(activityId: activity.id, editable: canEdit),
-          const SizedBox(height: AppSpacing.lg),
-          // 反饋：「見面提示只有自己看得到自己填的這份，什麼意思，那個不是給
-          // 別人看的嗎」——原本的文案講反了。RLS 上 activity_member 對同一活動
-          // 全體成員互相可見（my_activity_members_select），這裡填的提示就是
-          // 給對方認出你用的（見 SPEC.md §9.2「穿紅色外套，帶著筆電」的例子），
-          // 只是「編輯欄位」本身當然只能編輯自己那一則。
-          Text('見面提示（讓對方認出你，同組成員都看得到）', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          _MeetingHintSection(activityId: activity.id, editable: canEdit),
-        ],
-      ),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          sliver: SliverList.list(children: [
+            Text('活動地點', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.sm),
+            // v1.37：activity_location_id 不再是「投票結束、鎖定唯讀」的凍結值，
+            // 而是持續即時計票的目前領先候選——即使已經有領先者，投票畫面仍要
+            // 保持互動，只是把目前領先的那個標出來（見 _LocationVoting 內的
+            // 「目前領先」標記），不再切成一張唯讀卡片。
+            _LocationVoting(activity: activity),
+            const SizedBox(height: AppSpacing.lg),
+            Text('集合地點', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.sm),
+            _MeetingPointSection(activityId: activity.id, editable: canEdit),
+            const SizedBox(height: AppSpacing.lg),
+            // 反饋：「見面提示只有自己看得到自己填的這份，什麼意思，那個不是給
+            // 別人看的嗎」——原本的文案講反了。RLS 上 activity_member 對同一活動
+            // 全體成員互相可見（my_activity_members_select），這裡填的提示就是
+            // 給對方認出你用的（見 SPEC.md §9.2「穿紅色外套，帶著筆電」的例子），
+            // 只是「編輯欄位」本身當然只能編輯自己那一則。
+            Text('見面提示（讓對方認出你，同組成員都看得到）', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.sm),
+            _MeetingHintSection(activityId: activity.id, editable: canEdit),
+            ]),
+        ),
+      ],
     );
   }
 }
@@ -740,20 +747,18 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
     try {
       await proposeLocation(client, name: name, school: widget.activity.school, campus: widget.activity.campus);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已送出「$name」，審核通過後才能投給這裡（這場活動想馬上投票，改用「新增這場活動的候選地點」）')),
-      );
+      showAppSnackBar(context, '已送出「$name」，審核通過後才能投給這裡（這場活動想馬上投票，改用「新增這場活動的候選地點」）', kind: AppSnackKind.success);
     } on ApiException catch (e) {
       if (!mounted) return;
       final message = e.code == ApiErrorCode.duplicateLocationName ? '這個地點已經存在了' : '送出失敗：${e.code.name}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
 
   Future<void> _openProposeSheet(List<Location> allLocations, Set<String> proposedIds) async {
     final candidates = allLocations.where((l) => !proposedIds.contains(l.id)).toList();
-    final picked = await showModalBottomSheet<String>(
-      context: context,
+    final picked = await showAppSheet<String>(
+      context,
       builder: (context) {
         if (candidates.isEmpty) {
           return const Padding(
@@ -1031,7 +1036,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
         hint: _controller.text.trim(),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已更新見面提示')));
+      showAppSnackBar(context, '已更新見面提示', kind: AppSnackKind.success);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = '更新失敗：${e.code.name}');
@@ -1119,48 +1124,50 @@ class _MembersTab extends ConsumerWidget {
         final arrivedCount = roster
             .where((m) => m.status == ACTIVITY_MEMBER_STATUS.JOINED && m.arrivedAt != null)
             .length;
-        return RefreshIndicator(
+        return AdaptiveRefresh(
           onRefresh: () async => ref.invalidate(activityMemberRosterProvider(activityId)),
-          child: ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            children: [
-              if (showArrival && joinedCount > 0) ...[
-                AppCard(
-                  child: Row(
-                    children: [
-                      Icon(Icons.flag_circle_rounded, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text('已抵達 $arrivedCount / $joinedCount', style: Theme.of(context).textTheme.titleSmall),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              for (final group in groups.values) ...[
-                if (group.length > 1) ...[
-                  Text(
-                    '一起加入',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              sliver: SliverList.list(children: [
+                if (showArrival && joinedCount > 0) ...[
+                  AppCard(
+                    child: Row(
+                      children: [
+                        Icon(Icons.flag_circle_rounded, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text('已抵達 $arrivedCount / $joinedCount', style: Theme.of(context).textTheme.titleSmall),
                         ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                ],
-                for (final member in group) ...[
-                  _MemberCard(
-                    key: ValueKey(member.userId),
-                    activityId: activityId,
-                    activityStatus: activityStatus,
-                    member: member,
-                    activityTypeName: activityTypeName,
+                      ],
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                 ],
-              ],
-            ],
-          ),
+                for (final group in groups.values) ...[
+                  if (group.length > 1) ...[
+                    Text(
+                      '一起加入',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                  ],
+                  for (final member in group) ...[
+                    _MemberCard(
+                      key: ValueKey(member.userId),
+                      activityId: activityId,
+                      activityStatus: activityStatus,
+                      member: member,
+                      activityTypeName: activityTypeName,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                ],
+                ]),
+            ),
+          ],
         );
       },
     );
@@ -1213,9 +1220,8 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
   }
 
   Future<void> _openReportSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
+    await showAppSheet<void>(
+      context,
       builder: (context) => _ReportSheet(reportedUserId: widget.member.userId),
     );
     if (!mounted) return;
@@ -1264,13 +1270,13 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                       FilterChip(
                         label: Text(option),
                         selected: selected.contains(option),
-                        onSelected: (value) => setDialogState(() {
-                          if (value) {
-                            if (selected.length < 3) selected.add(option);
-                          } else {
-                            selected.remove(option);
-                          }
-                        }),
+                        onSelected: AppHaptics.select((value) => setDialogState(() {
+                              if (value) {
+                                if (selected.length < 3) selected.add(option);
+                              } else {
+                                selected.remove(option);
+                              }
+                            })),
                       ),
                     for (final tag in selected.where((t) => !options.contains(t)))
                       InputChip(
@@ -1317,7 +1323,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
       ref.invalidate(activityMemberRosterProvider(widget.activityId));
     } on ApiException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('儲存失敗，請再試一次')));
+      showAppSnackBar(context, '儲存失敗，請再試一次', kind: AppSnackKind.error);
     }
   }
 
@@ -1356,9 +1362,8 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                 borderRadius: BorderRadius.circular(24),
                 onTap: isSelf
                     ? null
-                    : () => showModalBottomSheet<void>(
-                          context: context,
-                          isScrollControlled: true,
+                    : () => showAppSheet<void>(
+                          context,
                           builder: (context) => _ProfileCardSheet(member: member),
                         ),
                 child: CircleAvatar(
@@ -1428,7 +1433,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                           for (final tag in member.vibeTags)
                             Chip(
                               label: Text(tag, style: const TextStyle(fontSize: 11)),
-                              visualDensity: VisualDensity.compact,
+                              visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
                               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               padding: EdgeInsets.zero,
                             ),
@@ -1436,7 +1441,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                             ActionChip(
                               avatar: const Icon(Icons.add_rounded, size: 14),
                               label: Text(member.vibeTags.isEmpty ? '設定參與方式' : '編輯', style: const TextStyle(fontSize: 11)),
-                              visualDensity: VisualDensity.compact,
+                              visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
                               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               onPressed: _editVibeTags,
                             ),
@@ -1639,8 +1644,7 @@ class _RematchButtonState extends ConsumerState<_RematchButton> {
       ref.invalidate(ownRematchVotesProvider(widget.activityId));
       if (!mounted) return;
       if (result.isMutual) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('雙方都按了再約，永久保留聯絡方式囉！')));
+        showAppSnackBar(context, '雙方都按了再約，永久保留聯絡方式囉！', kind: AppSnackKind.success);
       }
     } on ApiException {
       // 安靜失敗，使用者可再試一次。
@@ -1656,7 +1660,7 @@ class _RematchButtonState extends ConsumerState<_RematchButton> {
     return OutlinedButton(
       onPressed: voted || _busy ? null : _vote,
       style: OutlinedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
         minimumSize: const Size(64, 36),
       ),
       child: Text(voted ? '已再約' : '👍 再約'),
@@ -1685,7 +1689,7 @@ class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
       await markArrived(ref.read(supabaseClientProvider), activityId: widget.activityId);
     } on ApiException {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('標記失敗，請再試一次')));
+        showAppSnackBar(context, '標記失敗，請再試一次', kind: AppSnackKind.error);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1759,10 +1763,10 @@ class _ContactLine extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.copy_rounded, size: 18),
             tooltip: '複製',
-            visualDensity: VisualDensity.compact,
+            visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: value));
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已複製 $label')));
+              showAppSnackBar(context, '已複製 $label');
             },
           ),
         ],

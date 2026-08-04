@@ -7,7 +7,7 @@ import '../generated/notification.dart' as generated;
 import '../generated/supadart_header.dart' show NOTIFICATION_EVENT_TYPE;
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/skeleton.dart';
 import 'notification_providers.dart';
 
 /// UI_PLAN.md §5 通知——收件匣列表，未讀標記，點擊標已讀＋deep-link。
@@ -25,7 +25,8 @@ class NotificationsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('通知')),
       body: SafeArea(
         child: notificationsAsync.when(
-          loading: () => const LoadingIndicator(),
+          // 跟「我的活動」同一個理由：清單型內容用卡片骨架而不是置中轉圈圈。
+          loading: () => const ActivityListSkeleton(itemCount: 4),
           error: (error, stack) => Center(child: Text('載入失敗：$error')),
           data: (notifications) {
             if (notifications.isEmpty) {

@@ -15,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
@@ -171,6 +172,13 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                                 _inviteToken!,
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                       fontFamily: 'monospace',
+                                      // `'monospace'` 是 **Android** 的字型族別名，
+                                      // iOS 沒有註冊這個名字——原本在 iPhone 上會
+                                      // 靜默 fallback 回一般字型，邀請碼就失去等寬
+                                      // 對齊，`0/O`、`1/l` 這種容易看錯的字元反而
+                                      // 更難分辨（而這串正是要唸給朋友抄的東西）。
+                                      // 補上 iOS/桌面的實際等寬字型作為候補。
+                                      fontFamilyFallback: const ['Menlo', 'Courier New', 'monospace'],
                                       letterSpacing: 1.5,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -183,9 +191,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                                   child: OutlinedButton.icon(
                                     onPressed: () {
                                       Clipboard.setData(ClipboardData(text: _inviteToken!));
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('已複製邀請碼')),
-                                      );
+                                      showAppSnackBar(context, '已複製邀請碼');
                                     },
                                     icon: const Icon(Icons.copy_rounded, size: 18),
                                     label: const Text('複製'),
