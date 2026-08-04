@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/app_text_field.dart';
 import 'auth_providers.dart';
 
@@ -104,9 +105,7 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
     try {
       await ref.read(supabaseClientProvider).auth.signInWithOtp(email: email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已重新寄送驗證碼')),
-      );
+      showAppSnackBar(context, '已重新寄送驗證碼', kind: AppSnackKind.success);
       _startCooldown();
     } catch (e) {
       if (!mounted) return;
@@ -148,74 +147,86 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Icon(Icons.groups_2_rounded, size: 56, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                '敢不敢揪',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '找到現在也想一起的人。',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              AppTextField(
-                controller: _emailController,
-                label: '學校信箱',
-                hint: 'example@nycu.edu.tw',
-                keyboardType: TextInputType.emailAddress,
-                enabled: !_otpSent,
-                onSubmitted: (_) => _otpSent ? null : _sendOtp(),
-              ),
-              if (_otpSent) ...[
+        // 原本是 `Padding > Column(mainAxisAlignment: center)`，完全不能捲動。
+        // 這在登入畫面是必壞的組合：畫面上有輸入框，鍵盤一定會彈出來，
+        // [Scaffold] 預設 `resizeToAvoidBottomInset` 會把 body 高度縮掉鍵盤那
+        // 一段，Column 立刻溢出（實測 375×812 的可用高度被壓到 262 時溢出
+        // 39px，畫面出現黃黑斜紋、內容被裁掉）。橫向使用時同理。
+        //
+        // [Center] + [SingleChildScrollView] 是這個情境的標準解：空間夠時
+        // Center 維持原本的垂直置中外觀（視覺上跟改動前一樣），空間不夠時
+        // 自動變成可捲動，不會裁切也不會報錯。
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              // Center 底下高度是鬆的，必須用 min；置中交給外層 Center。
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(Icons.groups_2_rounded, size: 56, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: AppSpacing.md),
+                Text(
+                  '敢不敢揪',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '找到現在也想一起的人。',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
                 AppTextField(
-                  controller: _codeController,
-                  label: '驗證碼',
-                  hint: '6 位數字',
-                  keyboardType: TextInputType.number,
-                  autofocus: true,
-                  onSubmitted: (_) => _verifyOtp(),
+                  controller: _emailController,
+                  label: '學校信箱',
+                  hint: 'example@nycu.edu.tw',
+                  keyboardType: TextInputType.emailAddress,
+                  enabled: !_otpSent,
+                  onSubmitted: (_) => _otpSent ? null : _sendOtp(),
                 ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ],
-              const SizedBox(height: AppSpacing.lg),
-              AppButton(
-                label: _otpSent ? '驗證並登入' : '傳送驗證碼',
-                loading: _loading,
-                onPressed: _otpSent ? _verifyOtp : _sendOtp,
-              ),
-              if (_otpSent) ...[
-                TextButton(
-                  onPressed: (_loading || _resending || _cooldownSeconds > 0) ? null : _resendOtp,
-                  child: Text(_cooldownSeconds > 0 ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）' : '重新傳送驗證碼'),
+                if (_otpSent) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  AppTextField(
+                    controller: _codeController,
+                    label: '驗證碼',
+                    hint: '6 位數字',
+                    keyboardType: TextInputType.number,
+                    autofocus: true,
+                    onSubmitted: (_) => _verifyOtp(),
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                AppButton(
+                  label: _otpSent ? '驗證並登入' : '傳送驗證碼',
+                  loading: _loading,
+                  onPressed: _otpSent ? _verifyOtp : _sendOtp,
                 ),
-                TextButton(
-                  onPressed: _loading
-                      ? null
-                      : () => setState(() {
-                            _otpSent = false;
-                            _codeController.clear();
-                            _error = null;
-                            _cooldownTimer?.cancel();
-                            _cooldownSeconds = 0;
-                          }),
-                  child: const Text('重新輸入信箱'),
-                ),
+                if (_otpSent) ...[
+                  TextButton(
+                    onPressed: (_loading || _resending || _cooldownSeconds > 0) ? null : _resendOtp,
+                    child: Text(_cooldownSeconds > 0 ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）' : '重新傳送驗證碼'),
+                  ),
+                  TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () => setState(() {
+                              _otpSent = false;
+                              _codeController.clear();
+                              _error = null;
+                              _cooldownTimer?.cancel();
+                              _cooldownSeconds = 0;
+                            }),
+                    child: const Text('重新輸入信箱'),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
