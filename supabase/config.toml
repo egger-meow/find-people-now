@@ -328,6 +328,14 @@ enabled = true
 uri = "http://host.docker.internal:54321/functions/v1/send-auth-email"
 secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
+# GoTrue calls the hook above with no user session, so it has no JWT to attach — Kong's
+# default `verify_jwt = true` gate rejects that before the request ever reaches the function
+# ("Hook requires authorization token"). Turned off here because request authenticity is
+# already handled inside index.ts via the standardwebhooks signature check against
+# SEND_EMAIL_HOOK_SECRET — that's the real auth for this endpoint, not a JWT.
+[functions.send-auth-email]
+verify_jwt = false
+
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
 enabled = false
