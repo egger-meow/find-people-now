@@ -200,7 +200,7 @@ password_requirements = ""
 # accident. Once [auth.email.smtp] (Gmail) is enabled for the real hosted project, raise this —
 # a personal Gmail account tops out around 500 sends/day, so ~30/hour is a safe sustained rate
 # that leaves headroom for the account's other mail.
-email_sent = 2
+email_sent = 70
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -238,6 +238,10 @@ otp_length = 6
 otp_expiry = 3600
 
 # Use a production-ready SMTP server
+#
+# NOTE: while [auth.hook.send_email] below is enabled, GoTrue never reaches this block —
+# the hook intercepts delivery first. This is left commented/inert on purpose so it's a
+# one-line flip (`enabled = true`, and disable the hook) once send-auth-email is retired.
 #
 # Init production phase: no custom domain yet, so we're using a personal Gmail account via SMTP
 # instead of the built-in Supabase mailer (which is hard-capped to a handful of emails/hour and
@@ -310,6 +314,19 @@ max_frequency = "5s"
 # [auth.hook.custom_access_token]
 # enabled = true
 # uri = "pg-functions://<database>/<schema>/<hook_name>"
+
+# TEMPORARY (pre-launch stopgap — see supabase/functions/send-auth-email/index.ts header
+# and project memory project_production_launch_prep.md): GoTrue calls this hook instead of
+# its own mailer for every auth email, so send-auth-email can round-robin across multiple
+# personal Gmail SMTP accounts (one account tops out around 500 sends/day). When this is
+# enabled, the commented `[auth.email.smtp]` block above and `[auth.email.template.magic_link]`
+# are both unused for delivery — the hook owns rendering + sending. Remove this block (and
+# uncomment `[auth.email.smtp]` with `enabled = true`) once a real provider replaces the
+# round-robin sender.
+[auth.hook.send_email]
+enabled = true
+uri = "http://host.docker.internal:54321/functions/v1/send-auth-email"
+secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
