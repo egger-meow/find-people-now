@@ -86,11 +86,35 @@ export class SmtpRoundRobinSender implements EmailSender {
         from: `敢不敢揪 <${account.user}>`,
         to: message.to,
         subject: message.subject,
-        html: message.html,
+        // Not `html: message.html` — denomailer's own html/text path always
+        // picks Content-Transfer-Encoding: quoted-printable (config/mail/
+        // content.ts, no way to override it from SendConfig), and its
+        // quoted-printable line-folder wraps at a fixed 74-char offset with
+        // no regard for where CJK characters' multi-byte "=XX=XX=XX" escape
+        // sequences fall — confirmed corrupting exactly one character
+        // ("信" -> "äf<47>") in a real received email. mimeContent is the
+        // escape hatch: base64 has no such boundary to get wrong, so this
+        // builds the HTML part manually as base64 instead.
+        mimeContent: [{
+          mimeType: 'text/html; charset="utf-8"',
+          content: toBase64(message.html),
+          transferEncoding: "base64",
+        }],
       });
       console.log("send-auth-email: email sent successfully");
     } finally {
       await client.close();
     }
   }
+}
+
+// MIME base64 body lines are conventionally wrapped at 76 chars — not
+// strictly required for a message this small (well under SMTP's 998-char
+// line limit unwrapped), but cheap to do properly.
+function toBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  const encoded = btoa(binary);
+  return encoded.match(/.{1,76}/g)?.join("\r\n") ?? encoded;
 }
