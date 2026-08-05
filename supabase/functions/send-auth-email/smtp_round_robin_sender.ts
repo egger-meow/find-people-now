@@ -79,7 +79,11 @@ export class SmtpRoundRobinSender implements EmailSender {
 
     try {
       await client.send({
-        from: account.user,
+        // RFC 5322 "Display Name <address>" — without this Gmail shows the
+        // raw SMTP account address as the sender instead of the app name
+        // (same sender_name = "敢不敢揪" the commented-out [auth.email.smtp]
+        // block above config.toml's hook section would have set).
+        from: `敢不敢揪 <${account.user}>`,
         to: message.to,
         subject: message.subject,
         html: message.html,
