@@ -34,10 +34,17 @@ import { SmtpRoundRobinSender } from "./smtp_round_robin_sender.ts"; // TEMPORAR
 // v-- the one line that changes when migrating providers
 const emailSender: EmailSender = new SmtpRoundRobinSender();
 
-// Passed through exactly as issued (Supabase Dashboard's hook secret format,
-// `v1,whsec_<base64>`) — the standardwebhooks Webhook class parses that
-// format itself, so this deliberately does not strip anything.
-const hookSecret = Deno.env.get("SEND_EMAIL_HOOK_SECRET") ?? "";
+// The secret is stored as `v1,whsec_<base64>` (matches GoTrue's own hook
+// secret format — confirmed by reading standardwebhooks@1.0.0's source:
+// `dist/index.js` only strips a bare `Webhook.prefix = "whsec_"`, nothing
+// else). Passing the raw `v1,whsec_...` string in means the "v1," makes the
+// prefix check miss, so it tries to base64-decode "v1,whsec_..." verbatim —
+// wrong key, every signature fails. Stripping "v1," here first hands the
+// library exactly what it expects.
+const rawHookSecret = Deno.env.get("SEND_EMAIL_HOOK_SECRET") ?? "";
+const hookSecret = rawHookSecret.startsWith("v1,")
+  ? rawHookSecret.slice(3)
+  : rawHookSecret;
 
 interface SendEmailPayload {
   user: { email: string };
