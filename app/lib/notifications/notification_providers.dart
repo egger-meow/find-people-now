@@ -41,3 +41,11 @@ final unreadNotificationCountProvider = Provider<int>((ref) {
 Future<void> markNotificationRead(SupabaseClient client, String id) {
   return client.from('notification').update({'read_at': DateTime.now().toUtc().toIso8601String()}).eq('id', id);
 }
+
+/// 清空收件匣（v1.40）——比照上面 read_at 的既有模式，`own_notifications_delete`
+/// RLS policy（`user_id = auth.uid()`）已經確保只刪得到自己的，這裡的
+/// `eq('user_id', userId)` 純粹是 PostgREST client 需要至少一個 filter 才會
+/// 送出 DELETE，不是額外的權限邊界。
+Future<void> clearAllNotifications(SupabaseClient client, String userId) {
+  return client.from('notification').delete().eq('user_id', userId);
+}

@@ -129,6 +129,7 @@
 | 8.1 | `GET notification`（PostgREST，RLS：own） | 收件匣，`payload` 帶 deep-link 所需 id。 |
 | 8.2 | `PATCH notification`（RLS：own） | 標記已讀（`read_at`）。 |
 | 8.3 | Push | FCM（SPEC §13），由背景任務發送，非 client API。 |
+| 8.5 | `DELETE notification`（RLS：own，v1.40） | 清空收件匣，只能刪自己的通知；比照 8.2 的做法直接開放 PostgREST，不另立 RPC。 |
 
 ### 8.4 通知文案（v1.13 起開始定案，逐則補齊）
 

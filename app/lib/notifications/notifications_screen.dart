@@ -5,8 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../auth/auth_providers.dart';
 import '../generated/notification.dart' as generated;
 import '../generated/supadart_header.dart' show NOTIFICATION_EVENT_TYPE;
+import '../match/match_providers.dart' show myActiveActivityProvider;
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/skeleton.dart';
 import 'notification_providers.dart';
 
@@ -17,12 +20,46 @@ import 'notification_providers.dart';
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
+  Future<void> _clearAll(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '清空所有通知？',
+      message: '清空後無法復原。',
+      confirmLabel: '清空',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+
+    final userId = ref.read(currentUserIdProvider);
+    if (userId == null) return;
+    try {
+      await clearAllNotifications(ref.read(supabaseClientProvider), userId);
+    } catch (_) {
+      if (context.mounted) {
+        showAppSnackBar(context, '清空失敗，請再試一次', kind: AppSnackKind.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notificationsAsync = ref.watch(notificationsStreamProvider);
+    // 只用來判斷「哪些通知屬於目前這個活動」，不需要處理 loading/error——
+    // 拿不到值時退化成「沒有目前活動」，通知照舊全部歸進同一區。
+    final activeActivityId = ref.watch(myActiveActivityProvider).value?.id;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('通知')),
+      appBar: AppBar(
+        title: const Text('通知'),
+        actions: [
+          if ((notificationsAsync.value ?? const []).isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_outlined),
+              tooltip: '清空通知',
+              onPressed: () => _clearAll(context, ref),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: notificationsAsync.when(
           // 跟「我的活動」同一個理由：清單型內容用卡片骨架而不是置中轉圈圈。
@@ -49,15 +86,63 @@ class NotificationsScreen extends ConsumerWidget {
                 ),
               );
             }
-            return ListView.separated(
+
+            // 反饋：舊活動（已結束）的通知跟目前這個活動的通知混在一起，
+            // 一長串下來讓整頁看起來「沒有意義」——分成「目前活動」跟
+            // 「其他通知」兩區，中間用 Divider 隔開。沒有目前活動（沒
+            // 進行中的配對）時退化成單一列表，不硬加一個空的區塊標題。
+            final current = <generated.Notification>[];
+            final past = <generated.Notification>[];
+            for (final n in notifications) {
+              final activityId = n.payload['activity_id']?.toString();
+              if (activeActivityId != null && activityId == activeActivityId) {
+                current.add(n);
+              } else {
+                past.add(n);
+              }
+            }
+
+            return ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              itemCount: notifications.length,
-              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-              itemBuilder: (context, index) => _NotificationTile(notification: notifications[index]),
+              children: [
+                if (current.isNotEmpty) ...[
+                  const _SectionLabel('目前活動'),
+                  const SizedBox(height: AppSpacing.sm),
+                  for (final n in current) ...[
+                    _NotificationTile(notification: n),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                    child: Divider(),
+                  ),
+                  const _SectionLabel('其他通知'),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+                for (final n in past) ...[
+                  _NotificationTile(notification: n),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+              ],
             );
           },
         ),
       ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700),
     );
   }
 }

@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.39 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.40 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -292,6 +292,10 @@
 > 2. 🟢 **修法**：`get_campus_pulse` 改成 `join request_member`（`status = 'JOINED'`）算實際人頭，不再用 `count(*)` 數 `match_request` 列。回傳欄位同時從 `request_count` 更名為 `person_count`，避免欄位名稱本身繼續帶著「算 Request 不是算人」的錯誤暗示。見 `20260806000000_campus_pulse_headcount.sql`。
 > 3. 🟢 **UI 文案同步調整**：首頁氣氛指標 chip 從「{類型} · N 組配對中」改成「{類型} · N 人在等」，用詞跟後端語意一致。
 > 4. 🟢 **測試**：`26_campus_pulse.test.sql` 新增 2 個案例（單一 Request 帶 2 位 JOINED 朋友應算 3 人頭；唯一邀請對象已 LEFT 應只算 1 人頭），既有案例補上 owner 的 `request_member` 列（比照真實 `create_request` 流程，不然改用 join 之後會被誤判「沒人加入」）。
+
+> **v1.40 變更紀錄**（通知頁：現在活動的通知跟舊通知分區、可清空收件匣，第 8 節新增 8.5）：
+> 1. 🟢 **通知頁分區**：使用者反映通知頁把「目前這個活動」的通知（配對成功、活動開始、集合地點更新…）跟已經結束的舊活動通知混在一起，一長串下來，舊通知讓整頁看起來「沒有意義」。前端 `notifications_screen.dart` 改成依 `payload.activity_id` 是否等於 `myActiveActivityProvider`（目前 `MATCHED`/`ONGOING` 的那個活動）分成「目前活動」跟「其他通知」兩區，中間用 `Divider` + 區塊標籤隔開；沒有目前活動時維持原本的單一列表，不強加空的區塊標題。純前端排版調整，不改資料模型或 RLS。
+> 2. 🟢 **清空收件匣（`DELETE notification`，第 8.5 節）**：`notification` 表沿用 v1.7 既有先例（`read_at` 的 column-level UPDATE 已經是直接開放 PostgREST、不走 RPC，見 `20260724125200_restrict_app_user_notification_column_grants.sql`），DELETE 比照同一個模式補 `grant delete` + `own_notifications_delete` RLS policy（`user_id = auth.uid()`），不是新開一條例外路徑。前端 AppBar 加「清空」動作，按下先跳 `showAppConfirmDialog` 二次確認（破壞性操作，紅字），確認後刪除自己的全部通知。見 `20260806010000_notification_delete.sql`、`38_notification_delete.test.sql`。
 
 ---
 
