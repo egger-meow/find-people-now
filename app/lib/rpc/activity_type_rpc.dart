@@ -7,15 +7,17 @@ import 'rpc_client.dart';
 class CampusPulseEntry {
   final String activityTypeId;
   final String activityTypeName;
-  final int requestCount;
+  final int personCount;
 
-  CampusPulseEntry({required this.activityTypeId, required this.activityTypeName, required this.requestCount});
+  CampusPulseEntry({required this.activityTypeId, required this.activityTypeName, required this.personCount});
 }
 
-/// docs/API.md §13.1 — `rpc: get_campus_pulse(school, campus)` (v1.26).
-/// Aggregate-only counts of currently-`REQUESTING` requests per activity
-/// type — never individual request rows (`match_request`'s RLS deliberately
-/// keeps those owner/member-only, see the migration's header comment).
+/// docs/API.md §13.1 — `rpc: get_campus_pulse(school, campus)` (v1.26, headcount fix v1.39).
+/// Aggregate-only headcount of people currently in a `REQUESTING` request per
+/// activity type — never individual request rows (`match_request`'s RLS
+/// deliberately keeps those owner/member-only, see the migration's header
+/// comment). Counts `request_member` (status `JOINED`), not `match_request`
+/// rows, since one request can already carry multiple invited members.
 Future<List<CampusPulseEntry>> getCampusPulse(
   SupabaseClient client, {
   required SCHOOL school,
@@ -30,7 +32,7 @@ Future<List<CampusPulseEntry>> getCampusPulse(
         .map((row) => CampusPulseEntry(
               activityTypeId: row['activity_type_id'] as String,
               activityTypeName: row['activity_type_name'] as String,
-              requestCount: row['request_count'] as int,
+              personCount: row['person_count'] as int,
             ))
         .toList(),
   );

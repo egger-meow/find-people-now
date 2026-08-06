@@ -219,11 +219,11 @@
 
 ---
 
-## 13. 首頁氣氛指標（Campus Activity Pulse；v1.26）
+## 13. 首頁氣氛指標（Campus Activity Pulse；v1.26，人頭計算修正 v1.39）
 
 | # | Endpoint | 說明 |
 |---|---|---|
-| 13.1 | `rpc: get_campus_pulse(school, campus)` | **匿名聚合統計**：回傳該 `(school, campus)` 底下每個 `activity_type` 目前 `REQUESTING` 中的 Request 數量。刻意不透露任何一筆 Request 的擁有者/時間窗/其他細節——`match_request` 的 RLS（`my_requests_select`）本來就只放行 owner/成員自己讀取（盲配設計的核心邊界，見 SPEC §11），這支 RPC 只回傳聚合計數，不違背該邊界。前端輪詢（30 秒一次），刻意不用 Realtime——把 `match_request` 整張表加進 publication 會讓 client 收到逐筆新增/消失事件，等於間接洩漏比聚合數字更細的時間點資訊。 |
+| 13.1 | `rpc: get_campus_pulse(school, campus)` | **匿名聚合統計**：回傳該 `(school, campus)` 底下每個 `activity_type` 目前 `REQUESTING` 中的實際人數（`person_count`，🟢 v1.39 起算 `request_member`（status `JOINED`）人頭，不是 `match_request` 列數——一個 Request 可能已透過邀請連結帶了不只一位成員，用列數會低估實際等待人數）。刻意不透露任何一筆 Request 的擁有者/時間窗/其他細節——`match_request` 的 RLS（`my_requests_select`）本來就只放行 owner/成員自己讀取（盲配設計的核心邊界，見 SPEC §11），這支 RPC 只回傳聚合計數，不違背該邊界。前端輪詢（30 秒一次），刻意不用 Realtime——把 `match_request` 整張表加進 publication 會讓 client 收到逐筆新增/消失事件，等於間接洩漏比聚合數字更細的時間點資訊。 |
 
 無專屬錯誤碼（`UNAUTHORIZED` 沿用全域慣例）。
 

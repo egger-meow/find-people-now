@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.38 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.39 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -286,6 +286,12 @@
 > 3. 🟡 **`activity_type.sort_order`（新欄位）**：類型清單原本一律 `order by name`，也就是照中文字面排序，實際順序（先聚了再說/咖啡/健身/散步/桌遊/麻將/籃球/羽球/讀書/跑步）對使用者毫無意義。依使用者指定改成運動類（籃球/羽球/跑步/健身，`sort_order = 10`）優先、讀書次之（20）、麻將墊底（900），其餘維持中段 default 100。刻意**不做 `category` 欄位/表**：目前唯一需求是排序不是分組渲染，加了就是死欄位（同設計備註 35 對 `location.category` 的判斷），且 category 無法表達同類別內部順序，最後仍要再加排序欄位，變成兩個欄位表達一件事（同設計備註 22 反對 `group_size_mode` 的理由）。數值留大間隔是為了讓 admin 之後插入新類型時不必重排整批。
 > 4. 🟡 **Gmail SMTP 設定位置**：MVP 上線初期沒有自有網域，Supabase 內建 mailer 每小時只能寄少數幾封且不可調，OTP 登入會直接卡住。`supabase/config.toml` 的 `[auth.email.smtp]` 區塊補上完整的 Gmail 設定範本與啟用步驟（App Password、`supabase/.env` 的 `GMAIL_SMTP_USER`/`GMAIL_SMTP_PASS`、`supabase config push`），密碼走 `env()` 代換不進 git（`supabase/.gitignore` 已涵蓋 `.env`）。`[auth.rate_limit].email_sent` 維持 2 不動（本機開發用），但註記上線後該調到 ~30/hr 的理由（個人 Gmail 帳號約 500 封/日上限）。
 > 5. 🟢 **全面檢查通過、無需修正的項目**（記錄下來避免下次重查）：`grant`/RLS policy 覆蓋率——20 張 client-facing 表全部三者（grant + RLS enabled + policy）齊備，`app_config`/`match_history_avoidance` 兩張刻意只走 `SECURITY DEFINER` RPC 的表則三者皆無，符合設計；全 repo 無 `errcode = '<CODE>'` 誤用（v1.7 修掉的那類 bug 沒有復發）；無 TODO/FIXME/XXX 殘留；Flutter 端無 `print()`、無硬編 `127.0.0.1`/`localhost`/Supabase URL 或 key；`app/.env` 未進 git（只有 `.env.example`）；`SERVICE_ROLE_KEY` 未被 app 執行期程式碼讀取（只有測試用）；9 個背景任務全部有 `pg_cron` 排程；9 張需要 Realtime 的表全部已加入 `supabase_realtime` publication。
+
+> **v1.39 變更紀錄**（`get_campus_pulse` 修正成算人頭、不算 Request 筆數，第 13 節）：
+> 1. 🔴 **Bug**：v1.26 上線後的 `get_campus_pulse` 用 `count(*)` 算 `match_request` 列數，語意上等於「算幾組 Request」而不是「算幾個人在等」。兩者在「每個 Request 都只有 owner 自己」的情況下數字相同，但一個 Request 可能已經透過邀請連結（第 6.1 節）帶了不只一位 `request_member`，這時列數會低估實際等待人數，且 UI 文案「N 組配對中」的「組」字更會讓使用者誤讀成「已經湊了 N 組」而不是「還缺人的 N 組各自都還沒湊滿」——使用者實測踩到：兩個各自獨立、都還缺 2 人的健身局被顯示成「2 組配對中」，望文生義以為快成局了。
+> 2. 🟢 **修法**：`get_campus_pulse` 改成 `join request_member`（`status = 'JOINED'`）算實際人頭，不再用 `count(*)` 數 `match_request` 列。回傳欄位同時從 `request_count` 更名為 `person_count`，避免欄位名稱本身繼續帶著「算 Request 不是算人」的錯誤暗示。見 `20260806000000_campus_pulse_headcount.sql`。
+> 3. 🟢 **UI 文案同步調整**：首頁氣氛指標 chip 從「{類型} · N 組配對中」改成「{類型} · N 人在等」，用詞跟後端語意一致。
+> 4. 🟢 **測試**：`26_campus_pulse.test.sql` 新增 2 個案例（單一 Request 帶 2 位 JOINED 朋友應算 3 人頭；唯一邀請對象已 LEFT 應只算 1 人頭），既有案例補上 owner 的 `request_member` 列（比照真實 `create_request` 流程，不然改用 join 之後會被誤判「沒人加入」）。
 
 ---
 

@@ -337,7 +337,7 @@ class _CampusPulseBanner extends ConsumerWidget {
               for (final entry in entries)
                 Chip(
                   avatar: Icon(activityTypeIcon(entry.activityTypeName), size: 16, color: scheme.primary),
-                  label: Text('${entry.activityTypeName} · ${entry.requestCount} 組配對中'),
+                  label: Text('${entry.activityTypeName} · ${entry.personCount} 人在等'),
                   visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
                 ),
             ],

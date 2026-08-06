@@ -875,7 +875,7 @@ activity_id?, app_version?, device_info?)`**, `SECURITY DEFINER`).
 
 New feature. Migration `20260801120000_campus_pulse_rpc.sql` adds
 **`get_campus_pulse(school, campus)`** (`SECURITY DEFINER`, returns
-aggregate `(activity_type_id, activity_type_name, request_count)` rows).
+aggregate `(activity_type_id, activity_type_name, person_count)` rows).
 
 1. Deliberately aggregate-only: `match_request`'s `my_requests_select` RLS
    policy is owner/member-scoped by design (the blind-matching boundary,
@@ -897,6 +897,23 @@ aggregate `(activity_type_id, activity_type_name, request_count)` rows).
 5. Covered by `supabase/tests/database/26_campus_pulse.test.sql` — counts
    only `REQUESTING` (not `DRAFT`/`PENDING_CONFIRMATION`/`MATCHED`), scoped
    correctly per `(school, campus)`, zero-count types omitted entirely.
+
+## v1.39 fix: `get_campus_pulse` counted Requests, not people
+
+Bug found in production use: two independent solo requests for the same
+activity type/campus (neither had found anyone yet) correctly showed "2",
+but a *single* request that had already pulled in extra members via an
+invite link (`request_member`) still only counted as 1 — the original query
+did `count(*)` over `match_request` rows (i.e. counted "groups"), not actual
+headcount. Migration `20260806000000_campus_pulse_headcount.sql` changes it
+to `count(rm.*)` over `request_member` rows with `status = 'JOINED'`, joined
+per matching `REQUESTING` request. The returned column was also renamed
+`request_count` → `person_count` so the name can't mislead the same way
+again. `lib/rpc/activity_type_rpc.dart`'s `CampusPulseEntry.requestCount` →
+`.personCount`; UI label in `create_request_screen.dart` changed from
+"N 組配對中" to "N 人在等" to match the headcount semantics. Test coverage
+added to `26_campus_pulse.test.sql` (a request with 2 joined + 1 left
+invited member must count as 3, not 1 or 4).
 
 ## v1.27 update: `subscribe_activity_alert`/`unsubscribe_activity_alert` — Alert Subscription
 
