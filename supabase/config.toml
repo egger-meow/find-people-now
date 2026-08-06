@@ -145,7 +145,7 @@ max_catalogs = 2
 
 # Store vector embeddings in S3 for large and durable datasets
 [storage.vector]
-enabled = true
+enabled = false
 max_buckets = 10
 max_indexes = 5
 
@@ -156,11 +156,11 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+site_url = "https://zegkgzsduxthnjojkfdh.supabase.co"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+additional_redirect_urls = []
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -231,7 +231,7 @@ enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
-max_frequency = "1s"
+max_frequency = "1m0s"
 # Number of characters used in the email OTP.
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
@@ -323,6 +323,15 @@ max_frequency = "5s"
 # are both unused for delivery — the hook owns rendering + sending. Remove this block (and
 # uncomment `[auth.email.smtp]` with `enabled = true`) once a real provider replaces the
 # round-robin sender.
+#
+# `uri` below is the LOCAL (Docker-internal) address on purpose — that's the value
+# `supabase start` needs, and it's the common case for this repo. It only resolves inside the
+# local Docker network, so it cannot be committed as the hosted project's value. Before running
+# `supabase config push`, temporarily swap it to the deployed function's HTTPS URL
+# (https://zegkgzsduxthnjojkfdh.supabase.co/functions/v1/send-auth-email), push, then revert
+# this line back — same manual swap-before-push pattern already used elsewhere in this file.
+# Leaving the HTTPS URL committed here would make local dev silently call the real deployed
+# function (real Gmail send, production secrets) instead of the local edge runtime.
 [auth.hook.send_email]
 enabled = true
 uri = "http://host.docker.internal:54321/functions/v1/send-auth-email"
@@ -335,6 +344,15 @@ secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 # SEND_EMAIL_HOOK_SECRET — that's the real auth for this endpoint, not a JWT.
 [functions.send-auth-email]
 verify_jwt = false
+
+# Called directly by the Flutter client with the caller's own session JWT (see
+# supabase/functions/delete-auth-user/index.ts header) — Kong's default `verify_jwt = true`
+# gate is exactly the right check here and must stay on. Declared explicitly (rather than left
+# to the CLI default) because a prior deploy accidentally passed --no-verify-jwt and the
+# platform kept that override on later deploys that omitted the flag; an explicit config.toml
+# entry is what actually forces it back.
+[functions.delete-auth-user]
+verify_jwt = true
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
@@ -351,8 +369,8 @@ max_enrolled_factors = 10
 
 # Control MFA via App Authenticator (TOTP)
 [auth.mfa.totp]
-enroll_enabled = false
-verify_enabled = false
+enroll_enabled = true
+verify_enabled = true
 
 # Configure MFA via Phone Messaging
 [auth.mfa.phone]
