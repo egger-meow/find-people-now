@@ -89,7 +89,7 @@ class NotificationsScreen extends ConsumerWidget {
 
             // 反饋：舊活動（已結束）的通知跟目前這個活動的通知混在一起，
             // 一長串下來讓整頁看起來「沒有意義」——分成「目前活動」跟
-            // 「其他通知」兩區，中間用 Divider 隔開。沒有目前活動（沒
+            // 「過往活動」兩區，中間用 Divider 隔開。沒有目前活動（沒
             // 進行中的配對）時退化成單一列表，不硬加一個空的區塊標題。
             final current = <generated.Notification>[];
             final past = <generated.Notification>[];
@@ -116,7 +116,7 @@ class NotificationsScreen extends ConsumerWidget {
                     padding: EdgeInsets.symmetric(vertical: AppSpacing.xs),
                     child: Divider(),
                   ),
-                  const _SectionLabel('其他通知'),
+                  const _SectionLabel('過往活動'),
                   const SizedBox(height: AppSpacing.sm),
                 ],
                 for (final n in past) ...[
