@@ -66,7 +66,7 @@ begin
     (v_c1, 'mp_c1@nycu.edu.tw', 'NYCU', 'Mp C1', 'https://avatar.mp_c1', 'MASTER', 'mp_c1_line'),
     (v_x1, 'mp_x1@nycu.edu.tw', 'NYCU', 'Mp X1', 'https://avatar.mp_x1', 'MASTER', 'mp_x1_line');
 
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   -- activity_member.source_request_id 是 NOT NULL FK → match_request，各建一筆
   -- 已 MATCHED 的 match_request 當來源（測試不關心撮合細節，只需要滿足 FK）

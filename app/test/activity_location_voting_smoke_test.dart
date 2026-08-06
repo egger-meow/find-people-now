@@ -197,7 +197,7 @@ void main() {
           insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
           select id, 'NYCU', '$testCampus', now() - interval '10 days',
                  now() - interval '10 days' + interval '1 hour', 'COMPLETED'
-          from activity_type where name = '咖啡' limit 1
+          from activity_type where name = '吃飯/咖啡/探店' limit 1
           returning id
         )
         insert into user_reliability_event (user_id, activity_id, event_type)
@@ -213,7 +213,7 @@ void main() {
       // real 2-person path, not routed around it.
       final types = await searchActivityType(clientA, query: '咖啡');
       expect(types, isNotEmpty);
-      final coffeeId = types.firstWhere((t) => t.name == '咖啡').id;
+      final coffeeId = types.firstWhere((t) => t.name == '吃飯/咖啡/探店').id;
 
       // earliestStart is deliberately 1 hour out, not `now()`: the matching
       // engine derives the resulting Activity's start_time from

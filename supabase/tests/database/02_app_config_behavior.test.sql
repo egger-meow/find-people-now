@@ -70,7 +70,7 @@ begin
     (v_user_a_id, 'cfg_a@nycu.edu.tw', 'NYCU', 'Cfg A', 'https://avatar.cfg_a', 'MASTER', 'cfg_a_ig', 'cfg_a_line'),
     (v_user_b_id, 'cfg_b@nycu.edu.tw', 'NYCU', 'Cfg B', 'https://avatar.cfg_b', 'MASTER', 'cfg_b_ig', 'cfg_b_line');
 
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   -- v1.11：location 新增 campus，match_request/activity 存 (school, campus) 而非 campus_location_id
   insert into location (school, campus, name, is_active) values ('NYCU', v_campus, '浩然圖書館前廣場', true)

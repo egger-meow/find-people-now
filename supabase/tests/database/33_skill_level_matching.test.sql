@@ -89,7 +89,7 @@ declare
 begin
   select id into v_basketball_id from activity_type where name = '籃球' limit 1;
   select id into v_badminton_id from activity_type where name = '羽球' limit 1;
-  select id into v_coffee_id from activity_type where name = '咖啡' limit 1;
+  select id into v_coffee_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   -- ⑤：模擬一個全新、skill_level_enabled=true 的競技類型「排球」——不動任何
   -- 官方 seed，只在這個測試 transaction 內臨時建立，測試結束自動 rollback。

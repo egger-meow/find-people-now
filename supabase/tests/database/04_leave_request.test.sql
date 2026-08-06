@@ -52,7 +52,7 @@ begin
     (v_outsider, 'lv_outsider@nycu.edu.tw', 'NYCU', 'Lv Outsider', 'https://avatar.lv_outsider', 'MASTER', 'lv_outsider_line'),
     (v_member2, 'lv_member2@nycu.edu.tw', 'NYCU', 'Lv Member2', 'https://avatar.lv_member2', 'MASTER', 'lv_member2_line');
 
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
   insert into location (school, campus, name, is_active) values ('NYCU', v_campus, '第二餐廳前', true)
     on conflict (school, name) do update set is_active = true, campus = excluded.campus;
 

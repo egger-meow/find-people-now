@@ -91,7 +91,7 @@ begin
     (v_t3_m2, 'alv_t3_m2@nycu.edu.tw', 'NYCU', 'Alv T3M2', 'https://avatar.alv_t3_m2', 'MASTER', 'alv_t3_m2_line'),
     (v_t4_m1, 'alv_t4_m1@nycu.edu.tw', 'NYCU', 'Alv T4M1', 'https://avatar.alv_t4_m1', 'MASTER', 'alv_t4_m1_line');
 
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   -- 候選範圍內兩筆地點（同 school/campus）+ 一筆範圍外地點（不同 campus）
   insert into location (school, campus, name, is_active) values

@@ -63,7 +63,7 @@ select is(
 select is(
   (select array_agg(name order by ord)
      from (select name, row_number() over () as ord from search_activity_type(null)) s),
-  array['健身', '籃球', '羽球', '跑步', '讀書', '先聚了再說', '咖啡', '散步', '桌遊', '麻將'],
+  array['健身', '籃球', '羽球', '跑步', '讀書', '先聚了再說', '吃飯/咖啡/探店', '散步', '桌遊', '麻將'],
   'v1.38：search_activity_type 回傳順序為運動類 → 讀書 → 其餘 → 麻將'
 );
 

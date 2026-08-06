@@ -159,7 +159,7 @@ void main() {
       ''');
 
       final types = await searchActivityType(clientA, query: '咖啡');
-      final coffeeId = types.firstWhere((t) => t.name == '咖啡').id;
+      final coffeeId = types.firstWhere((t) => t.name == '吃飯/咖啡/探店').id;
 
       // minParticipants=2 with two brand-new accounts would otherwise trip
       // submit_request's NEW_USER_LOW_HEADCOUNT gate (fn_is_new_user = true

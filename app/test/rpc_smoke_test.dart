@@ -103,14 +103,18 @@ void main() {
         'isNewUser=${reliability.isNewUser}',
       );
 
-      // 5. rpc: search_activity_type — find the seeded '咖啡' type (2/4, no
-      //    group_size_step, so create_request's step-validation branch is
-      //    skipped and this stays a focused create_request/submit_request test).
+      // 5. rpc: search_activity_type — find the seeded '吃飯/咖啡/探店' type
+      //    (3/6 as of v1.42, no group_size_step, so create_request's
+      //    step-validation branch is skipped and this stays a focused
+      //    create_request/submit_request test). minParticipants below is
+      //    passed explicitly (2), not derived from the type's own default —
+      //    the RPC's own floor is 2 regardless of the type's configured
+      //    default_min_participants (see SPEC v1.41).
       final types = await searchActivityType(client, query: '咖啡');
       expect(types, isNotEmpty);
-      final coffee = types.firstWhere((t) => t.name == '咖啡');
+      final coffee = types.firstWhere((t) => t.name == '吃飯/咖啡/探店');
       // ignore: avoid_print
-      print('[search_activity_type] found 咖啡 id=${coffee.id}');
+      print('[search_activity_type] found 吃飯/咖啡/探店 id=${coffee.id}');
 
       // 6. Confirm the NYCU test location seeded for this run exists (v1.11:
       // create_request no longer takes a precise location id — it takes a

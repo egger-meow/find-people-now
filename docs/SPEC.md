@@ -1,4 +1,4 @@
-# 校園活動配對 App — 產品規格書 (Spec v1.40 / Repo 首版)
+# 校園活動配對 App — 產品規格書 (Spec v1.42 / Repo 首版)
 
 > 本文件用途：作為 repo 的第一份文件，是團隊所有產品／資料模型決策的唯一真相來源（single source of truth）。後續 ERD 圖、State Machine 圖、API endpoint spec 都應該從這份文件推導，不應該與本文件衝突；若有衝突，先回來改這份文件，再改下游文件。
 >
@@ -297,6 +297,18 @@
 > 1. 🟢 **通知頁分區**：使用者反映通知頁把「目前這個活動」的通知（配對成功、活動開始、集合地點更新…）跟已經結束的舊活動通知混在一起，一長串下來，舊通知讓整頁看起來「沒有意義」。前端 `notifications_screen.dart` 改成依 `payload.activity_id` 是否等於 `myActiveActivityProvider`（目前 `MATCHED`/`ONGOING` 的那個活動）分成「目前活動」跟「其他通知」兩區，中間用 `Divider` + 區塊標籤隔開；沒有目前活動時維持原本的單一列表，不強加空的區塊標題。純前端排版調整，不改資料模型或 RLS。
 > 2. 🟢 **清空收件匣（`DELETE notification`，第 8.5 節）**：`notification` 表沿用 v1.7 既有先例（`read_at` 的 column-level UPDATE 已經是直接開放 PostgREST、不走 RPC，見 `20260724125200_restrict_app_user_notification_column_grants.sql`），DELETE 比照同一個模式補 `grant delete` + `own_notifications_delete` RLS policy（`user_id = auth.uid()`），不是新開一條例外路徑。前端 AppBar 加「清空」動作，按下先跳 `showAppConfirmDialog` 二次確認（破壞性操作，紅字），確認後刪除自己的全部通知。見 `20260806010000_notification_delete.sql`、`38_notification_delete.test.sql`。
 
+> **v1.41 變更紀錄**（團體活動最低人數從 2 人提高到 3 人，第 1、5、12.1、16 節）：
+> 1. 🔴 **產品決策**：兩人小局的社交壓力與安全風險偏高（呼應第 12.1 節既有的「人少的場合社交壓力更高」立場、第 16 節開放問題 7），直接把預設活動類型的團體活動底線從 2 人提高到 3 人，不再讓使用者用第 6.2 節的人數選項卡選出 2 人局。籃球（既有底線 6）、桌遊（既有底線 3）、麻將（固定 4 人）、先聚了再說（既有底線 5）不受影響；羽球／散步／讀書／跑步／健身從 2 調成 3。純資料調整（`update activity_type set default_min_participants = 3 ...`），不改 schema/RPC——見 `20260806020000_raise_group_min_to_three.sql`。
+> 2. 🟡 **羽球連帶調整**：原本 `group_size_step = 2`（min=2/max=4 只產生「2 人」「4 人」兩個離散選項），min 提高到 3 後若不調整 step，只會剩「3 人」一個選項、意外少了「4 人雙打」這個既有選項。改成連續模式（`group_size_step = null`），min=3/max=4 產生「3 人」「4 人」兩個選項。
+> 3. 🟢 **未設定 min 的類型 fallback 從 2/6 調成 3/6**（第 5 節）：`app/lib/match/create_request_screen.dart` 的 `_groupSizeOptions()` 內建 fallback（`type.defaultMinParticipants ?? 2` → `?? 3`），否則沒設定 `default_min_participants` 的類型會悄悄繞過這次的底線調整。
+> 4. 🟡 **第 12.1 節「一對一散步」worked example 移除**：這是低人數安全機制原本的動機性範例，但 v1.41 之後散步已經選不到 2 人局，繼續留著會跟現狀不一致。機制本身（New 等級准入 + `PENDING_CONFIRMATION` 對稱確認）保留不動，改註記成「目前預設類型組合下不會在正常流程觸發，但不是死碼」——理由見 12.1 節開頭新增的說明。
+> 5. 🟢 **不動 `create_request` RPC 的硬性下限**：RPC 本身 `p_min_participants < 2` 才報錯（第 6.2 節/`20260724120300_rpc_match_request.sql`），這個全域下限跟各活動類型的 `default_min_participants` 是兩件事——後者只是 UI 選項產生器的輸入，不是伺服器端強制的每類型下限（繞過 UI 直接呼叫 RPC 理論上仍能組出 2 人局，這正是第 12.1 節機制要繼續存在的原因，見上一點）。這次不新增「RPC 端也強制 ≥3」的檢查，範圍限定在調整預設資料與 UI，避免不小心動到未來低人數類型（例如 admin 手動核准的一對一自習夥伴）的合法路徑。
+
+> **v1.42 變更紀錄**（「咖啡」擴大為「吃飯/咖啡/探店」，上限 4→6 人，第 1、6.2 節）：
+> 1. 🟡 **產品決策**：原本「咖啡」類型太窄，很多校外聚會（吃飯、咖啡廳、探店）本質上是同一種「約出去吃點東西、順便聊天」的局，硬分成好幾個類型只會稀釋配對池（呼應第 5 節「新增類型前先比對既有類型」的既有精神，這裡反過來從官方類型本身擴大涵蓋範圍）。改名不改 `id`（`update activity_type set name = ...`），既有的 `match_request`/`activity` 參照不受影響。人數上限從 4 調到 6（比運動類稍寬，這類場合天生比較適合隨性聚會，但仍遠低於「先聚了再說」的 20 人，畢竟還是要能坐同一桌）；最低人數比照 v1.41 的團體活動底線一起調成 3（原本 2）。見 `20260806030000_coffee_type_broaden_to_eating_out.sql`。
+> 2. 🟢 **補上 `description`**（原本「咖啡」跟其餘 6 個 MVP 起始類型一樣沒有 description，只有後來新增的桌遊/麻將/先聚了再說才有）：「約校外吃飯、喝咖啡、探新開的店，順便聊天。時間地點由發起人與成員自行協調。」
+> 3. 🟢 **pgTAP 測試連帶更新**：全 repo 有 20 幾個測試檔案拿 `where name = '咖啡'` 當「隨便一個合法 activity_type_id」的 fixture（跟咖啡本身的人數語意無關），改名後這些查詢會撈到 `null`、造成 `match_request` insert 違反 NOT NULL 約束——逐一改成 `where name = '吃飯/咖啡/探店'`，不影響各測試原本要驗證的行為（確認過沒有任何測試依賴咖啡類型自己的 `default_min_participants`/`default_max_participants`，都是在 `match_request` 列上直接寫死自己的 min/max）。
+
 ---
 
 ## 0. 產品原則（所有取捨的判準）
@@ -316,7 +328,7 @@
 | 項目 | 範圍 |
 |---|---|
 | 學校 | NYCU（陽明交大）+ NTHU（清大）；配對池同校隔離，跨校配對為 future feature（見第 7 節） |
-| 活動類型 | 預設 4 種起（籃球🏀／咖啡☕／散步🚶／讀書📚），使用者可新增，見第 5 節 |
+| 活動類型 | 預設 4 種起（籃球🏀／吃飯/咖啡/探店☕／散步🚶／讀書📚，v1.42 起「咖啡」擴大為「吃飯/咖啡/探店」），使用者可新增，見第 5 節 |
 | 身份驗證 | 學校專屬網域信箱（`@nycu.edu.tw` / `@nthu.edu.tw`，非泛用 `.edu.tw` 後綴；`school` 依網域自動判定）+ OTP（不做正式 CAS 串接） |
 | 個人資料門檻 | 頭像照片 + `degree_level`（學制下拉）+ 至少 1 項外部聯絡方式（IG/LINE/Discord 擇一）**註冊時強制必填**，未填無法發起/加入 Request（見第 2 節） |
 | 人數設定 | 不開放自由輸入人數，改用選項卡對應到 `min_participants`/`max_participants`（皆含 owner 本人），見第 6 節 |
@@ -391,8 +403,8 @@ start_time 到 → ONGOING
 - 已上線（APPROVED）的類型仍保留事後檢舉機制：Report → Review → Remove/限制帳號
 - 新增類型前做**既有類型的模糊比對/autocomplete 提示**（如「羽球」vs「羽毛球」），減少重複類型稀釋配對池，MVP 不用做重，能擋掉大部分重複即可
 - `default_duration` 由 admin 審核通過時設定；**null 時 fallback = 60 分鐘**（SYSTEM_DEFAULT_DURATION），之後依資料調整
-- 🟢 `default_min_participants`/`default_max_participants` 同樣由 admin 審核通過時設定，供第 6.2 節人數選項卡動態生成選項時取用；**null 時 fallback = 2 / 6**，比照 `default_duration` 的 fallback 模式
-- 🟢 `group_size_step`（nullable int）由 admin 審核通過新增類型時一併設定，決定第 6.2 節人數選項卡是否離散化：非 null 時依 `default_min_participants`~`default_max_participants`、以此為間隔生成固定人數選項（例：籃球 `default_min_participants=6`／`default_max_participants=12`／`group_size_step=2` → 選項為 6/8/10/12 人）；null 時代表連續區間，不離散化（例：咖啡 2~4 人區間）。**`group_size_step` 只要被設定為非 null 值（包含 1），前端一律按離散選項渲染；null 才代表連續區間。不存在「連續區間但同時設了 step」的中間狀態，避免 `step=1` 這類邊界值造成解讀歧義。** 這個欄位存在的意義是讓「使用者新增活動類型 → admin 審核通過 → 立即可用」（本節既有流程）保持完整——人數選項的離散/連續邏輯完全由資料決定，新增一個類型不需要另外改前端程式碼；🔴 明確不新增 `group_size_mode` 欄位，理由見 ERD.md 設計備註
+- 🟢 `default_min_participants`/`default_max_participants` 同樣由 admin 審核通過時設定，供第 6.2 節人數選項卡動態生成選項時取用；**null 時 fallback = 3 / 6**（🟡 v1.41 由 2 / 6 調整，比照團體活動底線提高到 3 人的決策，避免沒設定 min 的新類型悄悄退回 2 人選項），比照 `default_duration` 的 fallback 模式
+- 🟢 `group_size_step`（nullable int）由 admin 審核通過新增類型時一併設定，決定第 6.2 節人數選項卡是否離散化：非 null 時依 `default_min_participants`~`default_max_participants`、以此為間隔生成固定人數選項（例：籃球 `default_min_participants=6`／`default_max_participants=12`／`group_size_step=2` → 選項為 6/8/10/12 人）；null 時代表連續區間，不離散化（例：吃飯/咖啡/探店 3~6 人區間）。**`group_size_step` 只要被設定為非 null 值（包含 1），前端一律按離散選項渲染；null 才代表連續區間。不存在「連續區間但同時設了 step」的中間狀態，避免 `step=1` 這類邊界值造成解讀歧義。** 這個欄位存在的意義是讓「使用者新增活動類型 → admin 審核通過 → 立即可用」（本節既有流程）保持完整——人數選項的離散/連續邏輯完全由資料決定，新增一個類型不需要另外改前端程式碼；🔴 明確不新增 `group_size_mode` 欄位，理由見 ERD.md 設計備註
 
 ```
 ActivityType
@@ -456,7 +468,7 @@ RequestMember              # 取代 member_ids[]；含透過邀請連結加入�
 🟢 **UI 選項卡的標籤直接等於 `min_participants`/`max_participants` 的實際數值（含自己）**，不再做「不含自己」的文字換算。選項組合依 `activity_type` 動態生成，依據該類型的 `default_min_participants`/`default_max_participants`/`group_size_step`（第 5 節）：
 
 - **`group_size_step` 非 null（離散模式）**：前端在 `[default_min_participants, default_max_participants]` 區間內以 `group_size_step` 為間隔生成一組固定人數選項；使用者選擇其中一個數字，`min_participants` 與 `max_participants` 皆設為該數字（精確成團人數，無彈性區間）。例：籃球 `default_min_participants=6`、`default_max_participants=12`、`group_size_step=2` → 選項為「6 人」「8 人」「10 人」「12 人」
-- **`group_size_step` 為 null（連續模式）**：前端提供落在 `[default_min_participants, default_max_participants]` 的區間選擇，使用者選定的上下界直接寫入 `min_participants`/`max_participants`，允許彈性區間。例：咖啡 `default_min_participants=2`、`default_max_participants=4` → 使用者可選「2~4 人」這類區間，對應 `min_participants=2`、`max_participants=4`
+- **`group_size_step` 為 null（連續模式）**：前端提供落在 `[default_min_participants, default_max_participants]` 的區間選擇，使用者選定的上下界直接寫入 `min_participants`/`max_participants`，允許彈性區間。例：吃飯/咖啡/探店 `default_min_participants=3`、`default_max_participants=6`（v1.41／v1.42 由原本的「咖啡」`2/4` 調整，見對應變更紀錄） → 使用者可選「3~6 人」這類區間，對應 `min_participants=3`、`max_participants=6`
 - 🟢 `group_size_step` 語意定義見第 5 節；null = 連續區間，非 null（含 1）= 離散選項，不存在中間狀態
 
 ### 6.3 配對進行中鎖定與拒絕冷卻（v1.7）
@@ -719,7 +731,7 @@ Reliability 等級（🟢/🟡/🔴）由近 30 天的 `UserReliabilityEvent` �
 
 ### 12.1 小人數活動准入與確認機制（`min_participants ≤ 2` 准入 / 實際撮合人數 ≤ 2 觸發確認）
 
-人少的場合（如一對一散步）社交壓力與安全風險都比多人局更高。以下四道機制共同構成低人數場合的安全防線，整合放在同一節，不分散在文件不同段落。
+人少的場合社交壓力與安全風險都比多人局更高。以下四道機制共同構成低人數場合的安全防線，整合放在同一節，不分散在文件不同段落。🟡 **v1.41 起，官方預設類型不再提供 `default_min_participants ≤ 2` 的選項**（第 1 節「人數設定」、第 16 節開放問題 7 的產品決策：團體活動底線提高到 3 人），本節機制在目前的預設類型組合下**不會在正常流程被觸發**，但不是死碼——仍然保護兩種情況：① 未來若 admin 透過 Studio 核准某個低人數類型（例如「一對一自習夥伴」），這裡的准入與確認機制立即生效，不用額外開發；② `create_request` RPC 本身的硬性下限仍是 2（不是跟著預設類型走），理論上仍有辦法組出 `min_participants=2` 的 Request，本節機制依然是最後一道防線。
 
 #### 12.1.1 新人配對資格限制
 
@@ -833,7 +845,7 @@ MVP 階段不自建後端；等真實用量起來（校園爆量、Realtime conn
 4. 實際地點清單內容，依校分列且需標注 `campus`（v1.11 起地點的 school 已不足以判斷距離，見 SPEC v1.11 變更紀錄第 1 點；NYCU：光復籃球場／工程館／浩然／女二／竹湖…；NTHU：風雲球場…）
 5. NotificationEvent 完整事件清單（已知會用到：MATCH_SUCCESS／DOWNGRADE_REQUEST／DOWNGRADE_RESULT／ACTIVITY_REMINDER／COMPLETE_CONFIRMATION／LOCATION_NOT_YET_PROPOSED（v1.11），細節待補）
 6. 隱私權政策文件（收集資料種類、聯絡方式用途、第三方服務 Supabase 揭露）—— 上架前必須補齊；🟢 **刪除帳號流程本身已於 v1.14 實作完成**（`delete_account()` RPC + `delete-auth-user` Edge Function，見上方 v1.14 變更紀錄與 [PRIVACY_POLICY.md](PRIVACY_POLICY.md) 第五節），此項開放問題範圍縮小為文件其餘部分；🟢 **服務條款文件已於 v1.19 新增**（[TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md)），與隱私權政策同為上架前需經法務審閱的草稿
-7. 新人配對資格限制的 `min_participants ≤ 2`「低人數」切點是否需要涵蓋 3 人局，待依實際新人事故率評估調整（見第 12.1 節）
+7. ✅ **v1.41 已部分回應**：官方預設類型的團體活動底線已從 2 人提高到 3 人（不再是「要不要涵蓋 3 人局」的問題，2 人局在目前的預設類型組合下已經選不到）；`min_participants ≤ 2` 准入機制本身是否還要為未來可能新增的低人數類型調整切點，維持開放，待依實際使用數據評估（見第 12.1 節）
 8. 貪婪成局策略下，連續模式（`group_size_step` 為 null）的選項只要 `min_participants < max_participants`，達到 `min_participants` 就會立即成局、不等待湊到 `max_participants`——v1.5 版本「不限，人多熱鬧」的固定選項在 v1.6 UI 重構後已不存在，但此行為特性對任何連續模式選項依然成立，是否需要加權重或其他方式差異化，待有實際使用數據後評估（見第 6.2、7 節）
 9. `max_participants` 為 NULL 時是否要在寫入當下就填入 `activity_type.default_max_participants`、還是維持 NULL 由讀取端 fallback，兩種做法對「人數超額」判斷（第 7 節）行為一致但實作路徑不同，待 API 設計階段定案
 10. 邀請連結撤銷（`revoked_at`）的操作入口與 API 尚未設計，見第 6.1 節

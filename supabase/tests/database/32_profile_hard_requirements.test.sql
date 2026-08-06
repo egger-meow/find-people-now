@@ -278,7 +278,7 @@ declare
   v_req         match_request;
   v_activity    activity;
 begin
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   insert into auth.users (id, email) values (v_b, 'phr_b@nycu.edu.tw');
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, bio, contact_line) values

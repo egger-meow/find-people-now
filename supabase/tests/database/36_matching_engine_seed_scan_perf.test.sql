@@ -39,7 +39,7 @@ declare
   v_req_id      uuid;
   i             int;
 begin
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   insert into location (school, campus, name, is_active) values ('NYCU', v_campus, 'SeedPerf測試地點', true)
     on conflict (school, name) do update set is_active = true, campus = excluded.campus;

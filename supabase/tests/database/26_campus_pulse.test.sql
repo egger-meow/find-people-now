@@ -67,7 +67,7 @@ declare
   v_request8        uuid;
 begin
   select id into v_basketball_id from activity_type where name = '籃球' limit 1;
-  select id into v_coffee_id from activity_type where name = '咖啡' limit 1;
+  select id into v_coffee_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   insert into auth.users (id, email) values
     (v_viewer, 'cp_viewer@nycu.edu.tw'), (v_deleted, 'cp_deleted@nycu.edu.tw'), (v_owner1, 'cp_o1@nycu.edu.tw'),

@@ -110,7 +110,7 @@ void main() {
       //    hit NEW_USER_LOW_HEADCOUNT for this brand-new user, keeping this
       //    test focused on the waiting-room/Realtime path.
       final types = await searchActivityType(client, query: '咖啡');
-      final coffee = types.firstWhere((t) => t.name == '咖啡');
+      final coffee = types.firstWhere((t) => t.name == '吃飯/咖啡/探店');
       final now = DateTime.now().toUtc();
       final created = await createRequest(
         client,

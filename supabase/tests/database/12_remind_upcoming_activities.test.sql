@@ -62,7 +62,7 @@ begin
     (v_user3, 'ua_3@nycu.edu.tw', 'NYCU', 'Ua 3', 'https://avatar.ua_3', 'MASTER', 'ua_3_line'),
     (v_user4, 'ua_4@nycu.edu.tw', 'NYCU', 'Ua 4', 'https://avatar.ua_4', 'MASTER', 'ua_4_line');
 
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
   insert into location (school, campus, name, is_active) values ('NYCU', v_campus, '學生活動中心', true)
     on conflict (school, name) do update set is_active = true, campus = excluded.campus;
 

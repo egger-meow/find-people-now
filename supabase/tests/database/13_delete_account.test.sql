@@ -94,7 +94,7 @@ begin
     (v_actor2, 'da_actor2@nycu.edu.tw', 'NYCU', 'Da Actor2', 'https://avatar.da_actor2', 'MASTER', 'da_actor2_line'),
     (v_bystander, 'da_bystander@nycu.edu.tw', 'NYCU', 'Da Bystander', 'https://avatar.da_bystander', 'MASTER', 'da_bystander_line');
 
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
   select id into v_loc_id from location where school = 'NYCU' and campus = v_campus and status = 'APPROVED' limit 1;
 
   -- owner 名下仍在 REQUESTING 的 request，member1 是已加入成員

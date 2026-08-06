@@ -54,7 +54,7 @@ declare
   v_other_campus text := 'AS其他區';
 begin
   select id into v_basketball from activity_type where name = '籃球' limit 1;
-  select id into v_coffee from activity_type where name = '咖啡' limit 1;
+  select id into v_coffee from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   insert into auth.users (id, email) values
     (v_subscriber, 'as_sub@nycu.edu.tw'), (v_submitter, 'as_submit@nycu.edu.tw'), (v_other, 'as_other@nycu.edu.tw'),

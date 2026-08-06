@@ -55,7 +55,7 @@ declare
   v_pc          pending_confirmation;
   v_past_activity_id uuid;
 begin
-  select id into v_act_type_id from activity_type where name = '咖啡' limit 1;
+  select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
   insert into location (school, campus, name, is_active) values
     ('NYCU', v_campus, 'PCI測試地點', true)

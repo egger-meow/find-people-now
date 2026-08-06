@@ -560,7 +560,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 
   List<int> _groupSizeOptions(ActivityType type) {
-    final min = type.defaultMinParticipants ?? 2;
+    final min = type.defaultMinParticipants ?? 3;
     final max = type.defaultMaxParticipants ?? min;
     final step = (type.groupSizeStep != null && type.groupSizeStep! > 0) ? type.groupSizeStep! : 1;
     return [for (var v = min; v <= max; v += step) v];
