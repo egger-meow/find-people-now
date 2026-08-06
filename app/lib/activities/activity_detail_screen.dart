@@ -950,22 +950,54 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.pin_drop_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          updates.first.description,
-                          style: Theme.of(context).textTheme.titleSmall,
+                // 反饋：「集合點現在的要再明顯一點，讓大家知道這是現在的集合
+                // 點」——原本只是一行跟輸入框同一個視覺層級的小字，容易被當成
+                // 表單的一部分而不是「這是目前生效的值」。改用跟 _LocationVoting
+                // 「目前領先」同一套語言（主色系 + 粗體），但這裡是唯一值不是
+                // 候選列表，直接用實心底色的區塊而不只是一行標籤文字，跟下面
+                // 用來「送出新值」的輸入框明確分成兩層。
+                : Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.pin_drop_rounded, size: 14, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                            const SizedBox(width: 4),
+                            Text(
+                              '目前集合地點',
+                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          updates.first.description,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ],
+                    ),
                   ),
           ),
           if (widget.editable) ...[
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              '更新集合地點',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: AppSpacing.xs),
             AppTextField(controller: _controller, hint: '例如：正門警衛室旁', maxLength: 40),
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.xs),
