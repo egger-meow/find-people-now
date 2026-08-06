@@ -1683,7 +1683,20 @@ class _ArrivalButton extends ConsumerStatefulWidget {
 class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
   bool _busy = false;
 
-  Future<void> _markArrived() async {
+  // 反饋：使用者擔心手滑點到「我到了」——一旦標記，系統會立刻通知其他成員
+  // 「XX 已抵達」，不像其他欄位（集合地點/提示）可以再改一次蓋掉，事後
+  // 沒有回頭路能收回已經送出去的通知，所以用點擊前二次確認，不做「標記後
+  // 允許復原」（復原也沒辦法讓其他成員已讀到的通知消失，只會製造「他到底
+  // 有沒有到」的混亂）。
+  Future<void> _confirmAndMarkArrived() async {
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '確定你已經到了嗎？',
+      message: '按下後會立刻通知其他成員你已抵達，無法收回。',
+      confirmLabel: '我到了',
+    );
+    if (!confirmed) return;
+
     setState(() => _busy = true);
     try {
       await markArrived(ref.read(supabaseClientProvider), activityId: widget.activityId);
@@ -1699,7 +1712,7 @@ class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
   @override
   Widget build(BuildContext context) {
     return FilledButton.icon(
-      onPressed: _busy ? null : _markArrived,
+      onPressed: _busy ? null : _confirmAndMarkArrived,
       style: FilledButton.styleFrom(
         minimumSize: const Size(112, 44),
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
