@@ -46,7 +46,7 @@ class CreateRequestScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('找人一起做點事'),
+        title: const Text('敢不敢揪'),
         actions: [
           IconButton(
             icon: const Icon(Icons.link_rounded),
