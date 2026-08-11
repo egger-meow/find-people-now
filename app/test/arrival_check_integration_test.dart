@@ -26,11 +26,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:find_people_now/activities/activity_detail_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:find_people_now/generated/activity.dart';
+import 'package:find_people_now/generated/activity_location_option.dart';
+import 'package:find_people_now/generated/location.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/rpc/activity_rpc.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
@@ -38,6 +44,7 @@ import 'package:find_people_now/rpc/api_exception.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/confirmation_rpc.dart';
 import 'package:find_people_now/rpc/match_request_rpc.dart';
+import 'package:find_people_now/theme/app_theme.dart';
 
 import 'local_supabase_guard.dart';
 
@@ -55,13 +62,20 @@ Future<SupabaseClient> _createAndSignIn(
       'Authorization': 'Bearer $serviceRoleKey',
       'Content-Type': 'application/json',
     },
-    body: jsonEncode({'email': email, 'password': password, 'email_confirm': true}),
+    body: jsonEncode({
+      'email': email,
+      'password': password,
+      'email_confirm': true,
+    }),
   );
   if (createRes.statusCode != 200 && createRes.statusCode != 201) {
     throw Exception('admin user create failed for $email: ${createRes.body}');
   }
   final client = SupabaseClient(supabaseUrl, anonKey);
-  final authRes = await client.auth.signInWithPassword(email: email, password: password);
+  final authRes = await client.auth.signInWithPassword(
+    email: email,
+    password: password,
+  );
   if (authRes.session == null) {
     throw Exception('sign-in failed for $email');
   }
@@ -105,11 +119,119 @@ void main() {
   late String serviceRoleKey;
 
   setUpAll(() async {
+    HttpOverrides.global = null;
     await dotenv.load();
     supabaseUrl = dotenv.get('SUPABASE_URL');
     assertLocalSupabaseUrl(supabaseUrl);
     anonKey = dotenv.get('SUPABASE_ANON_KEY');
     serviceRoleKey = dotenv.get('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  testWidgets('ONGOING 首屏顯示即時領先地點，零候選時先導向地點提案', (tester) async {
+    final now = DateTime(2026, 8, 11, 17);
+    final option = ActivityLocationOption(
+      id: 'locked-option',
+      activityId: 'ongoing-summary',
+      locationId: 'east-gate',
+      proposedBy: 'member-a',
+      createdAt: now,
+    );
+    final activity = Activity(
+      id: 'ongoing-summary',
+      activityTypeId: 'coffee',
+      startTime: now,
+      estimatedEndTime: now.add(const Duration(hours: 1)),
+      status: ACTIVITY_STATUS.ONGOING,
+      contactVisibleUntil: now.add(const Duration(days: 1)),
+      createdAt: now,
+      school: SCHOOL.NYCU,
+      campus: '光復',
+      activityLocationId: option.id,
+    );
+    final location = Location(
+      id: 'east-gate',
+      school: SCHOOL.NYCU,
+      name: '東門',
+      isActive: true,
+      createdAt: now,
+      status: ACTIVITY_TYPE_STATUS.APPROVED,
+      campus: '光復',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Column(
+              children: [
+                Expanded(
+                  child: ActivityDetailStatusSummary(
+                    activity: activity,
+                    locationOptions: [option],
+                    locationVotes: const [],
+                    fixtureLocations: [location],
+                  ),
+                ),
+                ActivityDetailStickyAction(
+                  status: activity.status,
+                  hasLocationOptions: true,
+                  onPressed: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('進行中'), findsOneWidget);
+    expect(find.textContaining('地點投票：東門目前領先（0 票，仍可變更）'), findsOneWidget);
+    expect(find.text('下一步：確認報到狀態'), findsOneWidget);
+    expect(find.text('查看報到與成員'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final noCandidateActivity = Activity(
+      id: 'ongoing-no-candidate',
+      activityTypeId: 'coffee',
+      startTime: now,
+      estimatedEndTime: now.add(const Duration(hours: 1)),
+      status: ACTIVITY_STATUS.ONGOING,
+      contactVisibleUntil: now.add(const Duration(days: 1)),
+      createdAt: now,
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Column(
+              children: [
+                Expanded(
+                  child: ActivityDetailStatusSummary(
+                    activity: noCandidateActivity,
+                    locationOptions: const [],
+                    locationVotes: const [],
+                    fixtureLocations: const [],
+                  ),
+                ),
+                ActivityDetailStickyAction(
+                  status: noCandidateActivity.status,
+                  hasLocationOptions: false,
+                  onPressed: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.textContaining('地點：等待提出候選地點'), findsOneWidget);
+    expect(find.text('下一步：先提出候選地點'), findsOneWidget);
+    expect(find.text('前往提出候選地點'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   test(
@@ -206,12 +328,29 @@ void main() {
         }
       });
 
-      final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
-      final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
-      await respondPendingConfirmation(clientA, pendingConfirmationId: statusForA.pendingConfirmationId, confirm: true);
-      await respondPendingConfirmation(clientB, pendingConfirmationId: statusForB.pendingConfirmationId, confirm: true);
+      final statusForA = await getPendingConfirmationStatus(
+        clientA,
+        requestA.id,
+      );
+      final statusForB = await getPendingConfirmationStatus(
+        clientB,
+        requestB.id,
+      );
+      await respondPendingConfirmation(
+        clientA,
+        pendingConfirmationId: statusForA.pendingConfirmationId,
+        confirm: true,
+      );
+      await respondPendingConfirmation(
+        clientB,
+        pendingConfirmationId: statusForB.pendingConfirmationId,
+        confirm: true,
+      );
 
-      final memberRows = await clientB.from('activity_member').select('activity_id').eq('user_id', userBId);
+      final memberRows = await clientB
+          .from('activity_member')
+          .select('activity_id')
+          .eq('user_id', userBId);
       final activityId = memberRows.first['activity_id'] as String;
       // ignore: avoid_print
       print('[setup] reached MATCHED activity_id=$activityId');
@@ -242,7 +381,9 @@ void main() {
           channelSubscribed.complete();
         } else if (status == RealtimeSubscribeStatus.channelError ||
             status == RealtimeSubscribeStatus.timedOut) {
-          channelSubscribed.completeError(RealtimeSubscribeException(status, error));
+          channelSubscribed.completeError(
+            RealtimeSubscribeException(status, error),
+          );
         }
       });
       await channelSubscribed.future.timeout(const Duration(seconds: 20));
@@ -265,14 +406,21 @@ void main() {
       // of headroom for a slower CI relay.
       var delivered = false;
       for (var attempt = 0; attempt < 100; attempt++) {
-        if (memberUpdates.any((r) => r['user_id'] == userAId && r['arrived_at'] != null)) {
+        if (memberUpdates.any(
+          (r) => r['user_id'] == userAId && r['arrived_at'] != null,
+        )) {
           delivered = true;
           break;
         }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
       await channel.unsubscribe();
-      expect(delivered, isTrue, reason: 'activity_member Realtime channel should deliver the arrived_at update');
+      expect(
+        delivered,
+        isTrue,
+        reason:
+            'activity_member Realtime channel should deliver the arrived_at update',
+      );
 
       // -----------------------------------------------------------------
       // 2. B should have exactly one MEMBER_ARRIVED notification about A;
@@ -284,19 +432,26 @@ void main() {
           .eq('user_id', userBId)
           .eq('event_type', 'MEMBER_ARRIVED');
       expect(notificationsForB.length, 1);
-      final payload = notificationsForB.first['payload'] as Map<String, dynamic>;
+      final payload =
+          notificationsForB.first['payload'] as Map<String, dynamic>;
       expect(payload['activity_id'], activityId);
       expect(payload['arrived_user_id'], userAId);
       expect(payload['display_name'], 'ArrivalCheck User A');
       // ignore: avoid_print
-      print('[MEMBER_ARRIVED] B received notification with payload matching notifications_screen.dart\'s s() reads');
+      print(
+        '[MEMBER_ARRIVED] B received notification with payload matching notifications_screen.dart\'s s() reads',
+      );
 
       final notificationsForA = await clientA
           .from('notification')
           .select()
           .eq('user_id', userAId)
           .eq('event_type', 'MEMBER_ARRIVED');
-      expect(notificationsForA, isEmpty, reason: 'arriver must not receive a self-notification');
+      expect(
+        notificationsForA,
+        isEmpty,
+        reason: 'arriver must not receive a self-notification',
+      );
 
       // -----------------------------------------------------------------
       // 3. Idempotency through the real wrapper: repeat call returns the
@@ -309,7 +464,11 @@ void main() {
           .select()
           .eq('user_id', userBId)
           .eq('event_type', 'MEMBER_ARRIVED');
-      expect(notificationsForBAfterRepeat.length, 1, reason: 'repeat mark_arrived must not duplicate the notification');
+      expect(
+        notificationsForBAfterRepeat.length,
+        1,
+        reason: 'repeat mark_arrived must not duplicate the notification',
+      );
       // ignore: avoid_print
       print('[mark_arrived] repeat call correctly idempotent end-to-end');
     },

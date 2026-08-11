@@ -3,19 +3,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../activities/my_activities_providers.dart' show invalidateMyActivityList;
+import '../activities/my_activities_providers.dart'
+    show invalidateMyActivityList;
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
 import '../data/skill_level_labels.dart';
 import '../generated/match_request.dart';
-import '../generated/supadart_header.dart' show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
+import '../generated/supadart_header.dart'
+    show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_section.dart';
 import '../widgets/app_snack_bar.dart';
+import '../widgets/app_status_summary.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
@@ -52,21 +56,28 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     // 不是使用者自己在這個畫面點出來的變化，原本完全不會讓這兩個 provider
     // 失效。這裡直接監聽 Realtime 狀態流，一旦狀態離開 REQUESTING 就讓兩個
     // provider 失效，不管是引擎自動撮合、還是其他成員取消/退出造成的。
-    ref.listen<AsyncValue<MatchRequest?>>(matchRequestStreamProvider(widget.requestId), (previous, next) {
-      final status = next.value?.status;
-      if (status != null && isTerminalForWaitingRoom(status)) {
-        ref.invalidate(myActiveRequestProvider);
-        ref.invalidate(myActiveActivityProvider);
-        // 反饋：配對成功後點「前往我的活動」，清單卻還是配對前的「等待配對中」
-        // ——這裡原本只 invalidate myActivityListProvider，但那個 provider 只是
-        // watch 兩個來源 provider 組出來的，沒有連帶讓來源重新查詢，等於沒用
-        // （見 invalidateMyActivityList 註解）。
-        invalidateMyActivityList(ref);
-      }
-    });
+    ref.listen<AsyncValue<MatchRequest?>>(
+      matchRequestStreamProvider(widget.requestId),
+      (previous, next) {
+        final status = next.value?.status;
+        if (status != null && isTerminalForWaitingRoom(status)) {
+          ref.invalidate(myActiveRequestProvider);
+          ref.invalidate(myActiveActivityProvider);
+          // 反饋：配對成功後點「前往我的活動」，清單卻還是配對前的「等待配對中」
+          // ——這裡原本只 invalidate myActivityListProvider，但那個 provider 只是
+          // watch 兩個來源 provider 組出來的，沒有連帶讓來源重新查詢，等於沒用
+          // （見 invalidateMyActivityList 註解）。
+          invalidateMyActivityList(ref);
+        }
+      },
+    );
 
-    final requestAsync = ref.watch(matchRequestStreamProvider(widget.requestId));
-    final membersAsync = ref.watch(requestMembersStreamProvider(widget.requestId));
+    final requestAsync = ref.watch(
+      matchRequestStreamProvider(widget.requestId),
+    );
+    final membersAsync = ref.watch(
+      requestMembersStreamProvider(widget.requestId),
+    );
     final userId = ref.watch(currentUserIdProvider);
 
     return Scaffold(
@@ -88,136 +99,83 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
               error: (error, stack) => Center(child: Text('連線失敗：$error')),
               data: (members) {
                 final isOwner = members.any(
-                  (m) => m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
+                  (m) =>
+                      m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
+                final statusContent = waitingRoomStatusContent(request.status);
                 return ListView(
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   children: [
-                    _CountdownHeroCard(deadline: request.latestStart),
-                    const SizedBox(height: AppSpacing.md),
-                    _RequestInfoCard(request: request),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      '目前房間成員（${members.length} / ${request.minParticipants} 人成立）',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      children: [
-                        for (final member in members)
-                          _AnonymousAvatar(
-                            key: ValueKey(member.id),
-                            isSelf: member.userId == userId,
-                            isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
+                    AppStatusSummary(
+                      title: statusContent.title,
+                      message: statusContent.message,
+                      leading: const MatchingPulse(),
+                      deadline: '配對截止：${_formatDeadline(request.latestStart)}',
+                      action: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(child: Text('剩餘時間')),
+                              CountdownText(
+                                deadline: request.latestStart,
+                                style: Theme.of(context).textTheme.titleSmall,
+                                urgentColor: Theme.of(
+                                  context,
+                                ).colorScheme.error,
+                              ),
+                            ],
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    // 反饋：使用者誤以為這個房間只會加進自己邀請的朋友，被系統
-                    // 自動撮合的陌生人突然湊滿嚇到。這裡明講「盲配」是預設行為、
-                    // 邀請碼只是拉特定朋友進來的加分項，且提醒「朋友要盡快加入，
-                    // 不然可能等他點連結時房間已經跟別人湊滿了」。
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.info_outline_rounded,
-                            size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Text(
-                            '系統會同時在背景自動幫你配對其他也在等的人，不是只能靠邀請朋友湊人數。'
-                            '想約特定朋友的話，請他們盡快用邀請碼加入——如果人數在朋友加入前就湊滿，'
-                            '房間可能已經跟別人成團。',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    if (_inviteToken == null)
-                      AppButton(
-                        label: '邀請朋友',
-                        loading: _busy,
-                        onPressed: () => _getOrCreateInviteLink(request.id),
-                      )
-                    else
-                      AppCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '邀請碼（分享給朋友）',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                                vertical: AppSpacing.sm,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-                              ),
-                              child: SelectableText(
-                                _inviteToken!,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontFamily: 'monospace',
-                                      // `'monospace'` 是 **Android** 的字型族別名，
-                                      // iOS 沒有註冊這個名字——原本在 iPhone 上會
-                                      // 靜默 fallback 回一般字型，邀請碼就失去等寬
-                                      // 對齊，`0/O`、`1/l` 這種容易看錯的字元反而
-                                      // 更難分辨（而這串正是要唸給朋友抄的東西）。
-                                      // 補上 iOS/桌面的實際等寬字型作為候補。
-                                      fontFamilyFallback: const ['Menlo', 'Courier New', 'monospace'],
-                                      letterSpacing: 1.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () {
-                                      Clipboard.setData(ClipboardData(text: _inviteToken!));
-                                      showAppSnackBar(context, '已複製邀請碼');
-                                    },
-                                    icon: const Icon(Icons.copy_rounded, size: 18),
-                                    label: const Text('複製'),
-                                  ),
-                                ),
-                                const SizedBox(width: AppSpacing.sm),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _busy ? null : () => _revokeInviteLink(request.id),
-                                    icon: const Icon(Icons.link_off_rounded, size: 18),
-                                    label: const Text('撤銷'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppSection(
+                      title: '配對條件',
+                      description: '確認這次正在等待的活動、時間、人數與校區。',
+                      child: _RequestInfoCard(request: request),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppSection(
+                      title: '房間成員',
+                      description:
+                          '目前 ${members.length} / ${request.minParticipants} 人，達到門檻就能成團。',
+                      child: Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: [
+                          for (final member in members)
+                            _AnonymousAvatar(
+                              key: ValueKey(member.id),
+                              isSelf: member.userId == userId,
+                              isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
+                            ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: AppSpacing.lg),
                     if (_error != null) ...[
-                      Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
                       const SizedBox(height: AppSpacing.sm),
                     ],
-                    OutlinedButton(
-                      onPressed: _busy ? null : () => isOwner ? _cancelRequest(request.id) : _leaveRequest(request.id),
-                      child: Text(isOwner ? '取消整個配對' : '退出房間'),
+                    WaitingRoomActionSections(
+                      inviteToken: _inviteToken,
+                      busy: _busy,
+                      isOwner: isOwner,
+                      onGenerate: () => _getOrCreateInviteLink(request.id),
+                      onCopy: () {
+                        Clipboard.setData(ClipboardData(text: _inviteToken!));
+                        showAppSnackBar(context, '已複製邀請碼');
+                      },
+                      onRevoke: () => _revokeInviteLink(request.id),
+                      onManage: () => isOwner
+                          ? _cancelRequest(request.id)
+                          : _leaveRequest(request.id),
                     ),
                   ],
                 );
@@ -230,12 +188,16 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 
   Future<void> _getOrCreateInviteLink(String requestId) async {
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final token = await getOrCreateInviteLink(ref.read(supabaseClientProvider), requestId);
+      final token = await getOrCreateInviteLink(
+        ref.read(supabaseClientProvider),
+        requestId,
+      );
       if (!mounted) return;
       setState(() => _inviteToken = token);
     } on ApiException catch (e) {
@@ -247,6 +209,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 
   Future<void> _revokeInviteLink(String requestId) async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       await revokeInviteLink(ref.read(supabaseClientProvider), requestId);
@@ -261,6 +224,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 
   Future<void> _leaveRequest(String requestId) async {
+    if (_busy) return;
     final confirm = await showAppConfirmDialog(
       context,
       title: '確定要退出房間？',
@@ -286,6 +250,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 
   Future<void> _cancelRequest(String requestId) async {
+    if (_busy) return;
     final confirm = await showAppConfirmDialog(
       context,
       title: '確定要取消整個配對？',
@@ -311,38 +276,126 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 }
 
-/// 等待室的情緒焦點——「還會不會配對成功」——原本只是塞在一張普通 [AppCard]
-/// 裡的一小行文字，跟頁面上其他資訊卡片沒有視覺區別。這裡把倒數做成大字體的
-/// 主視覺，搭配 [_MatchingPulse] 呼吸動畫，讓使用者一打開就知道「系統還在動、
-/// 還剩多久」，不用在一堆卡片裡找。剩餘時間低於一分鐘時 [CountdownText] 自己
-/// 會轉成錯誤色＋icon（見 countdown_text.dart 的 `urgentColor`）。
-class _CountdownHeroCard extends StatelessWidget {
-  const _CountdownHeroCard({required this.deadline});
+/// Testable production actions shared by the live waiting room and widget
+/// regressions. RPC/dialog behavior remains owned by [WaitingRoomScreen].
+class WaitingRoomActionSections extends StatelessWidget {
+  const WaitingRoomActionSections({
+    super.key,
+    required this.inviteToken,
+    required this.busy,
+    required this.isOwner,
+    required this.onGenerate,
+    required this.onCopy,
+    required this.onRevoke,
+    required this.onManage,
+  });
 
-  final DateTime deadline;
+  final String? inviteToken;
+  final bool busy;
+  final bool isOwner;
+  final VoidCallback onGenerate;
+  final VoidCallback onCopy;
+  final VoidCallback onRevoke;
+  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return AppCard(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg, horizontal: AppSpacing.md),
-      child: Column(
-        children: [
-          const _MatchingPulse(),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            '距離配對截止時間',
-            style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppSection(
+          title: '邀請朋友',
+          description:
+              '系統會同時在背景自動幫你配對其他也在等的人，不是只能靠邀請朋友湊人數。'
+              '想約特定朋友的話，請他們盡快用邀請碼加入——如果人數在朋友加入前就湊滿，'
+              '房間可能已經跟別人成團。',
+          child: inviteToken == null
+              ? AppButton(
+                  label: '邀請朋友',
+                  loading: busy,
+                  onPressed: busy ? null : onGenerate,
+                )
+              : AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '邀請碼（分享給朋友）',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.sm,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: SelectableText(
+                          inviteToken!,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontFamily: 'monospace',
+                                fontFamilyFallback: const [
+                                  'Menlo',
+                                  'Courier New',
+                                  'monospace',
+                                ],
+                                letterSpacing: 1.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: busy ? null : onCopy,
+                              icon: const Icon(Icons.copy_rounded, size: 18),
+                              label: const Text('複製'),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: busy ? null : onRevoke,
+                              icon: const Icon(
+                                Icons.link_off_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('撤銷'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        AppSection(
+          title: '管理配對',
+          description: isOwner ? '取消後房間會關閉，所有成員都會收到通知。' : '退出後你會離開這個配對房間。',
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: busy ? null : onManage,
+              child: Text(isOwner ? '取消整個配對' : '退出房間'),
+            ),
           ),
-          const SizedBox(height: 4),
-          CountdownText(
-            deadline: deadline,
-            style: textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w700),
-            urgentColor: scheme.error,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -352,48 +405,86 @@ class _CountdownHeroCard extends StatelessWidget {
 /// 呼吸閃爍的小圓點＋文字，純粹是「這個畫面還活著、系統還在背景幫你找人」的
 /// 視覺回饋，不代表任何真實的配對引擎狀態（背景排程本身的節奏見
 /// CLAUDE.md「Background jobs」一節）。
-class _MatchingPulse extends StatefulWidget {
-  const _MatchingPulse();
+class MatchingPulse extends StatefulWidget {
+  const MatchingPulse({super.key});
 
   @override
-  State<_MatchingPulse> createState() => _MatchingPulseState();
+  State<MatchingPulse> createState() => _MatchingPulseState();
 }
 
-class _MatchingPulseState extends State<_MatchingPulse> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1000),
-  )..repeat(reverse: true);
+class _MatchingPulseState extends State<MatchingPulse>
+    with TickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final allowsDecorative = AppMotion.allowsDecorative(context);
+    if (allowsDecorative && _controller == null) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1000),
+      )..repeat(reverse: true);
+    } else if (!allowsDecorative && _controller != null) {
+      _controller!.dispose();
+      _controller = null;
+    }
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final controller = _controller;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        FadeTransition(
-          opacity: _controller.drive(CurveTween(curve: Curves.easeInOut)),
-          child: Container(
+        if (controller == null)
+          Container(
+            key: const ValueKey('matching-static-glyph'),
             width: 8,
             height: 8,
-            decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              shape: BoxShape.circle,
+            ),
+          )
+        else
+          FadeTransition(
+            key: const ValueKey('matching-animated-glyph'),
+            opacity: controller.drive(CurveTween(curve: Curves.easeInOut)),
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
-        ),
         const SizedBox(width: AppSpacing.xs),
-        Text('配對中…', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.primary)),
+        Text(
+          '配對中…',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: scheme.primary),
+        ),
       ],
     );
   }
 }
 
 class _AnonymousAvatar extends StatelessWidget {
-  const _AnonymousAvatar({super.key, required this.isSelf, required this.isOwner});
+  const _AnonymousAvatar({
+    super.key,
+    required this.isSelf,
+    required this.isOwner,
+  });
 
   final bool isSelf;
   final bool isOwner;
@@ -404,17 +495,27 @@ class _AnonymousAvatar extends StatelessWidget {
     return Tooltip(
       message: isSelf ? '你' : (isOwner ? '發起人' : '成員'),
       child: CircleAvatar(
-        backgroundColor: isSelf ? scheme.primaryContainer : scheme.secondaryContainer,
+        backgroundColor: isSelf
+            ? scheme.primaryContainer
+            : scheme.secondaryContainer,
         child: Icon(
           isOwner ? Icons.star_rounded : Icons.person_rounded,
-          color: isSelf ? scheme.onPrimaryContainer : scheme.onSecondaryContainer,
+          color: isSelf
+              ? scheme.onPrimaryContainer
+              : scheme.onSecondaryContainer,
         ),
       ),
     );
   }
 }
 
-String _formatTime(DateTime t) => '${t.toLocal().hour.toString().padLeft(2, '0')}:${t.toLocal().minute.toString().padLeft(2, '0')}';
+String _formatTime(DateTime t) =>
+    '${t.toLocal().hour.toString().padLeft(2, '0')}:${t.toLocal().minute.toString().padLeft(2, '0')}';
+
+String _formatDeadline(DateTime t) {
+  final local = t.toLocal();
+  return '${local.month}/${local.day} ${_formatTime(local)}';
+}
 
 /// 反饋：「房間資訊也太少，至少顯示活動資訊吧，然後目前最少幾人成立之類的」
 /// ——把 Request 上已有的活動類型、時間範圍、人數門檻顯示出來，讓等待中的
@@ -426,7 +527,9 @@ class _RequestInfoCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final typeAsync = ref.watch(activityTypeByIdProvider(request.activityTypeId));
+    final typeAsync = ref.watch(
+      activityTypeByIdProvider(request.activityTypeId),
+    );
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -445,9 +548,9 @@ class _RequestInfoCard extends ConsumerWidget {
                   error: (_, _) => Text('（未知活動）', style: textTheme.titleMedium),
                   data: (type) => Text(
                     type?.name ?? '（未知活動）',
-                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -487,22 +590,33 @@ class _RequestInfoCard extends ConsumerWidget {
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
-                Icon(Icons.military_tech_rounded, size: 20, color: scheme.primary),
+                Icon(
+                  Icons.military_tech_rounded,
+                  size: 20,
+                  color: scheme.primary,
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text('程度：${skillLevelLabel(request.skillLevel!)}', style: textTheme.bodyMedium),
+                  child: Text(
+                    '程度：${skillLevelLabel(request.skillLevel!)}',
+                    style: textTheme.bodyMedium,
+                  ),
                 ),
               ],
             ),
           ],
-          if (request.studyTarget != null && request.studyTarget!.isNotEmpty) ...[
+          if (request.studyTarget != null &&
+              request.studyTarget!.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
                 Icon(Icons.menu_book_rounded, size: 20, color: scheme.primary),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text('讀書目標：${request.studyTarget}', style: textTheme.bodyMedium),
+                  child: Text(
+                    '讀書目標：${request.studyTarget}',
+                    style: textTheme.bodyMedium,
+                  ),
                 ),
               ],
             ),
@@ -516,7 +630,9 @@ class _RequestInfoCard extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     '允許人數調整',
-                    style: textTheme.bodySmall?.copyWith(color: scheme.tertiary),
+                    style: textTheme.bodySmall?.copyWith(
+                      color: scheme.tertiary,
+                    ),
                   ),
                 ),
               ],
@@ -532,8 +648,6 @@ class _RequestInfoCard extends ConsumerWidget {
                 child: Text(
                   '${schoolLabel(request.school)} ${request.campus}',
                   style: textTheme.bodyMedium,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -555,25 +669,88 @@ class _TransitionedState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (message, destination, buttonLabel) = switch (status) {
-      REQUEST_STATUS.PENDING_CONFIRMATION => ('配對到人了！去「我的活動」完成小人數安全確認。', '/my-activities', '前往我的活動'),
-      REQUEST_STATUS.MATCHED => ('配對成功！去「我的活動」看詳情。', '/my-activities', '前往我的活動'),
-      REQUEST_STATUS.EXPIRED => ('這次配對沒有成立，別擔心，可以重新發起新的邀約。', '/match', '回配對頁'),
-      REQUEST_STATUS.CANCELLED => ('這個配對已經取消了。', '/match', '回配對頁'),
-      _ => ('狀態已變更：${status.name}', '/match', '回配對頁'),
-    };
+    final content = waitingRoomStatusContent(status);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppCard(child: Text(message, textAlign: TextAlign.center)),
-            const SizedBox(height: AppSpacing.lg),
-            AppButton(label: buttonLabel, onPressed: () => context.go(destination)),
-          ],
+        child: AppStatusSummary(
+          title: content.title,
+          message: content.message,
+          leading: Icon(
+            content.icon,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          action: SizedBox(
+            width: double.infinity,
+            child: AppButton(
+              label: content.actionLabel,
+              onPressed: () => context.go(content.destination),
+            ),
+          ),
         ),
       ),
     );
   }
 }
+
+class WaitingRoomStatusContent {
+  const WaitingRoomStatusContent({
+    required this.title,
+    required this.message,
+    required this.actionLabel,
+    required this.destination,
+    required this.icon,
+  });
+
+  final String title;
+  final String message;
+  final String actionLabel;
+  final String destination;
+  final IconData icon;
+}
+
+WaitingRoomStatusContent waitingRoomStatusContent(REQUEST_STATUS status) =>
+    switch (status) {
+      REQUEST_STATUS.REQUESTING => const WaitingRoomStatusContent(
+        title: '正在幫你找人',
+        message: '系統會持續配對，也可以邀請朋友加入這個房間。',
+        actionLabel: '邀請朋友',
+        destination: '/waiting-room',
+        icon: Icons.people_outline,
+      ),
+      REQUEST_STATUS.PENDING_CONFIRMATION => const WaitingRoomStatusContent(
+        title: '找到候選夥伴',
+        message: '已找到候選夥伴，請前往「我的活動」完成小人數安全確認。',
+        actionLabel: '前往我的活動',
+        destination: '/my-activities',
+        icon: Icons.verified_user_outlined,
+      ),
+      REQUEST_STATUS.MATCHED => const WaitingRoomStatusContent(
+        title: '配對成功',
+        message: '夥伴都確認了，前往「我的活動」查看活動詳情。',
+        actionLabel: '前往我的活動',
+        destination: '/my-activities',
+        icon: Icons.celebration_outlined,
+      ),
+      REQUEST_STATUS.EXPIRED => const WaitingRoomStatusContent(
+        title: '這次沒有成團',
+        message: '這次配對沒有成立，別擔心，可以重新發起新的邀約。',
+        actionLabel: '回配對頁',
+        destination: '/match',
+        icon: Icons.schedule_outlined,
+      ),
+      REQUEST_STATUS.CANCELLED => const WaitingRoomStatusContent(
+        title: '配對已取消',
+        message: '這個配對已經關閉，你可以回配對頁再找一次。',
+        actionLabel: '回配對頁',
+        destination: '/match',
+        icon: Icons.cancel_outlined,
+      ),
+      _ => WaitingRoomStatusContent(
+        title: '配對狀態已更新',
+        message: '狀態已變更：${status.name}',
+        actionLabel: '回配對頁',
+        destination: '/match',
+        icon: Icons.info_outline,
+      ),
+    };

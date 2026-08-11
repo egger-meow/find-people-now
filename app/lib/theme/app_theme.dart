@@ -38,6 +38,7 @@ abstract final class AppRadius {
   static const sm = 12.0;
   static const md = 16.0;
   static const lg = 24.0;
+  static const glass = 28.0;
   static const pill = 999.0;
 }
 
@@ -67,12 +68,77 @@ abstract final class AppMotion {
   /// 用法是把時長歸零而不是拆掉 widget：動畫結束狀態仍然是正確的 UI 狀態，
   /// 只是瞬間到位，呼叫端不需要為了無障礙寫第二套 build 分支。
   static Duration duration(BuildContext context, Duration value) =>
-      MediaQuery.maybeDisableAnimationsOf(context) ?? false ? Duration.zero : value;
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false
+      ? Duration.zero
+      : value;
 
   /// 「這個情境該不該做裝飾性動畫」的單一判斷點——用於進場交錯、shimmer
   /// 這類純粹為了觀感存在、拿掉也不影響理解的效果。
   static bool allowsDecorative(BuildContext context) =>
       !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+}
+
+/// Calm-glass surfaces use semantic colors so screens never need to carry
+/// their own translucency, borders, or ambient background colors.
+class AppSurfaceColors extends ThemeExtension<AppSurfaceColors> {
+  const AppSurfaceColors({
+    required this.glass,
+    required this.glassBorder,
+    required this.hairline,
+    required this.ambientStart,
+    required this.ambientEnd,
+  });
+
+  static const light = AppSurfaceColors(
+    glass: Color(0xE6FFFCF7),
+    glassBorder: Color(0x33726F68),
+    hairline: Color(0x1F56534E),
+    ambientStart: Color(0xFFE5F6EF),
+    ambientEnd: Color(0xFFEAF5FA),
+  );
+
+  static const dark = AppSurfaceColors(
+    glass: Color(0xE61A1B1A),
+    glassBorder: Color(0x4DF2EFEA),
+    hairline: Color(0x33F2EFEA),
+    ambientStart: Color(0xFF18382E),
+    ambientEnd: Color(0xFF172F3A),
+  );
+
+  final Color glass;
+  final Color glassBorder;
+  final Color hairline;
+  final Color ambientStart;
+  final Color ambientEnd;
+
+  @override
+  AppSurfaceColors copyWith({
+    Color? glass,
+    Color? glassBorder,
+    Color? hairline,
+    Color? ambientStart,
+    Color? ambientEnd,
+  }) {
+    return AppSurfaceColors(
+      glass: glass ?? this.glass,
+      glassBorder: glassBorder ?? this.glassBorder,
+      hairline: hairline ?? this.hairline,
+      ambientStart: ambientStart ?? this.ambientStart,
+      ambientEnd: ambientEnd ?? this.ambientEnd,
+    );
+  }
+
+  @override
+  AppSurfaceColors lerp(covariant AppSurfaceColors? other, double t) {
+    if (other == null) return this;
+    return AppSurfaceColors(
+      glass: Color.lerp(glass, other.glass, t)!,
+      glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
+      hairline: Color.lerp(hairline, other.hairline, t)!,
+      ambientStart: Color.lerp(ambientStart, other.ambientStart, t)!,
+      ambientEnd: Color.lerp(ambientEnd, other.ambientEnd, t)!,
+    );
+  }
 }
 
 abstract final class AppTheme {
@@ -97,14 +163,26 @@ abstract final class AppTheme {
   static TextTheme _textTheme() {
     // 標題群：收緊行高、字重加到 w600/w700 建立層級（guideline:
     // weight-hierarchy——用字重而不是只用字級拉開層次）。
-    const heading = TextStyle(height: 1.3, letterSpacing: 0, fontWeight: FontWeight.w700);
-    const title = TextStyle(height: 1.35, letterSpacing: 0, fontWeight: FontWeight.w600);
+    const heading = TextStyle(
+      height: 1.3,
+      letterSpacing: 0,
+      fontWeight: FontWeight.w700,
+    );
+    const title = TextStyle(
+      height: 1.35,
+      letterSpacing: 0,
+      fontWeight: FontWeight.w600,
+    );
     // 內文群：行高 1.55（落在 guideline 建議的 1.5–1.75 內、偏保守端，
     // 因為卡片式版面段落都很短，拉太開反而散）。
-    const body = TextStyle(height: 1.55, letterSpacing: 0);
+    const body = TextStyle(fontSize: 16, height: 1.55, letterSpacing: 0);
     // 標籤群：狀態晶片、按鈕文字這類短字串，行高不需要那麼鬆，
     // 字重 w500 讓它在卡片裡站得住。
-    const label = TextStyle(height: 1.3, letterSpacing: 0, fontWeight: FontWeight.w500);
+    const label = TextStyle(
+      height: 1.3,
+      letterSpacing: 0,
+      fontWeight: FontWeight.w500,
+    );
 
     return const TextTheme(
       displayLarge: heading,
@@ -130,7 +208,9 @@ abstract final class AppTheme {
     // 欄位才不會沾到綠色調）；亮色模式維持原本品牌綠 seed，沒人反應那邊有
     // 問題，不動它。
     var scheme = ColorScheme.fromSeed(
-      seedColor: brightness == Brightness.dark ? Colors.grey : AppColors.seedGreen,
+      seedColor: brightness == Brightness.dark
+          ? Colors.grey
+          : AppColors.seedGreen,
       brightness: brightness,
       secondary: AppColors.skyBlue,
       tertiary: AppColors.warmYellow,
@@ -138,11 +218,27 @@ abstract final class AppTheme {
     if (brightness == Brightness.dark) {
       scheme = scheme.copyWith(
         surface: AppColors.darkSurface,
-        surfaceContainerLowest: Color.lerp(AppColors.darkSurface, Colors.black, 0.35),
-        surfaceContainerLow: Color.lerp(AppColors.darkSurface, Colors.white, 0.03),
+        surfaceContainerLowest: Color.lerp(
+          AppColors.darkSurface,
+          Colors.black,
+          0.35,
+        ),
+        surfaceContainerLow: Color.lerp(
+          AppColors.darkSurface,
+          Colors.white,
+          0.03,
+        ),
         surfaceContainer: Color.lerp(AppColors.darkSurface, Colors.white, 0.05),
-        surfaceContainerHigh: Color.lerp(AppColors.darkSurface, Colors.white, 0.08),
-        surfaceContainerHighest: Color.lerp(AppColors.darkSurface, Colors.white, 0.12),
+        surfaceContainerHigh: Color.lerp(
+          AppColors.darkSurface,
+          Colors.white,
+          0.08,
+        ),
+        surfaceContainerHighest: Color.lerp(
+          AppColors.darkSurface,
+          Colors.white,
+          0.12,
+        ),
         onSurface: AppColors.darkOnSurface,
         onSurfaceVariant: AppColors.darkOnSurfaceVariant,
         outline: AppColors.darkOutline,
@@ -161,6 +257,11 @@ abstract final class AppTheme {
       textTheme: _textTheme(),
       scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.standard,
+      extensions: [
+        brightness == Brightness.dark
+            ? AppSurfaceColors.dark
+            : AppSurfaceColors.light,
+      ],
       // iOS HIG：標題置中、44pt 高度、無 Material 3 的 tonal 上色（surfaceTint）
       // ——那個「往下捲動就整條變色」的效果是 Material 特有語言，套用在 iOS
       // 上反而不像原生導覽列。Android 維持原本靠左標題＋捲動變色。
@@ -238,7 +339,10 @@ abstract final class AppTheme {
         backgroundColor: scheme.surfaceContainerHighest,
         selectedColor: scheme.primaryContainer,
         labelStyle: TextStyle(color: scheme.onSurface),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,

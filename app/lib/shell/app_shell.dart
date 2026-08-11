@@ -8,7 +8,9 @@ import '../downgrade/downgrade_consent_dialog.dart';
 import '../notifications/notification_providers.dart';
 import '../onboarding/onboarding_overlay.dart';
 import '../theme/app_haptics.dart';
+import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
+import '../widgets/app_glass_surface.dart';
 
 /// UI_PLAN.md §1 — 底部導覽（4 個主 tab）。`StatefulShellRoute.indexedStack`
 /// 讓每個分支保留自己的 Navigator 堆疊跟捲動位置（切 tab 不會重置正在看的
@@ -44,7 +46,10 @@ class AppShell extends ConsumerWidget {
       if (index == 1) {
         invalidateMyActivityList(ref);
       }
-      navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
+      navigationShell.goBranch(
+        index,
+        initialLocation: index == navigationShell.currentIndex,
+      );
     }
 
     return OnboardingGate(
@@ -52,33 +57,24 @@ class AppShell extends ConsumerWidget {
         child: Scaffold(
           body: navigationShell,
           bottomNavigationBar: isCupertino
-              ? CupertinoTabBar(
+              ? _IosBottomNavigation(
                   currentIndex: navigationShell.currentIndex,
-                  onTap: onDestinationSelected,
-                  items: [
-                    const BottomNavigationBarItem(icon: Icon(CupertinoIcons.compass), activeIcon: Icon(CupertinoIcons.compass_fill), label: '首頁'),
-                    const BottomNavigationBarItem(
-                      icon: Icon(CupertinoIcons.calendar),
-                      activeIcon: Icon(CupertinoIcons.calendar_today),
-                      label: '活動',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: _CupertinoBadgeIcon(count: unreadCount, icon: const Icon(CupertinoIcons.bell)),
-                      activeIcon: _CupertinoBadgeIcon(count: unreadCount, icon: const Icon(CupertinoIcons.bell_fill)),
-                      label: '通知',
-                    ),
-                    const BottomNavigationBarItem(icon: Icon(CupertinoIcons.person), activeIcon: Icon(CupertinoIcons.person_fill), label: '帳戶'),
-                  ],
+                  unreadCount: unreadCount,
+                  onDestinationSelected: onDestinationSelected,
                 )
               : NavigationBar(
                   selectedIndex: navigationShell.currentIndex,
                   onDestinationSelected: onDestinationSelected,
                   destinations: [
-                    const NavigationDestination(icon: Icon(Icons.explore_outlined), selectedIcon: Icon(Icons.explore_rounded), label: '首頁'),
+                    const NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore_rounded),
+                      label: '探索',
+                    ),
                     const NavigationDestination(
                       icon: Icon(Icons.event_note_outlined),
                       selectedIcon: Icon(Icons.event_note_rounded),
-                      label: '活動',
+                      label: '我的活動',
                     ),
                     NavigationDestination(
                       icon: Badge(
@@ -93,9 +89,74 @@ class AppShell extends ConsumerWidget {
                       ),
                       label: '通知',
                     ),
-                    const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: '帳戶'),
+                    const NavigationDestination(
+                      icon: Icon(Icons.person_outline_rounded),
+                      selectedIcon: Icon(Icons.person_rounded),
+                      label: '個人',
+                    ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IosBottomNavigation extends StatelessWidget {
+  const _IosBottomNavigation({
+    required this.currentIndex,
+    required this.unreadCount,
+    required this.onDestinationSelected,
+  });
+
+  final int currentIndex;
+  final int unreadCount;
+  final ValueChanged<int> onDestinationSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = Theme.of(context).extension<AppSurfaceColors>()!;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: surface.hairline)),
+      ),
+      child: AppGlassSurface(
+        padding: EdgeInsets.zero,
+        borderRadius: BorderRadius.zero,
+        child: CupertinoTabBar(
+          currentIndex: currentIndex,
+          onTap: onDestinationSelected,
+          backgroundColor: Colors.transparent,
+          border: const Border(top: BorderSide(color: Colors.transparent)),
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(CupertinoIcons.compass),
+              activeIcon: Icon(CupertinoIcons.compass_fill),
+              label: '探索',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(CupertinoIcons.calendar),
+              activeIcon: Icon(CupertinoIcons.calendar_today),
+              label: '我的活動',
+            ),
+            BottomNavigationBarItem(
+              icon: _CupertinoBadgeIcon(
+                count: unreadCount,
+                icon: const Icon(CupertinoIcons.bell),
+              ),
+              activeIcon: _CupertinoBadgeIcon(
+                count: unreadCount,
+                icon: const Icon(CupertinoIcons.bell_fill),
+              ),
+              label: '通知',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(CupertinoIcons.person),
+              activeIcon: Icon(CupertinoIcons.person_fill),
+              label: '個人',
+            ),
+          ],
         ),
       ),
     );
@@ -123,11 +184,18 @@ class _CupertinoBadgeIcon extends StatelessWidget {
           right: -8,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(color: CupertinoColors.systemRed, borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemRed,
+              borderRadius: BorderRadius.circular(8),
+            ),
             constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
             child: Text(
               '$count',
-              style: const TextStyle(color: CupertinoColors.white, fontSize: 10, height: 1.1),
+              style: const TextStyle(
+                color: CupertinoColors.white,
+                fontSize: 10,
+                height: 1.1,
+              ),
               textAlign: TextAlign.center,
             ),
           ),

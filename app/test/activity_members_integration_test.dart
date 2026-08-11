@@ -24,7 +24,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:find_people_now/activities/activity_detail_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -38,6 +40,7 @@ import 'package:find_people_now/rpc/confirmation_rpc.dart';
 import 'package:find_people_now/rpc/match_request_rpc.dart';
 import 'package:find_people_now/rpc/report_rpc.dart';
 import 'package:find_people_now/rpc/user_block_rpc.dart';
+import 'package:find_people_now/theme/app_theme.dart';
 
 import 'local_supabase_guard.dart';
 
@@ -55,13 +58,20 @@ Future<SupabaseClient> _createAndSignIn(
       'Authorization': 'Bearer $serviceRoleKey',
       'Content-Type': 'application/json',
     },
-    body: jsonEncode({'email': email, 'password': password, 'email_confirm': true}),
+    body: jsonEncode({
+      'email': email,
+      'password': password,
+      'email_confirm': true,
+    }),
   );
   if (createRes.statusCode != 200 && createRes.statusCode != 201) {
     throw Exception('admin user create failed for $email: ${createRes.body}');
   }
   final client = SupabaseClient(supabaseUrl, anonKey);
-  final authRes = await client.auth.signInWithPassword(email: email, password: password);
+  final authRes = await client.auth.signInWithPassword(
+    email: email,
+    password: password,
+  );
   if (authRes.session == null) {
     throw Exception('sign-in failed for $email');
   }
@@ -114,6 +124,7 @@ void main() {
   late String serviceRoleKey;
 
   setUpAll(() async {
+    HttpOverrides.global = null;
     await dotenv.load();
     supabaseUrl = dotenv.get('SUPABASE_URL');
     assertLocalSupabaseUrl(supabaseUrl);
@@ -121,63 +132,103 @@ void main() {
     serviceRoleKey = dotenv.get('SUPABASE_SERVICE_ROLE_KEY');
   });
 
-  test(
-    'get_activity_contacts (incl. real 24h expiry) + get_activity_member_profiles '
-    '+ block/unblock/report — all against a real MATCHED activity',
-    () async {
-      final stamp = DateTime.now().millisecondsSinceEpoch;
-      const password = 'activity-members-verify-password-123!';
+  testWidgets('成員聯絡權限與安全管理在 200% 字級仍有明確標題、後果與 44pt 操作', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const ActivityMemberContactSection(contacts: null),
+                  const SizedBox(height: AppSpacing.md),
+                  ActivityMemberSafetyActions(
+                    blocking: false,
+                    openingReport: false,
+                    onBlock: () {},
+                    onReport: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
 
-      final clientA = await _createAndSignIn(
-        supabaseUrl,
-        anonKey,
-        serviceRoleKey,
-        'am-a-$stamp@nycu.edu.tw',
-        password,
-      );
-      final clientB = await _createAndSignIn(
-        supabaseUrl,
-        anonKey,
-        serviceRoleKey,
-        'am-b-$stamp@nycu.edu.tw',
-        password,
-      );
-      final userAId = clientA.auth.currentUser!.id;
-      final userBId = clientB.auth.currentUser!.id;
-      // ignore: avoid_print
-      print('[setup] userA=$userAId userB=$userBId');
+    expect(find.text('聯絡方式尚未開放（配對成立 24 小時內，或雙方都按過「再約」才看得到）'), findsOneWidget);
+    expect(find.text('安全與管理'), findsOneWidget);
+    expect(find.text('封鎖後未來不會再配對在一起；檢舉會交由平台處理。'), findsOneWidget);
+    expect(find.text('封鎖'), findsOneWidget);
+    expect(find.text('檢舉'), findsOneWidget);
+    for (final key in const [
+      Key('activity-member-block'),
+      Key('activity-member-report'),
+    ]) {
+      expect(tester.getSize(find.byKey(key)).height, greaterThanOrEqualTo(44));
+    }
+    expect(tester.takeException(), isNull);
+  });
 
-      await completeProfile(
-        clientA,
-        displayName: 'ActivityMembers User A',
-        avatarUrl: 'https://example.com/am-a.png',
-        degreeLevel: DEGREE_LEVEL.MASTER,
-        department: '資工',
-        bio: 'Hi there',
-        contactLine: 'am_a_line',
-      );
-      await completeProfile(
-        clientB,
-        displayName: 'ActivityMembers User B',
-        avatarUrl: 'https://example.com/am-b.png',
-        degreeLevel: DEGREE_LEVEL.PHD,
-        department: '應數',
-        bio: 'Hi there',
-        contactLine: 'am_b_line',
-      );
+  test('get_activity_contacts (incl. real 24h expiry) + get_activity_member_profiles '
+      '+ block/unblock/report — all against a real MATCHED activity', () async {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    const password = 'activity-members-verify-password-123!';
 
-      // 自己的校區字串（不用共用的 '光復'）——matching engine 依
-      // (activity_type_id, school, campus) 分組掃描 REQUESTING 池，純粹避免
-      // 跟其他測試檔並行執行時互相撈到對方的 request，見
-      // activity_detail_integration_test.dart 的同一則註解。這個檔案雖然沒有
-      // 地點投票流程，但 create_request 本身仍要求該 (school, campus) 至少有
-      // 一筆 APPROVED location（見 API.md campus scope 驗證），所以還是要種一筆。
-      final testCampus = 'AMT測試區$stamp';
-      await _psqlScalar('''
+    final clientA = await _createAndSignIn(
+      supabaseUrl,
+      anonKey,
+      serviceRoleKey,
+      'am-a-$stamp@nycu.edu.tw',
+      password,
+    );
+    final clientB = await _createAndSignIn(
+      supabaseUrl,
+      anonKey,
+      serviceRoleKey,
+      'am-b-$stamp@nycu.edu.tw',
+      password,
+    );
+    final userAId = clientA.auth.currentUser!.id;
+    final userBId = clientB.auth.currentUser!.id;
+    // ignore: avoid_print
+    print('[setup] userA=$userAId userB=$userBId');
+
+    await completeProfile(
+      clientA,
+      displayName: 'ActivityMembers User A',
+      avatarUrl: 'https://example.com/am-a.png',
+      degreeLevel: DEGREE_LEVEL.MASTER,
+      department: '資工',
+      bio: 'Hi there',
+      contactLine: 'am_a_line',
+    );
+    await completeProfile(
+      clientB,
+      displayName: 'ActivityMembers User B',
+      avatarUrl: 'https://example.com/am-b.png',
+      degreeLevel: DEGREE_LEVEL.PHD,
+      department: '應數',
+      bio: 'Hi there',
+      contactLine: 'am_b_line',
+    );
+
+    // 自己的校區字串（不用共用的 '光復'）——matching engine 依
+    // (activity_type_id, school, campus) 分組掃描 REQUESTING 池，純粹避免
+    // 跟其他測試檔並行執行時互相撈到對方的 request，見
+    // activity_detail_integration_test.dart 的同一則註解。這個檔案雖然沒有
+    // 地點投票流程，但 create_request 本身仍要求該 (school, campus) 至少有
+    // 一筆 APPROVED location（見 API.md campus scope 驗證），所以還是要種一筆。
+    final testCampus = 'AMT測試區$stamp';
+    await _psqlScalar('''
         insert into location (school, campus, name, status, is_active)
         values ('NYCU', '$testCampus', 'AMT測試地點$stamp', 'APPROVED', true);
       ''');
-      await _psqlScalar('''
+    await _psqlScalar('''
         with hist_activity as (
           insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
           select id, 'NYCU', '$testCampus', now() - interval '10 days',
@@ -190,172 +241,233 @@ void main() {
         from hist_activity, (values ('$userAId'::uuid), ('$userBId'::uuid)) as u(uid);
       ''');
 
-      final types = await searchActivityType(clientA, query: '咖啡');
-      final coffeeId = types.firstWhere((t) => t.name == '吃飯/咖啡/探店').id;
+    final types = await searchActivityType(clientA, query: '咖啡');
+    final coffeeId = types.firstWhere((t) => t.name == '吃飯/咖啡/探店').id;
 
-      final requestA = await createRequest(
-        clientA,
-        activityTypeId: coffeeId,
-        campus: testCampus,
-        earliestStart: DateTime.now().toUtc(),
-        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
-        minParticipants: 2,
-      );
-      await submitRequest(clientA, requestA.id);
-      final requestB = await createRequest(
-        clientB,
-        activityTypeId: coffeeId,
-        campus: testCampus,
-        earliestStart: DateTime.now().toUtc(),
-        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
-        minParticipants: 2,
-      );
-      await submitRequest(clientB, requestB.id);
+    final requestA = await createRequest(
+      clientA,
+      activityTypeId: coffeeId,
+      campus: testCampus,
+      earliestStart: DateTime.now().toUtc(),
+      latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
+      minParticipants: 2,
+    );
+    await submitRequest(clientA, requestA.id);
+    final requestB = await createRequest(
+      clientB,
+      activityTypeId: coffeeId,
+      campus: testCampus,
+      earliestStart: DateTime.now().toUtc(),
+      latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
+      minParticipants: 2,
+    );
+    await submitRequest(clientB, requestB.id);
 
-      await _runMatchingEngineUntil(() async {
-        try {
-          final s = await getPendingConfirmationStatus(clientA, requestA.id);
-          return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
-        } on ApiException {
-          return false;
-        }
-      });
+    await _runMatchingEngineUntil(() async {
+      try {
+        final s = await getPendingConfirmationStatus(clientA, requestA.id);
+        return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
+      } on ApiException {
+        return false;
+      }
+    });
 
-      final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
-      final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
-      await respondPendingConfirmation(
-        clientA,
-        pendingConfirmationId: statusForA.pendingConfirmationId,
-        confirm: true,
-      );
-      await respondPendingConfirmation(
-        clientB,
-        pendingConfirmationId: statusForB.pendingConfirmationId,
-        confirm: true,
-      );
+    final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
+    final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
+    await respondPendingConfirmation(
+      clientA,
+      pendingConfirmationId: statusForA.pendingConfirmationId,
+      confirm: true,
+    );
+    await respondPendingConfirmation(
+      clientB,
+      pendingConfirmationId: statusForB.pendingConfirmationId,
+      confirm: true,
+    );
 
-      final memberRows =
-          await clientB.from('activity_member').select('activity_id').eq('user_id', userBId);
-      final activityId = memberRows.first['activity_id'] as String;
-      // ignore: avoid_print
-      print('[setup] reached MATCHED activity_id=$activityId');
+    final memberRows = await clientB
+        .from('activity_member')
+        .select('activity_id')
+        .eq('user_id', userBId);
+    final activityId = memberRows.first['activity_id'] as String;
+    // ignore: avoid_print
+    print('[setup] reached MATCHED activity_id=$activityId');
 
-      // -----------------------------------------------------------------
-      // 1. get_activity_contacts: real call, first time ever from the Dart
-      //    wrapper layer. Fresh activity -> now() < contact_visible_until,
-      //    so contacts must be non-null for both sides immediately.
-      // -----------------------------------------------------------------
-      final contactsForA = await getActivityContacts(clientA, activityId);
-      expect(contactsForA.members.length, 2);
-      final bFromA = contactsForA.members.firstWhere((m) => m.userId == userBId);
-      expect(bFromA.displayName, 'ActivityMembers User B');
-      expect(bFromA.contacts, isNotNull, reason: 'fresh activity: within 24h window, contacts must be visible');
-      expect(bFromA.contacts!.contactLine, 'am_b_line');
-      // ignore: avoid_print
-      print('[get_activity_contacts] within 24h window: contacts correctly visible');
+    // -----------------------------------------------------------------
+    // 1. get_activity_contacts: real call, first time ever from the Dart
+    //    wrapper layer. Fresh activity -> now() < contact_visible_until,
+    //    so contacts must be non-null for both sides immediately.
+    // -----------------------------------------------------------------
+    final contactsForA = await getActivityContacts(clientA, activityId);
+    expect(contactsForA.members.length, 2);
+    final bFromA = contactsForA.members.firstWhere((m) => m.userId == userBId);
+    expect(bFromA.displayName, 'ActivityMembers User B');
+    expect(
+      bFromA.contacts,
+      isNotNull,
+      reason: 'fresh activity: within 24h window, contacts must be visible',
+    );
+    expect(bFromA.contacts!.contactLine, 'am_b_line');
+    // ignore: avoid_print
+    print(
+      '[get_activity_contacts] within 24h window: contacts correctly visible',
+    );
 
-      // -----------------------------------------------------------------
-      // 2. get_activity_member_profiles (v1.23, new this round): real
-      //    school/department/degree_level/reliability_tier for both members.
-      // -----------------------------------------------------------------
-      final profilesForA = await getActivityMemberProfiles(clientA, activityId);
-      expect(profilesForA.length, 2);
-      final bProfile = profilesForA.firstWhere((p) => p.userId == userBId);
-      expect(bProfile.department, '應數');
-      expect(bProfile.degreeLevel, DEGREE_LEVEL.PHD);
-      expect(bProfile.school, SCHOOL.NYCU);
-      expect(bProfile.reliabilityTier, isNot(ReliabilityTier.unknown));
-      final aProfile = profilesForA.firstWhere((p) => p.userId == userAId);
-      expect(aProfile.department, '資工');
-      // ignore: avoid_print
-      print(
-        '[get_activity_member_profiles] A sees B: dept=${bProfile.department} '
-        'degree=${bProfile.degreeLevel.name} tier=${bProfile.reliabilityTier.name}',
-      );
+    // -----------------------------------------------------------------
+    // 2. get_activity_member_profiles (v1.23, new this round): real
+    //    school/department/degree_level/reliability_tier for both members.
+    // -----------------------------------------------------------------
+    final profilesForA = await getActivityMemberProfiles(clientA, activityId);
+    expect(profilesForA.length, 2);
+    final bProfile = profilesForA.firstWhere((p) => p.userId == userBId);
+    expect(bProfile.department, '應數');
+    expect(bProfile.degreeLevel, DEGREE_LEVEL.PHD);
+    expect(bProfile.school, SCHOOL.NYCU);
+    expect(bProfile.reliabilityTier, isNot(ReliabilityTier.unknown));
+    final aProfile = profilesForA.firstWhere((p) => p.userId == userAId);
+    expect(aProfile.department, '資工');
+    // ignore: avoid_print
+    print(
+      '[get_activity_member_profiles] A sees B: dept=${bProfile.department} '
+      'degree=${bProfile.degreeLevel.name} tier=${bProfile.reliabilityTier.name}',
+    );
 
-      // -----------------------------------------------------------------
-      // 3. The exact roster merge activityMemberRosterProvider performs:
-      //    activity_member direct select + the two RPCs above, joined by
-      //    user_id.
-      // -----------------------------------------------------------------
-      final memberRowsForRoster =
-          await clientA.from('activity_member').select().eq('activity_id', activityId);
-      expect(memberRowsForRoster.length, 2);
-      final sourceRequestIds =
-          memberRowsForRoster.map((r) => r['source_request_id'] as String).toSet();
-      expect(sourceRequestIds.length, 2, reason: 'A and B joined via two separate requests, not one shared invite link');
-      // ignore: avoid_print
-      print('[activity_member direct select] roster merge inputs all present');
+    // -----------------------------------------------------------------
+    // 3. The exact roster merge activityMemberRosterProvider performs:
+    //    activity_member direct select + the two RPCs above, joined by
+    //    user_id.
+    // -----------------------------------------------------------------
+    final memberRowsForRoster = await clientA
+        .from('activity_member')
+        .select()
+        .eq('activity_id', activityId);
+    expect(memberRowsForRoster.length, 2);
+    final sourceRequestIds = memberRowsForRoster
+        .map((r) => r['source_request_id'] as String)
+        .toSet();
+    expect(
+      sourceRequestIds.length,
+      2,
+      reason:
+          'A and B joined via two separate requests, not one shared invite link',
+    );
+    // ignore: avoid_print
+    print('[activity_member direct select] roster merge inputs all present');
 
-      // -----------------------------------------------------------------
-      // 4. Real 24h expiry: backdate contact_visible_until into the past ->
-      //    get_activity_contacts must now return null contacts (not throw).
-      // -----------------------------------------------------------------
-      await _psqlScalar(
-        "update activity set contact_visible_until = now() - interval '1 minute' where id='$activityId';",
-      );
-      final contactsForAAfterExpiry = await getActivityContacts(clientA, activityId);
-      final bFromAAfterExpiry = contactsForAAfterExpiry.members.firstWhere((m) => m.userId == userBId);
-      expect(bFromAAfterExpiry.contacts, isNull, reason: 'past contact_visible_until, no mutual rematch -> null');
-      expect(bFromAAfterExpiry.displayName, 'ActivityMembers User B', reason: 'display_name stays visible even after contact expiry');
-      // ignore: avoid_print
-      print('[get_activity_contacts] after backdating contact_visible_until: contacts correctly null, name still shown');
+    // -----------------------------------------------------------------
+    // 4. Real 24h expiry: backdate contact_visible_until into the past ->
+    //    get_activity_contacts must now return null contacts (not throw).
+    // -----------------------------------------------------------------
+    await _psqlScalar(
+      "update activity set contact_visible_until = now() - interval '1 minute' where id='$activityId';",
+    );
+    final contactsForAAfterExpiry = await getActivityContacts(
+      clientA,
+      activityId,
+    );
+    final bFromAAfterExpiry = contactsForAAfterExpiry.members.firstWhere(
+      (m) => m.userId == userBId,
+    );
+    expect(
+      bFromAAfterExpiry.contacts,
+      isNull,
+      reason: 'past contact_visible_until, no mutual rematch -> null',
+    );
+    expect(
+      bFromAAfterExpiry.displayName,
+      'ActivityMembers User B',
+      reason: 'display_name stays visible even after contact expiry',
+    );
+    // ignore: avoid_print
+    print(
+      '[get_activity_contacts] after backdating contact_visible_until: contacts correctly null, name still shown',
+    );
 
-      // -----------------------------------------------------------------
-      // 5. block_user / unblock_user: real idempotent round-trip via the
-      //    exact own_blocks_select query, plus self-block rejection.
-      // -----------------------------------------------------------------
-      await expectLater(
-        blockUser(clientA, blockedId: userAId),
-        throwsA(isA<ApiException>().having((e) => e.code, 'code', ApiErrorCode.invalidInput)),
-      );
-      // ignore: avoid_print
-      print('[block_user] self-block correctly rejected with INVALID_INPUT');
+    // -----------------------------------------------------------------
+    // 5. block_user / unblock_user: real idempotent round-trip via the
+    //    exact own_blocks_select query, plus self-block rejection.
+    // -----------------------------------------------------------------
+    await expectLater(
+      blockUser(clientA, blockedId: userAId),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.code,
+          'code',
+          ApiErrorCode.invalidInput,
+        ),
+      ),
+    );
+    // ignore: avoid_print
+    print('[block_user] self-block correctly rejected with INVALID_INPUT');
 
-      await blockUser(clientA, blockedId: userBId, reason: 'test block');
-      final blockRows = await clientA.from('user_block').select().eq('blocker_id', userAId);
-      expect(blockRows.length, 1);
-      expect(blockRows.first['blocked_id'], userBId);
-      expect(blockRows.first['reason'], 'test block');
-      // ignore: avoid_print
-      print('[block_user] real block row created, visible via own_blocks_select');
+    await blockUser(clientA, blockedId: userBId, reason: 'test block');
+    final blockRows = await clientA
+        .from('user_block')
+        .select()
+        .eq('blocker_id', userAId);
+    expect(blockRows.length, 1);
+    expect(blockRows.first['blocked_id'], userBId);
+    expect(blockRows.first['reason'], 'test block');
+    // ignore: avoid_print
+    print('[block_user] real block row created, visible via own_blocks_select');
 
-      // Idempotent repeat-block just overwrites reason, no second row.
-      await blockUser(clientA, blockedId: userBId, reason: 'updated reason');
-      final blockRowsAfterRepeat = await clientA.from('user_block').select().eq('blocker_id', userAId);
-      expect(blockRowsAfterRepeat.length, 1, reason: 'repeat block must not create a second row');
-      expect(blockRowsAfterRepeat.first['reason'], 'updated reason');
+    // Idempotent repeat-block just overwrites reason, no second row.
+    await blockUser(clientA, blockedId: userBId, reason: 'updated reason');
+    final blockRowsAfterRepeat = await clientA
+        .from('user_block')
+        .select()
+        .eq('blocker_id', userAId);
+    expect(
+      blockRowsAfterRepeat.length,
+      1,
+      reason: 'repeat block must not create a second row',
+    );
+    expect(blockRowsAfterRepeat.first['reason'], 'updated reason');
 
-      await unblockUser(clientA, blockedId: userBId);
-      final blockRowsAfterUnblock = await clientA.from('user_block').select().eq('blocker_id', userAId);
-      expect(blockRowsAfterUnblock, isEmpty);
-      // ignore: avoid_print
-      print('[unblock_user] block row correctly removed');
+    await unblockUser(clientA, blockedId: userBId);
+    final blockRowsAfterUnblock = await clientA
+        .from('user_block')
+        .select()
+        .eq('blocker_id', userAId);
+    expect(blockRowsAfterUnblock, isEmpty);
+    // ignore: avoid_print
+    print('[unblock_user] block row correctly removed');
 
-      // -----------------------------------------------------------------
-      // 6. submit_report: real report row visible via own_reports_select.
-      // -----------------------------------------------------------------
-      await submitReport(
-        clientA,
-        category: REPORT_CATEGORY.HARASSMENT,
-        reportedUserId: userBId,
-        detail: 'integration test report',
-      );
-      final reportRows = await clientA.from('report').select().eq('reporter_id', userAId);
-      expect(reportRows.length, 1);
-      expect(reportRows.first['reported_user_id'], userBId);
-      expect(reportRows.first['category'], 'HARASSMENT');
-      expect(reportRows.first['detail'], 'integration test report');
-      // ignore: avoid_print
-      print('[submit_report] real report row created, visible via own_reports_select');
+    // -----------------------------------------------------------------
+    // 6. submit_report: real report row visible via own_reports_select.
+    // -----------------------------------------------------------------
+    await submitReport(
+      clientA,
+      category: REPORT_CATEGORY.HARASSMENT,
+      reportedUserId: userBId,
+      detail: 'integration test report',
+    );
+    final reportRows = await clientA
+        .from('report')
+        .select()
+        .eq('reporter_id', userAId);
+    expect(reportRows.length, 1);
+    expect(reportRows.first['reported_user_id'], userBId);
+    expect(reportRows.first['category'], 'HARASSMENT');
+    expect(reportRows.first['detail'], 'integration test report');
+    // ignore: avoid_print
+    print(
+      '[submit_report] real report row created, visible via own_reports_select',
+    );
 
-      await expectLater(
-        submitReport(clientA, category: REPORT_CATEGORY.OTHER),
-        throwsA(isA<ApiException>().having((e) => e.code, 'code', ApiErrorCode.invalidInput)),
-      );
-      // ignore: avoid_print
-      print('[submit_report] missing both targets correctly rejected with INVALID_INPUT');
-    },
-    timeout: const Timeout(Duration(seconds: 45)),
-  );
+    await expectLater(
+      submitReport(clientA, category: REPORT_CATEGORY.OTHER),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.code,
+          'code',
+          ApiErrorCode.invalidInput,
+        ),
+      ),
+    );
+    // ignore: avoid_print
+    print(
+      '[submit_report] missing both targets correctly rejected with INVALID_INPUT',
+    );
+  }, timeout: const Timeout(Duration(seconds: 45)));
 }

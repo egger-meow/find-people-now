@@ -23,6 +23,7 @@
 //      query in the CANCELLED bucket.
 //
 // Run: flutter test test/my_activities_integration_test.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,6 +32,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:find_people_now/activities/pending_confirmation_card.dart';
+import 'package:find_people_now/activities/my_activities_providers.dart';
+import 'package:find_people_now/activities/my_activities_screen.dart';
 import 'package:find_people_now/generated/activity.dart';
 import 'package:find_people_now/generated/match_request.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
@@ -42,7 +46,12 @@ import 'package:find_people_now/rpc/match_request_rpc.dart';
 
 import 'local_supabase_guard.dart';
 
-const _myRequestListStatuses = ['REQUESTING', 'PENDING_CONFIRMATION', 'EXPIRED', 'CANCELLED'];
+const _myRequestListStatuses = [
+  'REQUESTING',
+  'PENDING_CONFIRMATION',
+  'EXPIRED',
+  'CANCELLED',
+];
 
 Future<SupabaseClient> _createAndSignIn(
   String supabaseUrl,
@@ -58,13 +67,20 @@ Future<SupabaseClient> _createAndSignIn(
       'Authorization': 'Bearer $serviceRoleKey',
       'Content-Type': 'application/json',
     },
-    body: jsonEncode({'email': email, 'password': password, 'email_confirm': true}),
+    body: jsonEncode({
+      'email': email,
+      'password': password,
+      'email_confirm': true,
+    }),
   );
   if (createRes.statusCode != 200 && createRes.statusCode != 201) {
     throw Exception('admin user create failed for $email: ${createRes.body}');
   }
   final client = SupabaseClient(supabaseUrl, anonKey);
-  final authRes = await client.auth.signInWithPassword(email: email, password: password);
+  final authRes = await client.auth.signInWithPassword(
+    email: email,
+    password: password,
+  );
   if (authRes.session == null) {
     throw Exception('sign-in failed for $email');
   }
@@ -123,21 +139,63 @@ Future<void> _runMatchingEngineUntil(Future<bool> Function() isReady) async {
 /// scope to "my" requests, same as the manual `set local role authenticated`
 /// probe run before writing that provider.
 Future<List<MatchRequest>> _myRequestListQuery(SupabaseClient client) async {
-  final rows =
-      await client.from('match_request').select().inFilter('status', _myRequestListStatuses);
+  final rows = await client
+      .from('match_request')
+      .select()
+      .inFilter('status', _myRequestListStatuses);
   return rows.map(MatchRequest.fromJson).toList();
 }
 
 /// The exact query `myActivitiesFromActivityTableProvider` issues.
-Future<List<Activity>> _myActivityListQuery(SupabaseClient client, String userId) async {
-  final rows =
-      await client.from('activity_member').select('activity:activity_id(*)').eq('user_id', userId);
+Future<List<Activity>> _myActivityListQuery(
+  SupabaseClient client,
+  String userId,
+) async {
+  final rows = await client
+      .from('activity_member')
+      .select('activity:activity_id(*)')
+      .eq('user_id', userId);
   return rows
       .map((r) => r['activity'])
       .whereType<Map<String, dynamic>>()
       .map(Activity.fromJson)
       .toList();
 }
+
+MatchRequest _request({
+  required String id,
+  required REQUEST_STATUS status,
+  required DateTime now,
+}) => MatchRequest(
+  id: id,
+  ownerId: 'member',
+  activityTypeId: 'coffee',
+  earliestStart: now,
+  latestStart: now.add(const Duration(hours: 1)),
+  flexibleMinutes: 15,
+  minParticipants: 2,
+  allowDowngrade: false,
+  status: status,
+  createdAt: now,
+  school: SCHOOL.NYCU,
+  campus: 'Main',
+);
+
+Activity _activity({
+  required String id,
+  required ACTIVITY_STATUS status,
+  required DateTime now,
+}) => Activity(
+  id: id,
+  activityTypeId: 'coffee',
+  startTime: now,
+  estimatedEndTime: now.add(const Duration(hours: 1)),
+  status: status,
+  contactVisibleUntil: now.add(const Duration(days: 1)),
+  createdAt: now,
+  school: SCHOOL.NYCU,
+  campus: 'Main',
+);
 
 void main() {
   late String supabaseUrl;
@@ -150,6 +208,75 @@ void main() {
     assertLocalSupabaseUrl(supabaseUrl);
     anonKey = dotenv.get('SUPABASE_ANON_KEY');
     serviceRoleKey = dotenv.get('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  // Moving a pending confirmation or in-progress activity beneath completed
+  // history would hide the next action a member needs to take.
+  test(
+    'activity sections put action-required and current entries before history',
+    () {
+      final now = DateTime.utc(2026, 8, 11, 9);
+      final sections = organizeMyActivitySections([
+        MyActivityListItem.activity(
+          _activity(
+            id: 'completed',
+            status: ACTIVITY_STATUS.COMPLETED,
+            now: now,
+          ),
+        ),
+        MyActivityListItem.request(
+          _request(
+            id: 'pending',
+            status: REQUEST_STATUS.PENDING_CONFIRMATION,
+            now: now,
+          ),
+        ),
+        MyActivityListItem.activity(
+          _activity(id: 'ongoing', status: ACTIVITY_STATUS.ONGOING, now: now),
+        ),
+        MyActivityListItem.activity(
+          _activity(id: 'upcoming', status: ACTIVITY_STATUS.MATCHED, now: now),
+        ),
+      ]);
+
+      expect(sections.actionRequired.map((item) => item.id), [
+        'pending',
+        'ongoing',
+      ]);
+      expect(sections.current.map((item) => item.id), ['upcoming']);
+      expect(sections.history.map((item) => item.id), ['completed']);
+    },
+  );
+
+  test('安全確認 copy、分開動作與 44pt 最小高度 contract', () {
+    expect(PendingConfirmationCopy.title, '等待你的安全確認');
+    expect(PendingConfirmationCopy.message, contains('確認時限'));
+    expect(PendingConfirmationCopy.confirm, '確認參加');
+    expect(PendingConfirmationCopy.reject, '這次先不要');
+    expect(
+      PendingConfirmationCopy.confirm,
+      isNot(PendingConfirmationCopy.reject),
+    );
+    expect(pendingConfirmationMinimumActionExtent, greaterThanOrEqualTo(44));
+  });
+
+  test('安全確認 action guard 防止送出中的重複呼叫', () async {
+    final guard = PendingConfirmationActionGuard();
+    final release = Completer<void>();
+    var calls = 0;
+
+    final first = guard.run(() async {
+      calls++;
+      await release.future;
+    });
+    final duplicate = guard.run(() async => calls++);
+    await duplicate;
+
+    expect(guard.isRunning, isTrue);
+    expect(calls, 1);
+    release.complete();
+    await first;
+    expect(guard.isRunning, isFalse);
   });
 
   test(
@@ -251,7 +378,9 @@ void main() {
       );
       await submitRequest(clientB, requestB.id);
       // ignore: avoid_print
-      print('[submit_request] A=${requestA.id} B=${requestB.id}, both REQUESTING');
+      print(
+        '[submit_request] A=${requestA.id} B=${requestB.id}, both REQUESTING',
+      );
 
       // -----------------------------------------------------------------
       // 1. Before matching: the exact my-activities list query sees each
@@ -268,7 +397,9 @@ void main() {
         REQUEST_STATUS.REQUESTING,
       );
       // ignore: avoid_print
-      print('[my_activities list] both requests correctly show REQUESTING pre-match');
+      print(
+        '[my_activities list] both requests correctly show REQUESTING pre-match',
+      );
 
       // -----------------------------------------------------------------
       // 2. Trigger the matching engine -> merges to exactly 2 people ->
@@ -284,12 +415,23 @@ void main() {
         }
       });
 
-      final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
+      final statusForA = await getPendingConfirmationStatus(
+        clientA,
+        requestA.id,
+      );
       expect(statusForA.status, PENDING_CONFIRMATION_STATUS.PENDING);
-      final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
-      expect(statusForB.pendingConfirmationId, statusForA.pendingConfirmationId);
+      final statusForB = await getPendingConfirmationStatus(
+        clientB,
+        requestB.id,
+      );
+      expect(
+        statusForB.pendingConfirmationId,
+        statusForA.pendingConfirmationId,
+      );
       // ignore: avoid_print
-      print('[fn_run_matching_engine] PENDING_CONFIRMATION id=${statusForA.pendingConfirmationId}');
+      print(
+        '[fn_run_matching_engine] PENDING_CONFIRMATION id=${statusForA.pendingConfirmationId}',
+      );
 
       // The my-activities list query should now show PENDING_CONFIRMATION
       // for both, which is what routes to PendingConfirmationCard in the UI.
@@ -315,7 +457,11 @@ void main() {
       expect(candidateForA.department, '應數');
       expect(candidateForA.degreeLevel, DEGREE_LEVEL.PHD);
       expect(candidateForA.school, SCHOOL.NYCU);
-      expect(candidateForA.completedActivityCount, 1, reason: 'B has exactly the one seeded ATTENDED event');
+      expect(
+        candidateForA.completedActivityCount,
+        1,
+        reason: 'B has exactly the one seeded ATTENDED event',
+      );
 
       final candidateForB = await getPendingConfirmationCandidateInfo(
         clientB,
@@ -349,11 +495,22 @@ void main() {
         contactLine: 'ma_stranger_line',
       );
       await expectLater(
-        getPendingConfirmationCandidateInfo(clientStranger, statusForA.pendingConfirmationId),
-        throwsA(isA<ApiException>().having((e) => e.code, 'code', ApiErrorCode.forbidden)),
+        getPendingConfirmationCandidateInfo(
+          clientStranger,
+          statusForA.pendingConfirmationId,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.code,
+            'code',
+            ApiErrorCode.forbidden,
+          ),
+        ),
       );
       // ignore: avoid_print
-      print('[get_pending_confirmation_candidate_info] stranger call correctly rejected');
+      print(
+        '[get_pending_confirmation_candidate_info] stranger call correctly rejected',
+      );
 
       // -----------------------------------------------------------------
       // 4. Both confirm -> Activity created. The exact
@@ -379,16 +536,21 @@ void main() {
       final myActivitiesB = await _myActivityListQuery(clientB, userBId);
       expect(myActivitiesB.map((a) => a.id), contains(myActivitiesA.first.id));
       // ignore: avoid_print
-      print('[activity_member embed query] both A and B now see activity ${myActivitiesA.first.id}');
+      print(
+        '[activity_member embed query] both A and B now see activity ${myActivitiesA.first.id}',
+      );
 
       final listAAfterMatch = await _myRequestListQuery(clientA);
       expect(
         listAAfterMatch.where((r) => r.id == requestA.id),
         isEmpty,
-        reason: 'MATCHED requests are superseded by the Activity row, not shown twice',
+        reason:
+            'MATCHED requests are superseded by the Activity row, not shown twice',
       );
       // ignore: avoid_print
-      print('[my_activities list] MATCHED request correctly excluded (represented by Activity instead)');
+      print(
+        '[my_activities list] MATCHED request correctly excluded (represented by Activity instead)',
+      );
     },
     timeout: const Timeout(Duration(seconds: 45)),
   );
@@ -432,9 +594,14 @@ void main() {
       expect(cancelled.status, REQUEST_STATUS.CANCELLED);
 
       final list = await _myRequestListQuery(client);
-      expect(list.where((r) => r.id == request.id).single.status, REQUEST_STATUS.CANCELLED);
+      expect(
+        list.where((r) => r.id == request.id).single.status,
+        REQUEST_STATUS.CANCELLED,
+      );
       // ignore: avoid_print
-      print('[my_activities list] cancelled request correctly surfaces with CANCELLED status');
+      print(
+        '[my_activities list] cancelled request correctly surfaces with CANCELLED status',
+      );
     },
     timeout: const Timeout(Duration(seconds: 30)),
   );

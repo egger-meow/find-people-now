@@ -26,6 +26,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:find_people_now/generated/match_request.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
+import 'package:find_people_now/match/waiting_room_screen.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
 import 'package:find_people_now/rpc/match_request_rpc.dart';
@@ -58,6 +59,24 @@ void main() {
     serviceRoleKey = dotenv.get('SUPABASE_SERVICE_ROLE_KEY');
   });
 
+  test('等待室五種狀態都有繁中摘要、說明與下一步 contract', () {
+    final expected = <REQUEST_STATUS, (String, String, String)>{
+      REQUEST_STATUS.REQUESTING: ('正在幫你找人', '系統會持續配對', '邀請朋友'),
+      REQUEST_STATUS.PENDING_CONFIRMATION: ('找到候選夥伴', '完成小人數安全確認', '前往我的活動'),
+      REQUEST_STATUS.MATCHED: ('配對成功', '查看活動詳情', '前往我的活動'),
+      REQUEST_STATUS.EXPIRED: ('這次沒有成團', '重新發起新的邀約', '回配對頁'),
+      REQUEST_STATUS.CANCELLED: ('配對已取消', '這個配對已經關閉', '回配對頁'),
+    };
+
+    for (final entry in expected.entries) {
+      final content = waitingRoomStatusContent(entry.key);
+      expect(content.title, entry.value.$1, reason: entry.key.name);
+      expect(content.message, contains(entry.value.$2), reason: entry.key.name);
+      expect(content.actionLabel, entry.value.$3, reason: entry.key.name);
+      expect(content.destination, isNotEmpty, reason: entry.key.name);
+    }
+  });
+
   test(
     'create_request -> submit_request -> waiting room Realtime -> invite link -> Realtime status change',
     () async {
@@ -81,13 +100,20 @@ void main() {
           'email_confirm': true,
         }),
       );
-      expect(createRes.statusCode, anyOf(200, 201), reason: 'admin user create failed: ${createRes.body}');
+      expect(
+        createRes.statusCode,
+        anyOf(200, 201),
+        reason: 'admin user create failed: ${createRes.body}',
+      );
       final userId = jsonDecode(createRes.body)['id'] as String;
       // ignore: avoid_print
       print('[setup] created auth user $email ($userId)');
 
       final client = SupabaseClient(supabaseUrl, anonKey);
-      final authRes = await client.auth.signInWithPassword(email: email, password: password);
+      final authRes = await client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
       expect(authRes.session, isNotNull);
       // ignore: avoid_print
       print('[setup] signed in, auth.uid() = ${authRes.user!.id}');
@@ -115,17 +141,34 @@ void main() {
       final created = await createRequest(
         client,
         activityTypeId: coffee.id,
-        campus: '光復', // seeded NYCU campus, supabase/migrations/20260724121600_seed_locations.sql
+        campus:
+            '光復', // seeded NYCU campus, supabase/migrations/20260724121600_seed_locations.sql
         earliestStart: now,
         latestStart: now.add(const Duration(hours: 2)),
         minParticipants: 3,
+        maxParticipants: 5,
+        allowDowngrade: true,
       );
       expect(created.status, REQUEST_STATUS.DRAFT);
+      // Real-RPC backstop for the request contract. The widget journey test
+      // separately drives CreateRequestScreen through confirmation and asserts
+      // that its injected submission boundary receives these same fields.
+      expect(created.activityTypeId, coffee.id);
+      expect(created.campus, '光復');
+      expect(created.earliestStart.toUtc(), now);
+      expect(created.latestStart.toUtc(), now.add(const Duration(hours: 2)));
+      expect(created.minParticipants, 3);
+      expect(created.maxParticipants, 5);
+      expect(created.allowDowngrade, isTrue);
+      expect(created.skillLevel, isNull);
+      expect(created.studyTarget, isNull);
 
       final submitted = await submitRequest(client, created.id);
       expect(submitted.status, REQUEST_STATUS.REQUESTING);
       // ignore: avoid_print
-      print('[submit_request] id=${submitted.id} status=${submitted.status.name}');
+      print(
+        '[submit_request] id=${submitted.id} status=${submitted.status.name}',
+      );
 
       // 4. 進等待室 — subscribe with the *same* Realtime call
       //    lib/match/match_providers.dart's matchRequestStreamProvider uses,
@@ -145,7 +188,9 @@ void main() {
       await _waitUntil(() => observedStatuses.isNotEmpty);
       expect(observedStatuses.first, REQUEST_STATUS.REQUESTING);
       // ignore: avoid_print
-      print('[waiting room] initial Realtime snapshot status=${observedStatuses.first.name}');
+      print(
+        '[waiting room] initial Realtime snapshot status=${observedStatuses.first.name}',
+      );
 
       // 5. 邀請連結產生
       final inviteToken = await getOrCreateInviteLink(client, submitted.id);
@@ -169,7 +214,11 @@ void main() {
         '-c',
         "update match_request set status = 'EXPIRED' where id = '${submitted.id}';",
       ]);
-      expect(updateRes.exitCode, 0, reason: 'direct status-change simulation failed: ${updateRes.stderr}');
+      expect(
+        updateRes.exitCode,
+        0,
+        reason: 'direct status-change simulation failed: ${updateRes.stderr}',
+      );
 
       // Generous timeout: right after a fresh `supabase db reset`, the
       // Realtime container's logical-replication connection to Postgres is
@@ -182,7 +231,9 @@ void main() {
       );
       expect(observedStatuses.last, REQUEST_STATUS.EXPIRED);
       // ignore: avoid_print
-      print('[waiting room] Realtime picked up status change -> ${observedStatuses.last.name}');
+      print(
+        '[waiting room] Realtime picked up status change -> ${observedStatuses.last.name}',
+      );
     },
     timeout: const Timeout(Duration(seconds: 45)),
   );

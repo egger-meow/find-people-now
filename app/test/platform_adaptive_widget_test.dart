@@ -15,7 +15,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:find_people_now/downgrade/downgrade_providers.dart';
+import 'package:find_people_now/generated/downgrade_request.dart';
+import 'package:find_people_now/match/match_providers.dart';
+import 'package:find_people_now/notifications/notification_providers.dart';
+import 'package:find_people_now/shell/app_shell.dart';
 import 'package:find_people_now/theme/app_theme.dart';
 import 'package:find_people_now/theme/platform_adaptive.dart';
 import 'package:find_people_now/widgets/adaptive_refresh.dart';
@@ -27,16 +34,108 @@ import 'package:find_people_now/widgets/loading_indicator.dart';
 /// 把 widget 包進最小可用的 [MaterialApp] 外殼（Material 元件需要
 /// `Directionality`／`MediaQuery`／`Theme` 祖先才能 build）。
 Widget _host(Widget child) => MaterialApp(
-      theme: AppTheme.light,
-      home: Scaffold(body: child),
-    );
+  theme: AppTheme.light,
+  home: Scaffold(body: child),
+);
+
+GoRouter _shellRouter() => GoRouter(
+  initialLocation: '/explore',
+  routes: [
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) =>
+          AppShell(navigationShell: navigationShell),
+      branches: [
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/explore',
+              builder: (context, state) => const SizedBox(),
+              routes: [
+                GoRoute(
+                  path: 'detail',
+                  builder: (context, state) => const SizedBox(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/my-activities',
+              builder: (context, state) => const SizedBox(),
+              routes: [
+                GoRoute(
+                  path: 'detail',
+                  builder: (context, state) => const SizedBox(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/notifications',
+              builder: (context, state) => const SizedBox(),
+              routes: [
+                GoRoute(
+                  path: 'detail',
+                  builder: (context, state) => const SizedBox(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/profile',
+              builder: (context, state) => const SizedBox(),
+              routes: [
+                GoRoute(
+                  path: 'detail',
+                  builder: (context, state) => const SizedBox(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    ),
+  ],
+);
+
+Widget _shellHost(GoRouter router, {TextScaler? textScaler}) => ProviderScope(
+  overrides: [
+    myAppUserProvider.overrideWith((ref) async => null),
+    pendingDowngradesStreamProvider.overrideWith(
+      (ref) => Stream.value(const <DowngradeRequest>[]),
+    ),
+    unreadNotificationCountProvider.overrideWith((ref) => 3),
+  ],
+  child: MaterialApp.router(
+    theme: AppTheme.light,
+    routerConfig: router,
+    builder: (context, child) {
+      if (textScaler == null) return child!;
+      return MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      );
+    },
+  ),
+);
 
 /// `debugDefaultTargetPlatformOverride` 必須在**測試主體結束前**還原：
 /// `flutter_test` 會在每個 test body 跑完、tearDown 之前檢查所有 foundation
 /// debug 變數都是未設定狀態，放在 `tearDown` 裡還原已經太晚（會被判定為
 /// 「測試改動了 debug 變數」而整批失敗）。用 try/finally 包住確保即使斷言
 /// 失敗也會還原，不會污染同檔案後面的測試。
-Future<void> _withPlatform(TargetPlatform platform, Future<void> Function() body) async {
+Future<void> _withPlatform(
+  TargetPlatform platform,
+  Future<void> Function() body,
+) async {
   debugDefaultTargetPlatformOverride = platform;
   try {
     await body();
@@ -76,9 +175,9 @@ void main() {
 
   group('AppAdaptiveDialog', () {
     Widget dialog() => const AppAdaptiveDialog(
-          title: '標題',
-          actions: [AppDialogAction(label: '確定', onPressed: null)],
-        );
+      title: '標題',
+      actions: [AppDialogAction(label: '確定', onPressed: null)],
+    );
 
     testWidgets('iOS 用 CupertinoAlertDialog', (tester) async {
       await _withPlatform(TargetPlatform.iOS, () async {
@@ -99,33 +198,130 @@ void main() {
 
   group('AdaptiveRefresh', () {
     Widget refresh() => AdaptiveRefresh(
-          onRefresh: () async {},
-          slivers: const [SliverToBoxAdapter(child: SizedBox(height: 40))],
-        );
+      onRefresh: () async {},
+      slivers: const [SliverToBoxAdapter(child: SizedBox(height: 40))],
+    );
 
-    testWidgets('iOS 用 CupertinoSliverRefreshControl，不掛 Material 的 RefreshIndicator', (tester) async {
-      await _withPlatform(TargetPlatform.iOS, () async {
-        await tester.pumpWidget(_host(refresh()));
-        // 閒置時這個 sliver 位於負的捲動位移（畫面上緣之外），`find.byType` 預設的
-        // `skipOffstage: true` 會把它濾掉——它確實在樹上，只是不在畫面內。
-        expect(find.byType(CupertinoSliverRefreshControl, skipOffstage: false), findsOneWidget);
-        expect(find.byType(RefreshIndicator), findsNothing);
-      });
-    });
+    testWidgets(
+      'iOS 用 CupertinoSliverRefreshControl，不掛 Material 的 RefreshIndicator',
+      (tester) async {
+        await _withPlatform(TargetPlatform.iOS, () async {
+          await tester.pumpWidget(_host(refresh()));
+          // 閒置時這個 sliver 位於負的捲動位移（畫面上緣之外），`find.byType` 預設的
+          // `skipOffstage: true` 會把它濾掉——它確實在樹上，只是不在畫面內。
+          expect(
+            find.byType(CupertinoSliverRefreshControl, skipOffstage: false),
+            findsOneWidget,
+          );
+          expect(find.byType(RefreshIndicator), findsNothing);
+        });
+      },
+    );
 
-    testWidgets('Android 用 RefreshIndicator，不掛 Cupertino 的下拉控制項', (tester) async {
+    testWidgets('Android 用 RefreshIndicator，不掛 Cupertino 的下拉控制項', (
+      tester,
+    ) async {
       await _withPlatform(TargetPlatform.android, () async {
         await tester.pumpWidget(_host(refresh()));
         expect(find.byType(RefreshIndicator), findsOneWidget);
-        expect(find.byType(CupertinoSliverRefreshControl, skipOffstage: false), findsNothing);
+        expect(
+          find.byType(CupertinoSliverRefreshControl, skipOffstage: false),
+          findsNothing,
+        );
       });
     });
 
     testWidgets('內容不滿一頁時仍可捲動（下拉更新在空清單上也要能觸發）', (tester) async {
       await _withPlatform(TargetPlatform.android, () async {
         await tester.pumpWidget(_host(refresh()));
-        final scrollView = tester.widget<CustomScrollView>(find.byType(CustomScrollView));
+        final scrollView = tester.widget<CustomScrollView>(
+          find.byType(CustomScrollView),
+        );
         expect(scrollView.physics, isA<AlwaysScrollableScrollPhysics>());
+      });
+    });
+  });
+
+  group('AppShell', () {
+    testWidgets('iOS 顯示四個底部目的地與未讀徽章', (tester) async {
+      await _withPlatform(TargetPlatform.iOS, () async {
+        final router = _shellRouter();
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(_shellHost(router));
+        await tester.pumpAndSettle();
+
+        expect(find.text('探索'), findsOneWidget);
+        expect(find.text('我的活動'), findsOneWidget);
+        expect(find.text('通知'), findsOneWidget);
+        expect(find.text('個人'), findsOneWidget);
+        expect(find.text('3'), findsOneWidget);
+        expect(find.byType(CupertinoTabBar), findsOneWidget);
+      });
+    });
+
+    testWidgets('iOS 在 200% 文字縮放時保留標籤與 44pt 觸控目標', (tester) async {
+      await _withPlatform(TargetPlatform.iOS, () async {
+        final router = _shellRouter();
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(
+          _shellHost(router, textScaler: TextScaler.linear(2)),
+        );
+        await tester.pumpAndSettle();
+
+        for (final label in ['探索', '我的活動', '通知', '個人']) {
+          expect(find.text(label), findsOneWidget);
+        }
+        expect(
+          tester.getSize(find.byType(CupertinoTabBar)).height,
+          greaterThanOrEqualTo(44),
+        );
+        await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      });
+    });
+
+    testWidgets('iOS 重選每個目的地都回到對應 branch 根路徑', (tester) async {
+      await _withPlatform(TargetPlatform.iOS, () async {
+        final router = _shellRouter();
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(_shellHost(router));
+        await tester.pumpAndSettle();
+
+        for (final destination in [
+          ('探索', '/explore'),
+          ('我的活動', '/my-activities'),
+          ('通知', '/notifications'),
+          ('個人', '/profile'),
+        ]) {
+          router.go('${destination.$2}/detail');
+          await tester.pumpAndSettle();
+          expect(
+            router.routerDelegate.currentConfiguration.uri.path,
+            '${destination.$2}/detail',
+          );
+
+          await tester.tap(find.text(destination.$1));
+          await tester.pumpAndSettle();
+          expect(
+            router.routerDelegate.currentConfiguration.uri.path,
+            destination.$2,
+          );
+        }
+      });
+    });
+
+    testWidgets('Android 保留 Material NavigationBar', (tester) async {
+      await _withPlatform(TargetPlatform.android, () async {
+        final router = _shellRouter();
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(_shellHost(router));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(NavigationBar), findsOneWidget);
+        expect(find.byType(CupertinoTabBar), findsNothing);
       });
     });
   });
@@ -133,14 +329,18 @@ void main() {
   group('AppCard 按壓回饋', () {
     testWidgets('iOS 不用 Material 墨水漣漪', (tester) async {
       await _withPlatform(TargetPlatform.iOS, () async {
-        await tester.pumpWidget(_host(AppCard(onTap: () {}, child: const Text('x'))));
+        await tester.pumpWidget(
+          _host(AppCard(onTap: () {}, child: const Text('x'))),
+        );
         expect(find.byType(InkWell), findsNothing);
       });
     });
 
     testWidgets('Android 用 InkWell 漣漪', (tester) async {
       await _withPlatform(TargetPlatform.android, () async {
-        await tester.pumpWidget(_host(AppCard(onTap: () {}, child: const Text('x'))));
+        await tester.pumpWidget(
+          _host(AppCard(onTap: () {}, child: const Text('x'))),
+        );
         expect(find.byType(InkWell), findsOneWidget);
       });
     });
@@ -155,9 +355,15 @@ void main() {
     testWidgets('semanticLabel 會把整張卡片併成單一語意節點', (tester) async {
       final handle = tester.ensureSemantics();
       await _withPlatform(TargetPlatform.android, () async {
-        await tester.pumpWidget(_host(
-          AppCard(onTap: () {}, semanticLabel: '籃球，今天 14:00', child: const Text('籃球')),
-        ));
+        await tester.pumpWidget(
+          _host(
+            AppCard(
+              onTap: () {},
+              semanticLabel: '籃球，今天 14:00',
+              child: const Text('籃球'),
+            ),
+          ),
+        );
         expect(find.bySemanticsLabel('籃球，今天 14:00'), findsOneWidget);
         // 合併之後，底層那段文字不再各自曝光給螢幕閱讀器。
         expect(find.bySemanticsLabel('籃球'), findsNothing);
@@ -172,12 +378,17 @@ void main() {
       await tester.pumpWidget(_host(CountdownText(deadline: deadline)));
 
       final text = tester.widget<Text>(find.byType(Text));
-      expect(text.style?.fontFeatures, contains(const FontFeature.tabularFigures()));
+      expect(
+        text.style?.fontFeatures,
+        contains(const FontFeature.tabularFigures()),
+      );
     });
 
     testWidgets('逾時文案是中文、不套等寬處理', (tester) async {
       final past = DateTime.now().subtract(const Duration(minutes: 1));
-      await tester.pumpWidget(_host(CountdownText(deadline: past, expiredLabel: '已逾時')));
+      await tester.pumpWidget(
+        _host(CountdownText(deadline: past, expiredLabel: '已逾時')),
+      );
 
       expect(find.text('已逾時'), findsOneWidget);
       final text = tester.widget<Text>(find.byType(Text));
@@ -188,15 +399,19 @@ void main() {
   group('AppMotion 減少動態效果', () {
     testWidgets('disableAnimations 開啟時時長歸零、裝飾性動畫關閉', (tester) async {
       late BuildContext captured;
-      await tester.pumpWidget(MaterialApp(
-        home: MediaQuery(
-          data: const MediaQueryData(disableAnimations: true),
-          child: Builder(builder: (context) {
-            captured = context;
-            return const SizedBox();
-          }),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: Builder(
+              builder: (context) {
+                captured = context;
+                return const SizedBox();
+              },
+            ),
+          ),
         ),
-      ));
+      );
 
       expect(AppMotion.duration(captured, AppMotion.normal), Duration.zero);
       expect(AppMotion.allowsDecorative(captured), isFalse);
@@ -204,12 +419,16 @@ void main() {
 
     testWidgets('預設情況下維持原本時長', (tester) async {
       late BuildContext captured;
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(builder: (context) {
-          captured = context;
-          return const SizedBox();
-        }),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              captured = context;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
 
       expect(AppMotion.duration(captured, AppMotion.normal), AppMotion.normal);
       expect(AppMotion.allowsDecorative(captured), isTrue);

@@ -25,7 +25,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:find_people_now/activities/activity_detail_screen.dart';
+import 'package:find_people_now/activities/activity_detail_providers.dart';
+import 'package:find_people_now/auth/auth_providers.dart'
+    show currentUserIdProvider;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -35,12 +41,18 @@ import 'package:find_people_now/generated/activity_location_option.dart';
 import 'package:find_people_now/generated/activity_meeting_point_update.dart';
 import 'package:find_people_now/generated/location.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
+import 'package:find_people_now/match/match_providers.dart'
+    show activityTypesProvider;
 import 'package:find_people_now/rpc/activity_rpc.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
 import 'package:find_people_now/rpc/api_exception.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/confirmation_rpc.dart';
 import 'package:find_people_now/rpc/match_request_rpc.dart';
+import 'package:find_people_now/theme/app_theme.dart';
+import 'package:find_people_now/widgets/app_glass_surface.dart';
+import 'package:find_people_now/widgets/app_status_summary.dart';
+import 'package:find_people_now/widgets/app_sticky_action_area.dart';
 
 import 'local_supabase_guard.dart';
 
@@ -58,13 +70,20 @@ Future<SupabaseClient> _createAndSignIn(
       'Authorization': 'Bearer $serviceRoleKey',
       'Content-Type': 'application/json',
     },
-    body: jsonEncode({'email': email, 'password': password, 'email_confirm': true}),
+    body: jsonEncode({
+      'email': email,
+      'password': password,
+      'email_confirm': true,
+    }),
   );
   if (createRes.statusCode != 200 && createRes.statusCode != 201) {
     throw Exception('admin user create failed for $email: ${createRes.body}');
   }
   final client = SupabaseClient(supabaseUrl, anonKey);
-  final authRes = await client.auth.signInWithPassword(email: email, password: password);
+  final authRes = await client.auth.signInWithPassword(
+    email: email,
+    password: password,
+  );
   if (authRes.session == null) {
     throw Exception('sign-in failed for $email');
   }
@@ -121,8 +140,10 @@ Future<List<ActivityMeetingPointUpdate>> _meetingPointUpdatesQuery(
   SupabaseClient client,
   String activityId,
 ) async {
-  final rows =
-      await client.from('activity_meeting_point_update').select().eq('activity_id', activityId);
+  final rows = await client
+      .from('activity_meeting_point_update')
+      .select()
+      .eq('activity_id', activityId);
   final list = rows.map(ActivityMeetingPointUpdate.fromJson).toList();
   list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return list;
@@ -166,7 +187,10 @@ Future<List<ActivityLocationOption>> _activityLocationOptionsQuery(
   SupabaseClient client,
   String activityId,
 ) async {
-  final rows = await client.from('activity_location_option').select().eq('activity_id', activityId);
+  final rows = await client
+      .from('activity_location_option')
+      .select()
+      .eq('activity_id', activityId);
   return rows.map(ActivityLocationOption.fromJson).toList();
 }
 
@@ -176,6 +200,7 @@ void main() {
   late String serviceRoleKey;
 
   setUpAll(() async {
+    HttpOverrides.global = null;
     await dotenv.load();
     supabaseUrl = dotenv.get('SUPABASE_URL');
     assertLocalSupabaseUrl(supabaseUrl);
@@ -183,67 +208,540 @@ void main() {
     serviceRoleKey = dotenv.get('SUPABASE_SERVICE_ROLE_KEY');
   });
 
-  test(
-    'meeting point cooldown + per-user independence, meeting hint per-member '
-    'isolation + length gate, and the locked-location lookup query — all '
-    'against a real MATCHED/ONGOING activity',
-    () async {
-      final stamp = DateTime.now().millisecondsSinceEpoch;
-      const password = 'activity-detail-verify-password-123!';
+  testWidgets('完整詳情頁在 375pt、200% 字級可切換分區且所有導覽目標至少 44pt', (tester) async {
+    tester.view.physicalSize = const Size(375, 667);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final activity = Activity(
+      id: 'full-screen-matched',
+      activityTypeId: 'coffee',
+      startTime: DateTime(2026, 8, 11, 17),
+      estimatedEndTime: DateTime(2026, 8, 11, 18),
+      status: ACTIVITY_STATUS.MATCHED,
+      contactVisibleUntil: DateTime(2026, 8, 12),
+      createdAt: DateTime(2026, 8, 11),
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
 
-      final clientA = await _createAndSignIn(
-        supabaseUrl,
-        anonKey,
-        serviceRoleKey,
-        'ad-a-$stamp@nycu.edu.tw',
-        password,
-      );
-      final clientB = await _createAndSignIn(
-        supabaseUrl,
-        anonKey,
-        serviceRoleKey,
-        'ad-b-$stamp@nycu.edu.tw',
-        password,
-      );
-      final userAId = clientA.auth.currentUser!.id;
-      final userBId = clientB.auth.currentUser!.id;
-      // ignore: avoid_print
-      print('[setup] userA=$userAId userB=$userBId');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activityStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(activity)),
+          activityLocationOptionsStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          activityLocationVotesStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          approvedLocationsProvider((
+            activity.school,
+            activity.campus,
+          )).overrideWith((ref) async => const []),
+          activityMeetingPointUpdatesStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          activityMemberRosterProvider(
+            activity.id,
+          ).overrideWith((ref) async => const []),
+          activityArrivalStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, DateTime?>{})),
+          activityVibeTagsStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, List<String>>{})),
+          activityMeetingHintStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, String?>{})),
+          activityTypesProvider.overrideWith((ref) async => const []),
+          currentUserIdProvider.overrideWith((ref) => null),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          builder: (context, child) => MediaQuery(
+            data: const MediaQueryData(
+              size: Size(375, 667),
+              textScaler: TextScaler.linear(2),
+              disableAnimations: true,
+              padding: EdgeInsets.only(bottom: 34),
+              viewPadding: EdgeInsets.only(bottom: 34),
+            ),
+            child: child!,
+          ),
+          home: ActivityDetailScreen(activityId: activity.id),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await completeProfile(
-        clientA,
-        displayName: 'ActivityDetail User A',
-        avatarUrl: 'https://example.com/ad-a.png',
-        degreeLevel: DEGREE_LEVEL.MASTER,
-        bio: 'Hi there',
-        contactLine: 'ad_a_line',
-      );
-      await completeProfile(
-        clientB,
-        displayName: 'ActivityDetail User B',
-        avatarUrl: 'https://example.com/ad-b.png',
-        degreeLevel: DEGREE_LEVEL.MASTER,
-        bio: 'Hi there',
-        contactLine: 'ad_b_line',
-      );
+    expect(find.text('活動詳情'), findsOneWidget);
+    expect(find.text('已成團，等待開始'), findsOneWidget);
+    expect(find.text('地點與集合'), findsOneWidget);
+    expect(find.text('成員與聯絡'), findsOneWidget);
+    expect(find.text('前往提出候選地點'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const Key('activity-detail-navigation')))
+          .height,
+      greaterThanOrEqualTo(44),
+    );
+    expect(tester.takeException(), isNull);
 
-      // 自己的校區字串（不用共用的 '光復'）——matching engine 是依
-      // (activity_type_id, school, campus) 分組掃描 REQUESTING 池，多個測試
-      // 檔平行執行時若共用同一組會互相撈到對方剛建立的 request，
-      // 造成「expected exactly one merge to fire」斷言不穩。自己種一筆這個
-      // 校區專屬的 location，不依賴 app/README.md 記載的手動種子步驟。
-      final testCampus = 'ADT測試區$stamp';
-      final locationId = await _psqlScalar('''
+    await tester.ensureVisible(find.text('成員與聯絡'));
+    await tester.tap(find.text('成員與聯絡'));
+    await tester.pumpAndSettle();
+    expect(find.text('活動成員'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('前往提出候選地點'));
+    await tester.pump();
+    expect(find.text('地點投票'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('完整詳情頁在短橫向鍵盤開啟時不重複避讓，集合點與見面提示仍可捲動', (tester) async {
+    const size = Size(667, 375);
+    const keyboardInset = 140.0;
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final activity = Activity(
+      id: 'keyboard-layout-matched',
+      activityTypeId: 'coffee',
+      startTime: DateTime(2026, 8, 11, 17),
+      estimatedEndTime: DateTime(2026, 8, 11, 18),
+      status: ACTIVITY_STATUS.MATCHED,
+      contactVisibleUntil: DateTime(2026, 8, 12),
+      createdAt: DateTime(2026, 8, 11),
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activityStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(activity)),
+          activityLocationOptionsStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          activityLocationVotesStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          approvedLocationsProvider((
+            activity.school,
+            activity.campus,
+          )).overrideWith((ref) async => const []),
+          activityMeetingPointUpdatesStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          activityMemberRosterProvider(
+            activity.id,
+          ).overrideWith((ref) async => const []),
+          activityArrivalStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, DateTime?>{})),
+          activityVibeTagsStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, List<String>>{})),
+          activityMeetingHintStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, String?>{})),
+          activityTypesProvider.overrideWith((ref) async => const []),
+          currentUserIdProvider.overrideWith((ref) => null),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          builder: (context, child) => MediaQuery(
+            data: const MediaQueryData(
+              size: size,
+              textScaler: TextScaler.linear(2),
+              disableAnimations: true,
+              viewInsets: EdgeInsets.only(bottom: keyboardInset),
+              viewPadding: EdgeInsets.only(bottom: 21),
+            ),
+            child: child!,
+          ),
+          home: ActivityDetailScreen(activityId: activity.id),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final stickyAction = find.byKey(const Key('activity-detail-next-action'));
+    expect(stickyAction, findsOneWidget);
+    expect(
+      tester.getBottomRight(stickyAction).dy,
+      greaterThan(size.height - keyboardInset - 80),
+    );
+    expect(
+      tester.getBottomRight(stickyAction).dy,
+      lessThanOrEqualTo(size.height - keyboardInset),
+    );
+    expect(tester.takeException(), isNull);
+
+    final headerScrollable = find
+        .descendant(
+          of: find.byType(SingleChildScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    expect(tester.getSize(headerScrollable).height, greaterThanOrEqualTo(44));
+    final navigation = find.byKey(const Key('activity-detail-navigation'));
+    await tester.scrollUntilVisible(
+      navigation,
+      80,
+      scrollable: headerScrollable,
+    );
+    await tester.pump();
+    expect(tester.getSize(navigation).height, greaterThanOrEqualTo(44));
+    expect(navigation.hitTestable(), findsOneWidget);
+
+    final locationScrollable = find
+        .descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final scrollPosition = tester
+        .state<ScrollableState>(locationScrollable)
+        .position;
+    final initialOffset = scrollPosition.pixels;
+    final meetingPointInput = find.text('例如：正門警衛室旁');
+    await tester.scrollUntilVisible(
+      meetingPointInput,
+      120,
+      scrollable: locationScrollable,
+    );
+    await tester.pump();
+    expect(meetingPointInput, findsOneWidget);
+    expect(scrollPosition.pixels, greaterThan(initialOffset));
+    final meetingPointTextField = find.ancestor(
+      of: meetingPointInput,
+      matching: find.byType(TextField),
+    );
+    expect(meetingPointTextField.hitTestable(), findsOneWidget);
+    final meetingPointEditable = find.descendant(
+      of: meetingPointTextField,
+      matching: find.byType(EditableText),
+    );
+    await tester.tap(meetingPointEditable);
+    await tester.pump();
+    expect(
+      tester.widget<EditableText>(meetingPointEditable).focusNode.hasFocus,
+      isTrue,
+    );
+
+    final meetingPointOffset = scrollPosition.pixels;
+    final meetingHintInput = find.text('例如：我會戴紅色棒球帽');
+    await tester.scrollUntilVisible(
+      meetingHintInput,
+      120,
+      scrollable: locationScrollable,
+    );
+    await tester.pump();
+    expect(meetingHintInput, findsOneWidget);
+    expect(scrollPosition.pixels, greaterThan(meetingPointOffset));
+    final meetingHintTextField = find.ancestor(
+      of: meetingHintInput,
+      matching: find.byType(TextField),
+    );
+    expect(meetingHintTextField.hitTestable(), findsOneWidget);
+    final meetingHintEditable = find.descendant(
+      of: meetingHintTextField,
+      matching: find.byType(EditableText),
+    );
+    await tester.tap(meetingHintEditable);
+    await tester.pump();
+    expect(
+      tester.widget<EditableText>(meetingHintEditable).focusNode.hasFocus,
+      isTrue,
+    );
+    expect(stickyAction.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('完整詳情頁在 844x390 與 200% 字級首屏實際看得到狀態時間地點與下一步', (tester) async {
+    const size = Size(844, 390);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final activity = Activity(
+      id: 'short-landscape-summary',
+      activityTypeId: 'coffee',
+      startTime: DateTime(2026, 8, 11, 17),
+      estimatedEndTime: DateTime(2026, 8, 11, 18),
+      status: ACTIVITY_STATUS.MATCHED,
+      contactVisibleUntil: DateTime(2026, 8, 12),
+      createdAt: DateTime(2026, 8, 11),
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activityStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(activity)),
+          activityLocationOptionsStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          activityLocationVotesStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          approvedLocationsProvider((
+            activity.school,
+            activity.campus,
+          )).overrideWith((ref) async => const []),
+          activityMeetingPointUpdatesStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => Stream.value(const [])),
+          activityMemberRosterProvider(
+            activity.id,
+          ).overrideWith((ref) async => const []),
+          activityArrivalStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, DateTime?>{})),
+          activityVibeTagsStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, List<String>>{})),
+          activityMeetingHintStreamProvider(
+            activity.id,
+          ).overrideWith((ref) => const AsyncData(<String, String?>{})),
+          activityTypesProvider.overrideWith((ref) async => const []),
+          currentUserIdProvider.overrideWith((ref) => null),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          builder: (context, child) => MediaQuery(
+            data: const MediaQueryData(
+              size: size,
+              textScaler: TextScaler.linear(2),
+              disableAnimations: true,
+            ),
+            child: child!,
+          ),
+          home: ActivityDetailScreen(activityId: activity.id),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final body = find.byType(ActivityDetailBodyLayout);
+    final navigation = find.byKey(const Key('activity-detail-navigation'));
+    final bodyRect = tester.getRect(body);
+    final navigationRect = tester.getRect(navigation);
+    final criticalFinders = [
+      find.text('已成團，等待開始'),
+      find.textContaining('活動時間：08/11 17:00–18:00'),
+      find.textContaining('地點：等待提出候選地點'),
+      find.text('下一步：提出候選地點'),
+    ];
+
+    for (final finder in criticalFinders) {
+      final rect = tester.getRect(finder);
+      expect(rect.top, greaterThanOrEqualTo(bodyRect.top));
+      expect(rect.bottom, lessThanOrEqualTo(navigationRect.top));
+      expect(rect.bottom, lessThanOrEqualTo(size.height));
+      expect(finder.hitTestable(), findsOneWidget);
+    }
+    expect(navigation.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MATCHED 首屏在明暗主題、各 iPhone 尺寸、橫向與 200% 字級皆完整', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final activity = Activity(
+      id: 'matched-summary',
+      activityTypeId: 'coffee',
+      startTime: DateTime(2026, 8, 11, 17),
+      estimatedEndTime: DateTime(2026, 8, 11, 18),
+      status: ACTIVITY_STATUS.MATCHED,
+      contactVisibleUntil: DateTime(2026, 8, 12),
+      createdAt: DateTime(2026, 8, 11),
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
+
+    const sizes = [
+      Size(375, 667),
+      Size(390, 844),
+      Size(430, 932),
+      Size(844, 390),
+    ];
+    for (final themeMode in [ThemeMode.light, ThemeMode.dark]) {
+      for (final size in sizes) {
+        tester.view.physicalSize = size;
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: AppTheme.light,
+              darkTheme: AppTheme.dark,
+              themeMode: themeMode,
+              home: MediaQuery(
+                data: MediaQueryData(
+                  size: size,
+                  textScaler: const TextScaler.linear(2),
+                  disableAnimations: true,
+                  padding: const EdgeInsets.only(bottom: 34),
+                  viewPadding: const EdgeInsets.only(bottom: 34),
+                ),
+                child: Scaffold(
+                  body: SafeArea(
+                    child: ActivityDetailBodyLayout(
+                      summary: ActivityDetailStatusSummary(
+                        activity: activity,
+                        locationOptions: const [],
+                        locationVotes: const [],
+                        fixtureLocations: const [],
+                      ),
+                      navigation: const SizedBox(
+                        key: Key('activity-detail-navigation'),
+                        height: 44,
+                        child: Center(child: Text('地點與集合　成員與聯絡')),
+                      ),
+                      content: const SingleChildScrollView(
+                        child: SizedBox(
+                          height: 120,
+                          child: Center(child: Text('地點投票')),
+                        ),
+                      ),
+                      stickyAction: ActivityDetailStickyAction(
+                        status: activity.status,
+                        hasLocationOptions: false,
+                        onPressed: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        expect(find.byType(AppStatusSummary), findsOneWidget);
+        expect(find.byType(AppGlassSurface), findsOneWidget);
+        expect(find.byType(AppStickyActionArea), findsOneWidget);
+        expect(find.text('已成團，等待開始'), findsOneWidget);
+        expect(find.textContaining('活動時間：08/11 17:00–18:00'), findsOneWidget);
+        expect(find.textContaining('地點：等待提出候選地點'), findsOneWidget);
+        expect(find.text('下一步：提出候選地點'), findsOneWidget);
+        expect(find.text('前往提出候選地點'), findsOneWidget);
+        final actionFinder = find.byKey(
+          const Key('activity-detail-next-action'),
+        );
+        expect(tester.getSize(actionFinder).height, greaterThanOrEqualTo(44));
+        expect(
+          tester.getBottomRight(actionFinder).dy,
+          lessThanOrEqualTo(size.height - 34),
+        );
+        if (size == const Size(844, 390)) {
+          final navigation = find.byKey(
+            const Key('activity-detail-navigation'),
+          );
+          final navigationRect = tester.getRect(navigation);
+          for (final finder in [
+            find.text('已成團，等待開始'),
+            find.textContaining('活動時間：08/11 17:00–18:00'),
+            find.textContaining('地點：等待提出候選地點'),
+            find.text('下一步：提出候選地點'),
+          ]) {
+            expect(
+              tester.getRect(finder).bottom,
+              lessThanOrEqualTo(navigationRect.top),
+            );
+            expect(finder.hitTestable(), findsOneWidget);
+          }
+        }
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '$themeMode / $size 不應 overflow',
+        );
+      }
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: ActivityManagementSection(leaving: false, onLeave: () {}),
+        ),
+      ),
+    );
+    expect(find.text('活動管理'), findsOneWidget);
+    expect(find.textContaining('Early Cancel 或 Late Cancel'), findsOneWidget);
+    expect(find.text('退出這個活動'), findsOneWidget);
+  });
+
+  test('meeting point cooldown + per-user independence, meeting hint per-member '
+      'isolation + length gate, and the locked-location lookup query — all '
+      'against a real MATCHED/ONGOING activity', () async {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    const password = 'activity-detail-verify-password-123!';
+
+    final clientA = await _createAndSignIn(
+      supabaseUrl,
+      anonKey,
+      serviceRoleKey,
+      'ad-a-$stamp@nycu.edu.tw',
+      password,
+    );
+    final clientB = await _createAndSignIn(
+      supabaseUrl,
+      anonKey,
+      serviceRoleKey,
+      'ad-b-$stamp@nycu.edu.tw',
+      password,
+    );
+    final userAId = clientA.auth.currentUser!.id;
+    final userBId = clientB.auth.currentUser!.id;
+    // ignore: avoid_print
+    print('[setup] userA=$userAId userB=$userBId');
+
+    await completeProfile(
+      clientA,
+      displayName: 'ActivityDetail User A',
+      avatarUrl: 'https://example.com/ad-a.png',
+      degreeLevel: DEGREE_LEVEL.MASTER,
+      bio: 'Hi there',
+      contactLine: 'ad_a_line',
+    );
+    await completeProfile(
+      clientB,
+      displayName: 'ActivityDetail User B',
+      avatarUrl: 'https://example.com/ad-b.png',
+      degreeLevel: DEGREE_LEVEL.MASTER,
+      bio: 'Hi there',
+      contactLine: 'ad_b_line',
+    );
+
+    // 自己的校區字串（不用共用的 '光復'）——matching engine 是依
+    // (activity_type_id, school, campus) 分組掃描 REQUESTING 池，多個測試
+    // 檔平行執行時若共用同一組會互相撈到對方剛建立的 request，
+    // 造成「expected exactly one merge to fire」斷言不穩。自己種一筆這個
+    // 校區專屬的 location，不依賴 app/README.md 記載的手動種子步驟。
+    final testCampus = 'ADT測試區$stamp';
+    final locationId = await _psqlScalar('''
         insert into location (school, campus, name, status, is_active)
         select 'NYCU', '$testCampus', 'ADT測試地點$stamp', 'APPROVED', true
         returning id;
       ''');
-      expect(locationId, isNotEmpty);
+    expect(locationId, isNotEmpty);
 
-      // Seed ATTENDED history so min_participants=2 doesn't trip
-      // NEW_USER_LOW_HEADCOUNT (same fixture pattern as the other two
-      // integration test files).
-      await _psqlScalar('''
+    // Seed ATTENDED history so min_participants=2 doesn't trip
+    // NEW_USER_LOW_HEADCOUNT (same fixture pattern as the other two
+    // integration test files).
+    await _psqlScalar('''
         with hist_activity as (
           insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
           select id, 'NYCU', '$testCampus', now() - interval '10 days',
@@ -256,168 +754,246 @@ void main() {
         from hist_activity, (values ('$userAId'::uuid), ('$userBId'::uuid)) as u(uid);
       ''');
 
-      final types = await searchActivityType(clientA, query: '咖啡');
-      final coffeeId = types.firstWhere((t) => t.name == '吃飯/咖啡/探店').id;
+    final types = await searchActivityType(clientA, query: '咖啡');
+    final coffeeId = types.firstWhere((t) => t.name == '吃飯/咖啡/探店').id;
 
-      final requestA = await createRequest(
-        clientA,
-        activityTypeId: coffeeId,
-        campus: testCampus,
-        earliestStart: DateTime.now().toUtc(),
-        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
-        minParticipants: 2,
-      );
-      await submitRequest(clientA, requestA.id);
-      final requestB = await createRequest(
-        clientB,
-        activityTypeId: coffeeId,
-        campus: testCampus,
-        earliestStart: DateTime.now().toUtc(),
-        latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
-        minParticipants: 2,
-      );
-      await submitRequest(clientB, requestB.id);
+    final requestA = await createRequest(
+      clientA,
+      activityTypeId: coffeeId,
+      campus: testCampus,
+      earliestStart: DateTime.now().toUtc(),
+      latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
+      minParticipants: 2,
+    );
+    await submitRequest(clientA, requestA.id);
+    final requestB = await createRequest(
+      clientB,
+      activityTypeId: coffeeId,
+      campus: testCampus,
+      earliestStart: DateTime.now().toUtc(),
+      latestStart: DateTime.now().toUtc().add(const Duration(hours: 2)),
+      minParticipants: 2,
+    );
+    await submitRequest(clientB, requestB.id);
 
-      await _runMatchingEngineUntil(() async {
-        try {
-          final s = await getPendingConfirmationStatus(clientA, requestA.id);
-          return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
-        } on ApiException {
-          return false;
-        }
-      });
-
-      final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
-      final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
-      await respondPendingConfirmation(
-        clientA,
-        pendingConfirmationId: statusForA.pendingConfirmationId,
-        confirm: true,
-      );
-      await respondPendingConfirmation(
-        clientB,
-        pendingConfirmationId: statusForB.pendingConfirmationId,
-        confirm: true,
-      );
-
-      final memberRows =
-          await clientB.from('activity_member').select('activity_id').eq('user_id', userBId);
-      final activityId = memberRows.first['activity_id'] as String;
-      // ignore: avoid_print
-      print('[setup] reached MATCHED activity_id=$activityId');
-
-      // -----------------------------------------------------------------
-      // 1. update_meeting_point: real cooldown, append-only, per-user
-      //    independence — none of this was ever exercised by any test.
-      // -----------------------------------------------------------------
-      final firstUpdate = await updateMeetingPoint(
-        clientA,
-        activityId: activityId,
-        description: '正門警衛室旁',
-      );
-      expect(firstUpdate.updatedBy, userAId);
-      expect(firstUpdate.description, '正門警衛室旁');
-
-      // Same user, immediately again -> real MEETING_POINT_UPDATE_COOLDOWN,
-      // not assumed from reading the migration.
-      await expectLater(
-        updateMeetingPoint(clientA, activityId: activityId, description: '改個地方'),
-        throwsA(
-          isA<ApiException>().having((e) => e.code, 'code', ApiErrorCode.meetingPointUpdateCooldown),
-        ),
-      );
-      // ignore: avoid_print
-      print('[update_meeting_point] same-user immediate re-call correctly hit the cooldown');
-
-      // A different user is NOT subject to A's cooldown — independent
-      // per-(activity, user) gate, not a single per-activity lock.
-      final secondUpdate = await updateMeetingPoint(
-        clientB,
-        activityId: activityId,
-        description: '一樓大廳',
-      );
-      expect(secondUpdate.updatedBy, userBId);
-
-      final history = await _meetingPointUpdatesQuery(clientA, activityId);
-      expect(history.length, 2, reason: 'append-only: both updates kept, not overwritten');
-      expect(history.first.description, '一樓大廳', reason: 'newest-first sort matches the provider');
-      // ignore: avoid_print
-      print('[activity_meeting_point_update] ${history.length} rows, newest="${history.first.description}"');
-
-      // -----------------------------------------------------------------
-      // 2. update_meeting_hint: per-member field, 30-char gate.
-      // -----------------------------------------------------------------
-      await updateMeetingHint(clientA, activityId: activityId, hint: '紅色棒球帽');
-      final hintA = await _ownMeetingHintQuery(clientA, activityId, userAId);
-      expect(hintA, '紅色棒球帽');
-      final hintBUnaffected = await _ownMeetingHintQuery(clientB, activityId, userBId);
-      expect(hintBUnaffected, isNull, reason: "A's hint update must not leak onto B's own row");
-      // ignore: avoid_print
-      print('[update_meeting_hint] A set "$hintA", B unaffected (isolation confirmed)');
-
-      await expectLater(
-        updateMeetingHint(clientA, activityId: activityId, hint: 'a' * 31),
-        throwsA(isA<ApiException>().having((e) => e.code, 'code', ApiErrorCode.invalidInput)),
-      );
-      // ignore: avoid_print
-      print('[update_meeting_hint] 31-char hint correctly rejected with INVALID_INPUT');
-
-      // -----------------------------------------------------------------
-      // 3. Lock the location (real propose/vote/fn_start_activities flow is
-      //    already covered end-to-end by activity_location_voting_smoke_test.dart
-      //    — here just enough to reach a locked activity) and verify the
-      //    exact lookup query _LockedLocationCard performs.
-      // -----------------------------------------------------------------
-      final option = await proposeActivityLocation(clientA, activityId: activityId, locationId: locationId);
-      expect(option.locationId, locationId);
-      await voteActivityLocation(clientB, activityId: activityId, optionId: option.id);
-
-      // fn_start_activities() sweeps every ready activity system-wide in one
-      // call, not scoped to this activityId — under concurrent test-file
-      // execution a different file's call can lock this one first, leaving
-      // this call's own return count at 0. Poll the target row directly.
-      await _psqlScalar(
-        "update activity set start_time = now() - interval '1 minute' where id='$activityId';",
-      );
-      var locked = false;
-      for (var attempt = 0; attempt < 10 && !locked; attempt++) {
-        await _psqlScalar('select fn_start_activities();');
-        final row = await clientA.from('activity').select().eq('id', activityId).single();
-        locked = row['activity_location_id'] != null;
-        if (!locked) await Future<void>.delayed(const Duration(milliseconds: 200));
+    await _runMatchingEngineUntil(() async {
+      try {
+        final s = await getPendingConfirmationStatus(clientA, requestA.id);
+        return s.status == PENDING_CONFIRMATION_STATUS.PENDING;
+      } on ApiException {
+        return false;
       }
-      expect(locked, isTrue, reason: 'fn_start_activities did not lock the activity in time');
+    });
 
-      final lockedRow = await clientA.from('activity').select().eq('id', activityId).single();
-      final lockedActivity = Activity.fromJson(lockedRow);
-      expect(lockedActivity.activityLocationId, option.id);
-      expect(lockedActivity.status, ACTIVITY_STATUS.ONGOING);
+    final statusForA = await getPendingConfirmationStatus(clientA, requestA.id);
+    final statusForB = await getPendingConfirmationStatus(clientB, requestB.id);
+    await respondPendingConfirmation(
+      clientA,
+      pendingConfirmationId: statusForA.pendingConfirmationId,
+      confirm: true,
+    );
+    await respondPendingConfirmation(
+      clientB,
+      pendingConfirmationId: statusForB.pendingConfirmationId,
+      confirm: true,
+    );
 
-      final options = await _activityLocationOptionsQuery(clientA, activityId);
-      final lockedOptionMatch = options.where((o) => o.id == lockedActivity.activityLocationId);
-      expect(lockedOptionMatch, isNotEmpty, reason: '_LockedLocationCard must be able to resolve the winning option');
-      expect(lockedOptionMatch.single.locationId, locationId);
+    final memberRows = await clientB
+        .from('activity_member')
+        .select('activity_id')
+        .eq('user_id', userBId);
+    final activityId = memberRows.first['activity_id'] as String;
+    // ignore: avoid_print
+    print('[setup] reached MATCHED activity_id=$activityId');
 
-      final approved = await _approvedLocationsQuery(clientA, lockedActivity.school, lockedActivity.campus);
-      final lockedMatch = approved.where((l) => l.id == lockedOptionMatch.single.locationId);
-      expect(lockedMatch, isNotEmpty, reason: '_LockedLocationCard must be able to resolve the name');
-      expect(lockedMatch.single.name, 'ADT測試地點$stamp');
-      // ignore: avoid_print
-      print('[approvedLocationsProvider lookup] resolved locked location name="${lockedMatch.single.name}"');
+    // -----------------------------------------------------------------
+    // 1. update_meeting_point: real cooldown, append-only, per-user
+    //    independence — none of this was ever exercised by any test.
+    // -----------------------------------------------------------------
+    final firstUpdate = await updateMeetingPoint(
+      clientA,
+      activityId: activityId,
+      description: '正門警衛室旁',
+    );
+    expect(firstUpdate.updatedBy, userAId);
+    expect(firstUpdate.description, '正門警衛室旁');
 
-      // update_meeting_point/update_meeting_hint stay callable after the
-      // lock (ACTIVITY_NOT_ACTIVE only gates statuses outside MATCHED/ONGOING,
-      // per supabase/migrations/20260724121800_meeting_point_rpc.sql) — real
-      // check, not assumed, since B's earlier cooldown window has since
-      // passed relative to this later call in practice it may still be
-      // active; assert on the meeting hint path instead, which has no
-      // cooldown.
-      await updateMeetingHint(clientB, activityId: activityId, hint: '藍色背包');
-      final hintBAfterLock = await _ownMeetingHintQuery(clientB, activityId, userBId);
-      expect(hintBAfterLock, '藍色背包');
-      // ignore: avoid_print
-      print('[update_meeting_hint] still callable after ONGOING lock');
-    },
-    timeout: const Timeout(Duration(seconds: 45)),
-  );
+    // Same user, immediately again -> real MEETING_POINT_UPDATE_COOLDOWN,
+    // not assumed from reading the migration.
+    await expectLater(
+      updateMeetingPoint(clientA, activityId: activityId, description: '改個地方'),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.code,
+          'code',
+          ApiErrorCode.meetingPointUpdateCooldown,
+        ),
+      ),
+    );
+    // ignore: avoid_print
+    print(
+      '[update_meeting_point] same-user immediate re-call correctly hit the cooldown',
+    );
+
+    // A different user is NOT subject to A's cooldown — independent
+    // per-(activity, user) gate, not a single per-activity lock.
+    final secondUpdate = await updateMeetingPoint(
+      clientB,
+      activityId: activityId,
+      description: '一樓大廳',
+    );
+    expect(secondUpdate.updatedBy, userBId);
+
+    final history = await _meetingPointUpdatesQuery(clientA, activityId);
+    expect(
+      history.length,
+      2,
+      reason: 'append-only: both updates kept, not overwritten',
+    );
+    expect(
+      history.first.description,
+      '一樓大廳',
+      reason: 'newest-first sort matches the provider',
+    );
+    // ignore: avoid_print
+    print(
+      '[activity_meeting_point_update] ${history.length} rows, newest="${history.first.description}"',
+    );
+
+    // -----------------------------------------------------------------
+    // 2. update_meeting_hint: per-member field, 30-char gate.
+    // -----------------------------------------------------------------
+    await updateMeetingHint(clientA, activityId: activityId, hint: '紅色棒球帽');
+    final hintA = await _ownMeetingHintQuery(clientA, activityId, userAId);
+    expect(hintA, '紅色棒球帽');
+    final hintBUnaffected = await _ownMeetingHintQuery(
+      clientB,
+      activityId,
+      userBId,
+    );
+    expect(
+      hintBUnaffected,
+      isNull,
+      reason: "A's hint update must not leak onto B's own row",
+    );
+    // ignore: avoid_print
+    print(
+      '[update_meeting_hint] A set "$hintA", B unaffected (isolation confirmed)',
+    );
+
+    await expectLater(
+      updateMeetingHint(clientA, activityId: activityId, hint: 'a' * 31),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.code,
+          'code',
+          ApiErrorCode.invalidInput,
+        ),
+      ),
+    );
+    // ignore: avoid_print
+    print(
+      '[update_meeting_hint] 31-char hint correctly rejected with INVALID_INPUT',
+    );
+
+    // -----------------------------------------------------------------
+    // 3. Lock the location (real propose/vote/fn_start_activities flow is
+    //    already covered end-to-end by activity_location_voting_smoke_test.dart
+    //    — here just enough to reach a locked activity) and verify the
+    //    exact lookup query _LockedLocationCard performs.
+    // -----------------------------------------------------------------
+    final option = await proposeActivityLocation(
+      clientA,
+      activityId: activityId,
+      locationId: locationId,
+    );
+    expect(option.locationId, locationId);
+    await voteActivityLocation(
+      clientB,
+      activityId: activityId,
+      optionId: option.id,
+    );
+
+    // fn_start_activities() sweeps every ready activity system-wide in one
+    // call, not scoped to this activityId — under concurrent test-file
+    // execution a different file's call can lock this one first, leaving
+    // this call's own return count at 0. Poll the target row directly.
+    await _psqlScalar(
+      "update activity set start_time = now() - interval '1 minute' where id='$activityId';",
+    );
+    var locked = false;
+    for (var attempt = 0; attempt < 10 && !locked; attempt++) {
+      await _psqlScalar('select fn_start_activities();');
+      final row = await clientA
+          .from('activity')
+          .select()
+          .eq('id', activityId)
+          .single();
+      locked = row['activity_location_id'] != null;
+      if (!locked) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+    }
+    expect(
+      locked,
+      isTrue,
+      reason: 'fn_start_activities did not lock the activity in time',
+    );
+
+    final lockedRow = await clientA
+        .from('activity')
+        .select()
+        .eq('id', activityId)
+        .single();
+    final lockedActivity = Activity.fromJson(lockedRow);
+    expect(lockedActivity.activityLocationId, option.id);
+    expect(lockedActivity.status, ACTIVITY_STATUS.ONGOING);
+
+    final options = await _activityLocationOptionsQuery(clientA, activityId);
+    final lockedOptionMatch = options.where(
+      (o) => o.id == lockedActivity.activityLocationId,
+    );
+    expect(
+      lockedOptionMatch,
+      isNotEmpty,
+      reason: '_LockedLocationCard must be able to resolve the winning option',
+    );
+    expect(lockedOptionMatch.single.locationId, locationId);
+
+    final approved = await _approvedLocationsQuery(
+      clientA,
+      lockedActivity.school,
+      lockedActivity.campus,
+    );
+    final lockedMatch = approved.where(
+      (l) => l.id == lockedOptionMatch.single.locationId,
+    );
+    expect(
+      lockedMatch,
+      isNotEmpty,
+      reason: '_LockedLocationCard must be able to resolve the name',
+    );
+    expect(lockedMatch.single.name, 'ADT測試地點$stamp');
+    // ignore: avoid_print
+    print(
+      '[approvedLocationsProvider lookup] resolved locked location name="${lockedMatch.single.name}"',
+    );
+
+    // update_meeting_point/update_meeting_hint stay callable after the
+    // lock (ACTIVITY_NOT_ACTIVE only gates statuses outside MATCHED/ONGOING,
+    // per supabase/migrations/20260724121800_meeting_point_rpc.sql) — real
+    // check, not assumed, since B's earlier cooldown window has since
+    // passed relative to this later call in practice it may still be
+    // active; assert on the meeting hint path instead, which has no
+    // cooldown.
+    await updateMeetingHint(clientB, activityId: activityId, hint: '藍色背包');
+    final hintBAfterLock = await _ownMeetingHintQuery(
+      clientB,
+      activityId,
+      userBId,
+    );
+    expect(hintBAfterLock, '藍色背包');
+    // ignore: avoid_print
+    print('[update_meeting_hint] still callable after ONGOING lock');
+  }, timeout: const Timeout(Duration(seconds: 45)));
 }

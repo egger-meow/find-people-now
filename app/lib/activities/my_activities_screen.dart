@@ -12,26 +12,27 @@ import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
 import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_button.dart';
-import '../widgets/app_card.dart';
+import '../widgets/app_section.dart';
+import '../widgets/app_status_summary.dart';
 import '../widgets/skeleton.dart';
 import 'my_activities_providers.dart';
 import 'pending_confirmation_card.dart';
 
 String _requestStatusLabel(REQUEST_STATUS status) => switch (status) {
-      REQUEST_STATUS.DRAFT => '草稿',
-      REQUEST_STATUS.REQUESTING => '等待配對中',
-      REQUEST_STATUS.PENDING_CONFIRMATION => '小人數確認中',
-      REQUEST_STATUS.MATCHED => '已成團',
-      REQUEST_STATUS.EXPIRED => '未成局',
-      REQUEST_STATUS.CANCELLED => '已取消',
-    };
+  REQUEST_STATUS.DRAFT => '草稿',
+  REQUEST_STATUS.REQUESTING => '等待配對中',
+  REQUEST_STATUS.PENDING_CONFIRMATION => '小人數確認中',
+  REQUEST_STATUS.MATCHED => '已成團',
+  REQUEST_STATUS.EXPIRED => '未成局',
+  REQUEST_STATUS.CANCELLED => '已取消',
+};
 
 String _activityStatusLabel(ACTIVITY_STATUS status) => switch (status) {
-      ACTIVITY_STATUS.MATCHED => '已成團，等待開始',
-      ACTIVITY_STATUS.ONGOING => '進行中',
-      ACTIVITY_STATUS.COMPLETED => '已完成',
-      ACTIVITY_STATUS.CANCELLED => '已取消',
-    };
+  ACTIVITY_STATUS.MATCHED => '已成團，等待開始',
+  ACTIVITY_STATUS.ONGOING => '進行中',
+  ACTIVITY_STATUS.COMPLETED => '已完成',
+  ACTIVITY_STATUS.CANCELLED => '已取消',
+};
 
 /// 卡片語意色調——跟文字狀態標籤一起用（不單靠顏色傳達意義），四種狀態各自
 /// 對應一種「這件事現在對使用者來說是什麼心情」：active＝還在等待/已確定但
@@ -39,21 +40,66 @@ String _activityStatusLabel(ACTIVITY_STATUS status) => switch (status) {
 /// muted＝這條路徑沒有下文了（未成局/已取消）。
 enum _CardTone { active, live, done, muted }
 
+/// Presentation groups for the activity list. The providers keep their
+/// existing filter and chronological order; this only promotes work that
+/// needs attention above completed history.
+class MyActivitySections {
+  const MyActivitySections({
+    required this.actionRequired,
+    required this.current,
+    required this.history,
+  });
+
+  final List<MyActivityListItem> actionRequired;
+  final List<MyActivityListItem> current;
+  final List<MyActivityListItem> history;
+}
+
+MyActivitySections organizeMyActivitySections(List<MyActivityListItem> items) {
+  final actionRequired = <MyActivityListItem>[];
+  final current = <MyActivityListItem>[];
+  final history = <MyActivityListItem>[];
+
+  for (final item in items) {
+    if (_requiresActivityAction(item)) {
+      actionRequired.add(item);
+    } else if (item.isOngoing) {
+      current.add(item);
+    } else {
+      history.add(item);
+    }
+  }
+
+  return MyActivitySections(
+    actionRequired: actionRequired,
+    current: current,
+    history: history,
+  );
+}
+
+bool _requiresActivityAction(MyActivityListItem item) {
+  if (item.kind == MyActivityKind.request) {
+    return item.request!.status == REQUEST_STATUS.PENDING_CONFIRMATION;
+  }
+  return item.activity!.status == ACTIVITY_STATUS.ONGOING;
+}
+
 Color _toneContainer(_CardTone tone, ColorScheme scheme) => switch (tone) {
-      _CardTone.active => scheme.primaryContainer,
-      _CardTone.live => scheme.tertiaryContainer,
-      _CardTone.done => scheme.surfaceContainerHighest,
-      _CardTone.muted => scheme.surfaceContainerHighest,
-    };
+  _CardTone.active => scheme.primaryContainer,
+  _CardTone.live => scheme.tertiaryContainer,
+  _CardTone.done => scheme.surfaceContainerHighest,
+  _CardTone.muted => scheme.surfaceContainerHighest,
+};
 
 Color _toneOnContainer(_CardTone tone, ColorScheme scheme) => switch (tone) {
-      _CardTone.active => scheme.onPrimaryContainer,
-      _CardTone.live => scheme.onTertiaryContainer,
-      _CardTone.done => scheme.onSurfaceVariant,
-      _CardTone.muted => scheme.onSurfaceVariant,
-    };
+  _CardTone.active => scheme.onPrimaryContainer,
+  _CardTone.live => scheme.onTertiaryContainer,
+  _CardTone.done => scheme.onSurfaceVariant,
+  _CardTone.muted => scheme.onSurfaceVariant,
+};
 
-String _hm(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+String _hm(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 String _dayPrefix(DateTime local, DateTime todayDate) {
   final target = DateTime(local.year, local.month, local.day);
@@ -75,7 +121,10 @@ String _formatWindow(DateTime a, DateTime b) {
   final aLocal = a.toLocal();
   final bLocal = b.toLocal();
   final todayDate = DateTime.now();
-  final prefix = _dayPrefix(aLocal, DateTime(todayDate.year, todayDate.month, todayDate.day));
+  final prefix = _dayPrefix(
+    aLocal,
+    DateTime(todayDate.year, todayDate.month, todayDate.day),
+  );
   return '$prefix ${_hm(aLocal)}–${_hm(bLocal)}';
 }
 
@@ -113,17 +162,34 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
         appBar: AppBar(
           title: const Text('我的活動'),
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(52),
+            preferredSize: const Size.fromHeight(60),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
-              child: CupertinoSlidingSegmentedControl<int>(
-                groupValue: _index,
-                children: const {0: Text('進行中'), 1: Text('已結束')},
-                onValueChanged: (value) {
-                  if (value == null) return;
-                  AppHaptics.selection();
-                  setState(() => _index = value);
-                },
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.sm,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 52),
+                child: CupertinoSlidingSegmentedControl<int>(
+                  groupValue: _index,
+                  children: const {
+                    0: Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                      child: Text('進行中'),
+                    ),
+                    1: Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                      child: Text('已結束'),
+                    ),
+                  },
+                  onValueChanged: (value) {
+                    if (value == null) return;
+                    AppHaptics.selection();
+                    setState(() => _index = value);
+                  },
+                ),
               ),
             ),
           ),
@@ -144,7 +210,12 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('我的活動'),
-          bottom: const TabBar(tabs: [Tab(text: '進行中'), Tab(text: '已結束')]),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: '進行中'),
+              Tab(text: '已結束'),
+            ],
+          ),
         ),
         body: const SafeArea(
           child: TabBarView(
@@ -168,7 +239,9 @@ class _ActivityList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final listAsync = ref.watch(myActivityListProvider);
     final typesAsync = ref.watch(activityTypesProvider);
-    final typeNames = {for (final t in typesAsync.value ?? const []) t.id: t.name};
+    final typeNames = <String, String>{
+      for (final t in typesAsync.value ?? const []) t.id: t.name,
+    };
 
     // 骨架屏 → 真實內容之間用淡入交叉取代硬切（guideline: fade-crossfade）：
     // 同一個容器內的內容替換，硬切會讓整塊「閃」一下，交叉淡入則讀起來是
@@ -179,9 +252,13 @@ class _ActivityList extends ConsumerWidget {
         // 清單型內容用卡片骨架而不是置中轉圈圈——版面先撐在正確位置，
         // 資料到位時不會整頁跳一下。
         loading: () => const ActivityListSkeleton(),
-        error: (error, stack) => _ErrorState(onRetry: () => invalidateMyActivityList(ref)),
+        error: (error, stack) =>
+            _ErrorState(onRetry: () => invalidateMyActivityList(ref)),
         data: (items) {
-          final filtered = items.where((item) => item.isOngoing == showOngoing).toList();
+          final filtered = items
+              .where((item) => item.isOngoing == showOngoing)
+              .toList();
+          final sections = organizeMyActivitySections(filtered);
           return AdaptiveRefresh(
             key: ValueKey('list-$showOngoing'),
             onRefresh: () async => invalidateMyActivityList(ref),
@@ -207,13 +284,11 @@ class _ActivityList extends ConsumerWidget {
               else
                 SliverPadding(
                   padding: const EdgeInsets.all(AppSpacing.lg),
-                  sliver: SliverList.separated(
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-                    itemBuilder: (context, index) => _ActivityListEntry(
-                      key: ValueKey(filtered[index].id),
-                      item: filtered[index],
-                      typeName: typeNames[filtered[index].activityTypeId] ?? '活動',
+                  sliver: SliverToBoxAdapter(
+                    child: _ActivitySections(
+                      showOngoing: showOngoing,
+                      sections: sections,
+                      typeNames: typeNames,
                     ),
                   ),
                 ),
@@ -228,6 +303,63 @@ class _ActivityList extends ConsumerWidget {
 /// 載入失敗——原本只有一行 `載入失敗：$error`（把 Dart 例外字串直接丟給使用者
 /// 看，跟先前「不要把內部錯誤碼露到 UI」的反饋是同一類問題），而且沒有任何
 /// 恢復路徑，使用者只能切分頁碰運氣。改成人話說明 + 明確的重試按鈕。
+class _ActivitySections extends StatelessWidget {
+  const _ActivitySections({
+    required this.showOngoing,
+    required this.sections,
+    required this.typeNames,
+  });
+
+  final bool showOngoing;
+  final MyActivitySections sections;
+  final Map<String, String> typeNames;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = showOngoing
+        ? [
+            if (sections.actionRequired.isNotEmpty)
+              ('需要處理', sections.actionRequired),
+            if (sections.current.isNotEmpty) ('目前活動', sections.current),
+          ]
+        : [if (sections.history.isNotEmpty) ('過去活動', sections.history)];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var groupIndex = 0; groupIndex < groups.length; groupIndex++) ...[
+          if (groupIndex > 0) const SizedBox(height: AppSpacing.xl),
+          AppSection(
+            title: groups[groupIndex].$1,
+            showDivider: groupIndex > 0,
+            child: Column(
+              children: [
+                for (
+                  var itemIndex = 0;
+                  itemIndex < groups[groupIndex].$2.length;
+                  itemIndex++
+                ) ...[
+                  _ActivityListEntry(
+                    key: ValueKey(groups[groupIndex].$2[itemIndex].id),
+                    item: groups[groupIndex].$2[itemIndex],
+                    typeName:
+                        typeNames[groups[groupIndex]
+                            .$2[itemIndex]
+                            .activityTypeId] ??
+                        '活動',
+                  ),
+                  if (itemIndex < groups[groupIndex].$2.length - 1)
+                    const Divider(height: AppSpacing.lg),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.onRetry});
 
@@ -242,15 +374,24 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_rounded, size: 40, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 40,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(
               '載入不到活動清單\n檢查一下網路，再試一次',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: AppSpacing.lg),
-            SizedBox(width: 220, child: AppButton(label: '重新載入', onPressed: onRetry)),
+            SizedBox(
+              width: 220,
+              child: AppButton(label: '重新載入', onPressed: onRetry),
+            ),
           ],
         ),
       ),
@@ -259,7 +400,11 @@ class _ErrorState extends StatelessWidget {
 }
 
 class _ActivityListEntry extends StatelessWidget {
-  const _ActivityListEntry({super.key, required this.item, required this.typeName});
+  const _ActivityListEntry({
+    super.key,
+    required this.item,
+    required this.typeName,
+  });
 
   final MyActivityListItem item;
   final String typeName;
@@ -270,10 +415,13 @@ class _ActivityListEntry extends StatelessWidget {
       final request = item.request!;
       switch (request.status) {
         case REQUEST_STATUS.REQUESTING:
-          return _ActivityCard(
+          return _ActivityRow(
             icon: activityTypeIcon(typeName),
             typeName: typeName,
-            timeLabel: _formatWindow(request.earliestStart, request.latestStart),
+            timeLabel: _formatWindow(
+              request.earliestStart,
+              request.latestStart,
+            ),
             campusLabel: '${schoolLabel(request.school)} ${request.campus}',
             statusLabel: _requestStatusLabel(request.status),
             tone: _CardTone.active,
@@ -283,10 +431,13 @@ class _ActivityListEntry extends StatelessWidget {
           return PendingConfirmationCard(requestId: request.id);
         case REQUEST_STATUS.EXPIRED:
         case REQUEST_STATUS.CANCELLED:
-          return _ActivityCard(
+          return _ActivityRow(
             icon: activityTypeIcon(typeName),
             typeName: typeName,
-            timeLabel: _formatWindow(request.earliestStart, request.latestStart),
+            timeLabel: _formatWindow(
+              request.earliestStart,
+              request.latestStart,
+            ),
             campusLabel: '${schoolLabel(request.school)} ${request.campus}',
             statusLabel: _requestStatusLabel(request.status),
             tone: _CardTone.muted,
@@ -305,7 +456,17 @@ class _ActivityListEntry extends StatelessWidget {
       ACTIVITY_STATUS.COMPLETED => _CardTone.done,
       ACTIVITY_STATUS.CANCELLED => _CardTone.muted,
     };
-    return _ActivityCard(
+    if (activity.status == ACTIVITY_STATUS.ONGOING) {
+      return _CurrentActivitySummary(
+        icon: activityTypeIcon(typeName),
+        typeName: typeName,
+        timeLabel: _formatPoint(activity.startTime),
+        campusLabel: '${schoolLabel(activity.school)} ${activity.campus}',
+        statusLabel: _activityStatusLabel(activity.status),
+        onTap: () => context.push('/activity/${activity.id}'),
+      );
+    }
+    return _ActivityRow(
       icon: activityTypeIcon(typeName),
       typeName: typeName,
       timeLabel: _formatPoint(activity.startTime),
@@ -320,8 +481,48 @@ class _ActivityListEntry extends StatelessWidget {
 /// 統一卡片——Request（REQUESTING/EXPIRED/CANCELLED）跟 Activity（MATCHED/
 /// ONGOING/COMPLETED/CANCELLED）共用同一套視覺語言：icon 色塊（跟狀態色調
 /// 呼應）＋類型名稱＋時間＋校區＋狀態標籤，不因為資料來源不同而長得不一樣。
-class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({
+class _CurrentActivitySummary extends StatelessWidget {
+  const _CurrentActivitySummary({
+    required this.icon,
+    required this.typeName,
+    required this.timeLabel,
+    required this.campusLabel,
+    required this.statusLabel,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String typeName;
+  final String timeLabel;
+  final String campusLabel;
+  final String statusLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: '$typeName，$timeLabel，$campusLabel，$statusLabel',
+    onTap: onTap,
+    child: ExcludeSemantics(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: AppStatusSummary(
+            title: typeName,
+            message: '$campusLabel・$statusLabel',
+            leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
+            deadline: timeLabel,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({
     required this.icon,
     required this.typeName,
     required this.timeLabel,
@@ -344,87 +545,143 @@ class _ActivityCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final muted = tone == _CardTone.muted;
+    final highTextScale =
+        MediaQuery.textScalerOf(context).scale(14) >= 14 * 1.5;
 
-    return AppCard(
-      onTap: onTap,
+    return Semantics(
+      button: onTap != null,
       // VoiceOver 預設會把卡片裡的五段文字（類型／狀態／時間／校區／箭頭）
       // 各唸成一個節點，聽起來像散落的詞。合併成一句完整敘述，順序照視覺
       // 閱讀順序，狀態放後面當結論。
-      semanticLabel: '$typeName，$timeLabel，$campusLabel，$statusLabel',
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: _toneContainer(tone, scheme),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            child: Icon(icon, size: 22, color: _toneOnContainer(tone, scheme)),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        typeName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: muted ? scheme.onSurfaceVariant : scheme.onSurface,
+      label: '$typeName，$timeLabel，$campusLabel，$statusLabel',
+      onTap: onTap,
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _toneContainer(tone, scheme),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 22,
+                      color: _toneOnContainer(tone, scheme),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (highTextScale) ...[
+                          Text(
+                            typeName,
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: muted
+                                  ? scheme.onSurfaceVariant
+                                  : scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: _StatusChip(label: statusLabel, tone: tone),
+                          ),
+                        ] else
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  typeName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: muted
+                                        ? scheme.onSurfaceVariant
+                                        : scheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              _StatusChip(label: statusLabel, tone: tone),
+                            ],
+                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: 14,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                timeLabel,
+                                maxLines: highTextScale ? null : 1,
+                                overflow: highTextScale
+                                    ? TextOverflow.visible
+                                    : TextOverflow.ellipsis,
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              size: 14,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                campusLabel,
+                                maxLines: highTextScale ? null : 1,
+                                overflow: highTextScale
+                                    ? TextOverflow.visible
+                                    : TextOverflow.ellipsis,
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
+                  ),
+                  if (onTap != null) ...[
                     const SizedBox(width: AppSpacing.xs),
-                    _StatusChip(label: statusLabel, tone: tone),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.schedule_rounded, size: 14, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        timeLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Icon(Icons.location_on_rounded, size: 14, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        campusLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          if (onTap != null) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -440,7 +697,10 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 3,
+      ),
       decoration: BoxDecoration(
         color: _toneContainer(tone, scheme),
         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -449,9 +709,9 @@ class _StatusChip extends StatelessWidget {
         label,
         maxLines: 1,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: _toneOnContainer(tone, scheme),
-              fontWeight: FontWeight.w600,
-            ),
+          color: _toneOnContainer(tone, scheme),
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -461,7 +721,12 @@ class _StatusChip extends StatelessWidget {
 /// 「進行中」分頁空的時候直接給出下一步（去配對頁），呼應「使用者不該疑惑
 /// 接下來要幹嘛」；「已結束」分頁單純是還沒有歷史紀錄，不需要 CTA。
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.icon, required this.message, this.ctaLabel, this.onCta});
+  const _EmptyState({
+    required this.icon,
+    required this.message,
+    this.ctaLabel,
+    this.onCta,
+  });
 
   final IconData icon;
   final String message;
@@ -482,11 +747,16 @@ class _EmptyState extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             if (ctaLabel != null && onCta != null) ...[
               const SizedBox(height: AppSpacing.lg),
-              SizedBox(width: 220, child: AppButton(label: ctaLabel!, onPressed: onCta)),
+              SizedBox(
+                width: 220,
+                child: AppButton(label: ctaLabel!, onPressed: onCta),
+              ),
             ],
           ],
         ),

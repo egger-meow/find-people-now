@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/activity_type_icons.dart';
@@ -9,7 +10,8 @@ import '../data/skill_level_labels.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/match_request.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL, SKILL_LEVEL;
+import '../generated/supadart_header.dart'
+    show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL, SKILL_LEVEL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
@@ -20,11 +22,92 @@ import '../theme/platform_adaptive.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_section.dart';
+import '../widgets/app_selection_summary.dart';
 import '../widgets/app_snack_bar.dart';
+import '../widgets/app_sticky_action_area.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
+
+/// Submission boundary for the create-request journey. Production uses the
+/// existing RPC wrappers; widget tests can replace only this boundary while
+/// still exercising the real screen state, confirmation, invalidation, and
+/// navigation flow.
+abstract interface class MatchRequestSubmissionGateway {
+  const MatchRequestSubmissionGateway();
+
+  MatchRequestSubmissionSession capture(WidgetRef ref);
+}
+
+abstract interface class MatchRequestSubmissionSession {
+  const MatchRequestSubmissionSession();
+
+  Future<MatchRequest> create({
+    required String activityTypeId,
+    required String campus,
+    required DateTime earliestStart,
+    required DateTime latestStart,
+    required int minParticipants,
+    required int maxParticipants,
+    required bool allowDowngrade,
+    required SKILL_LEVEL? skillLevel,
+    required String? studyTarget,
+  });
+
+  Future<MatchRequest> submit(String requestId);
+}
+
+class RpcMatchRequestSubmissionGateway
+    implements MatchRequestSubmissionGateway {
+  const RpcMatchRequestSubmissionGateway();
+
+  @override
+  MatchRequestSubmissionSession capture(WidgetRef ref) {
+    return _RpcMatchRequestSubmissionSession(ref.read(supabaseClientProvider));
+  }
+}
+
+class _RpcMatchRequestSubmissionSession
+    implements MatchRequestSubmissionSession {
+  const _RpcMatchRequestSubmissionSession(this.client);
+
+  final SupabaseClient client;
+
+  @override
+  Future<MatchRequest> create({
+    required String activityTypeId,
+    required String campus,
+    required DateTime earliestStart,
+    required DateTime latestStart,
+    required int minParticipants,
+    required int maxParticipants,
+    required bool allowDowngrade,
+    required SKILL_LEVEL? skillLevel,
+    required String? studyTarget,
+  }) {
+    return createRequest(
+      client,
+      activityTypeId: activityTypeId,
+      campus: campus,
+      earliestStart: earliestStart,
+      latestStart: latestStart,
+      minParticipants: minParticipants,
+      maxParticipants: maxParticipants,
+      allowDowngrade: allowDowngrade,
+      skillLevel: skillLevel,
+      studyTarget: studyTarget,
+    );
+  }
+
+  @override
+  Future<MatchRequest> submit(String requestId) {
+    return submitRequest(client, requestId);
+  }
+}
+
+DateTime _systemNow() => DateTime.now();
 
 /// UI_PLAN.md §2 配對頁（首頁）— 填表 → 送出 → 等待室這一條路徑。
 /// §7 時段桶 UI：方向已定案（5 個固定時段桶＋「現在」快速選項、僅顯示
@@ -38,13 +121,24 @@ import 'match_providers.dart';
 /// 單校區假設下（見 match_providers.dart 的 [campusOptionsProvider] 註解）
 /// 只有一個選項時直接顯示，不再讓使用者多一步選擇。
 class CreateRequestScreen extends ConsumerWidget {
-  const CreateRequestScreen({super.key});
+  const CreateRequestScreen({
+    super.key,
+    this.submissionGateway = const RpcMatchRequestSubmissionGateway(),
+    this.now = _systemNow,
+  });
+
+  final MatchRequestSubmissionGateway submissionGateway;
+  final DateTime Function() now;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeRequest = ref.watch(myActiveRequestProvider);
 
     return Scaffold(
+      // [AppStickyActionArea] consumes viewInsets itself so the action and the
+      // remaining scrollable form move together above the keyboard. Letting
+      // Scaffold also resize the body would count the keyboard height twice.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('敢不敢揪'),
         actions: [
@@ -91,7 +185,10 @@ class CreateRequestScreen extends ConsumerWidget {
                 if (activity != null) {
                   return _ActiveActivityBlock(activity: activity);
                 }
-                return const _CreateRequestForm();
+                return _CreateRequestForm(
+                  submissionGateway: submissionGateway,
+                  now: now,
+                );
               },
             );
           },
@@ -103,18 +200,27 @@ class CreateRequestScreen extends ConsumerWidget {
   /// 反饋：配對頁沒有以邀請碼加入房間的入口。
   /// UI_PLAN §3 提到「邀請朋友」按鈕產生連結/邀請碼，但收到邀請碼的人需要
   /// 一個地方輸入——這裡在配對頁提供入口，呼叫 `join_request_by_token` RPC。
-  static Future<void> _showJoinByTokenDialog(BuildContext context, WidgetRef ref) async {
+  static Future<void> _showJoinByTokenDialog(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final controller = TextEditingController();
     String? errorText;
 
-    Future<void> attemptJoin(BuildContext dialogContext, StateSetter setDialogState) async {
+    Future<void> attemptJoin(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
       final token = controller.text.trim();
       if (token.isEmpty) {
         setDialogState(() => errorText = '請輸入邀請碼');
         return;
       }
       try {
-        final request = await joinRequestByToken(ref.read(supabaseClientProvider), token);
+        final request = await joinRequestByToken(
+          ref.read(supabaseClientProvider),
+          token,
+        );
         if (!dialogContext.mounted) return;
         Navigator.of(dialogContext).pop(true);
         if (context.mounted) context.push('/waiting-room/${request.id}');
@@ -150,8 +256,15 @@ class CreateRequestScreen extends ConsumerWidget {
             ],
           ),
           actions: [
-            AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
-            AppDialogAction(label: '加入', isDefault: true, onPressed: () => attemptJoin(dialogContext, setDialogState)),
+            AppDialogAction(
+              label: '取消',
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            AppDialogAction(
+              label: '加入',
+              isDefault: true,
+              onPressed: () => attemptJoin(dialogContext, setDialogState),
+            ),
           ],
         ),
       ),
@@ -175,7 +288,9 @@ class _ActiveRequestBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final statusLabel = request.status == REQUEST_STATUS.PENDING_CONFIRMATION ? '小人數確認中' : '配對中';
+    final statusLabel = request.status == REQUEST_STATUS.PENDING_CONFIRMATION
+        ? '小人數確認中'
+        : '配對中';
 
     return Center(
       child: Padding(
@@ -183,13 +298,23 @@ class _ActiveRequestBlock extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.hourglass_top_rounded, size: 48, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.hourglass_top_rounded,
+              size: 48,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text('你已經有進行中的配對', style: textTheme.titleLarge, textAlign: TextAlign.center),
+            Text(
+              '你已經有進行中的配對',
+              style: textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               '狀態：$statusLabel — 完成或取消前無法建立新配對',
-              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              style: textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -216,7 +341,9 @@ class _ActiveActivityBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final statusLabel = activity.status == ACTIVITY_STATUS.ONGOING ? '進行中' : '已成團，等待開始';
+    final statusLabel = activity.status == ACTIVITY_STATUS.ONGOING
+        ? '進行中'
+        : '已成團，等待開始';
 
     return Center(
       child: Padding(
@@ -224,13 +351,23 @@ class _ActiveActivityBlock extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.event_busy_rounded, size: 48, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.event_busy_rounded,
+              size: 48,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text('你目前有進行中的活動', style: textTheme.titleLarge, textAlign: TextAlign.center),
+            Text(
+              '你目前有進行中的活動',
+              style: textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               '狀態：$statusLabel — 活動結束前無法建立新配對',
-              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              style: textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -290,14 +427,50 @@ List<_TimeBucket> _generateBuckets(DateTime now) {
           ? DateTime(day.year, day.month, day.day).add(const Duration(days: 1))
           : DateTime(day.year, day.month, day.day, endHour);
       if (!start.isBefore(now) && start.isBefore(windowEnd)) {
-        buckets.add(_TimeBucket(label: label, start: start, end: end, isTomorrow: dayOffset == 1, icon: icon));
+        buckets.add(
+          _TimeBucket(
+            label: label,
+            start: start,
+            end: end,
+            isTomorrow: dayOffset == 1,
+            icon: icon,
+          ),
+        );
       }
     }
   }
   return buckets;
 }
 
-String _formatTime(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+String _formatTime(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+/// Formats the complete time criterion used by both the persistent summary and
+/// the confirmation snapshot. [relativeTo] keeps tomorrow/date behavior
+/// deterministic in regression tests.
+String formatMatchRequestWindow(
+  (DateTime, DateTime)? window, {
+  DateTime? relativeTo,
+}) {
+  if (window == null) return '尚未選擇';
+  final now = relativeTo ?? DateTime.now();
+  String dateLabel(DateTime value) {
+    final date = DateTime(value.year, value.month, value.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final difference = date.difference(today).inDays;
+    if (difference == 0) return '今天';
+    if (difference == 1) return '明天';
+    return '${value.month} 月 ${value.day} 日';
+  }
+
+  final startLabel = '${dateLabel(window.$1)} ${_formatTime(window.$1)}';
+  if (window.$1.year == window.$2.year &&
+      window.$1.month == window.$2.month &&
+      window.$1.day == window.$2.day) {
+    return '$startLabel - ${_formatTime(window.$2)}';
+  }
+  return '$startLabel - ${dateLabel(window.$2)} ${_formatTime(window.$2)}';
+}
 
 /// Campus Activity Pulse（v1.26）——首頁氣氛指標：「這個校區現在有人在揪」的
 /// 匿名聚合信號，不是可操作的清單（沒有點擊進某個 Request 的入口，那會
@@ -326,7 +499,12 @@ class _CampusPulseBanner extends ConsumerWidget {
             children: [
               const Text('🔥', style: TextStyle(fontSize: 16)),
               const SizedBox(width: AppSpacing.xs),
-              Text('$campus 現在有人在揪', style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                '$campus 現在有人在揪',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -336,9 +514,18 @@ class _CampusPulseBanner extends ConsumerWidget {
             children: [
               for (final entry in entries)
                 Chip(
-                  avatar: Icon(activityTypeIcon(entry.activityTypeName), size: 16, color: scheme.primary),
-                  label: Text('${entry.activityTypeName} · ${entry.personCount} 人在等'),
-                  visualDensity: const VisualDensity(horizontal: -2, vertical: -1),
+                  avatar: Icon(
+                    activityTypeIcon(entry.activityTypeName),
+                    size: 16,
+                    color: scheme.primary,
+                  ),
+                  label: Text(
+                    '${entry.activityTypeName} · ${entry.personCount} 人在等',
+                  ),
+                  visualDensity: const VisualDensity(
+                    horizontal: -2,
+                    vertical: -1,
+                  ),
                 ),
             ],
           ),
@@ -353,7 +540,11 @@ class _CampusPulseBanner extends ConsumerWidget {
 /// 同一個位置群組，兩者都是「不用一直盯著等待室，系統會告訴你」這個產品
 /// 目標的兩面。
 class _AlertSubscriptionSection extends ConsumerWidget {
-  const _AlertSubscriptionSection({required this.school, required this.campus, required this.types});
+  const _AlertSubscriptionSection({
+    required this.school,
+    required this.campus,
+    required this.types,
+  });
 
   final SCHOOL school;
   final String campus;
@@ -373,20 +564,27 @@ class _AlertSubscriptionSection extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('活動類型', style: Theme.of(dialogContext).textTheme.labelMedium),
+              Text(
+                '活動類型',
+                style: Theme.of(dialogContext).textTheme.labelMedium,
+              ),
               const SizedBox(height: AppSpacing.xs),
               DropdownButton<ActivityType>(
                 isExpanded: true,
                 value: selectedType,
                 items: [
-                  for (final type in types) DropdownMenuItem(value: type, child: Text(type.name)),
+                  for (final type in types)
+                    DropdownMenuItem(value: type, child: Text(type.name)),
                 ],
                 onChanged: (value) {
                   if (value != null) setDialogState(() => selectedType = value);
                 },
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text('$campus 出現在幾小時內就通知我', style: Theme.of(dialogContext).textTheme.labelMedium),
+              Text(
+                '$campus 出現在幾小時內就通知我',
+                style: Theme.of(dialogContext).textTheme.labelMedium,
+              ),
               const SizedBox(height: AppSpacing.xs),
               Wrap(
                 spacing: AppSpacing.xs,
@@ -395,15 +593,24 @@ class _AlertSubscriptionSection extends ConsumerWidget {
                     ChoiceChip(
                       label: Text('$option 小時'),
                       selected: hours == option,
-                      onSelected: AppHaptics.select((_) => setDialogState(() => hours = option)),
+                      onSelected: AppHaptics.select(
+                        (_) => setDialogState(() => hours = option),
+                      ),
                     ),
                 ],
               ),
             ],
           ),
           actions: [
-            AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
-            AppDialogAction(label: '設定提醒', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
+            AppDialogAction(
+              label: '取消',
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            AppDialogAction(
+              label: '設定提醒',
+              isDefault: true,
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
           ],
         ),
       ),
@@ -421,13 +628,18 @@ class _AlertSubscriptionSection extends ConsumerWidget {
       ref.invalidate(myActiveAlertSubscriptionsProvider);
     } on ApiException catch (e) {
       if (!context.mounted) return;
-      final message = e.code == ApiErrorCode.tooManyAlertSubscriptions ? '同時最多只能設定 5 個提醒，先取消一些吧' : '設定失敗：${e.code.name}';
+      final message = e.code == ApiErrorCode.tooManyAlertSubscriptions
+          ? '同時最多只能設定 5 個提醒，先取消一些吧'
+          : '設定失敗：${e.code.name}';
       showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
 
   Future<void> _cancel(WidgetRef ref, String subscriptionId) async {
-    await unsubscribeActivityAlert(ref.read(supabaseClientProvider), subscriptionId: subscriptionId);
+    await unsubscribeActivityAlert(
+      ref.read(supabaseClientProvider),
+      subscriptionId: subscriptionId,
+    );
     ref.invalidate(myActiveAlertSubscriptionsProvider);
   }
 
@@ -446,7 +658,10 @@ class _AlertSubscriptionSection extends ConsumerWidget {
               const Icon(Icons.notifications_active_outlined, size: 18),
               const SizedBox(width: AppSpacing.xs),
               const Expanded(child: Text('沒等到想要的活動？設定提醒，出現就通知你')),
-              TextButton(onPressed: () => _openSubscribeDialog(context, ref), child: const Text('設定')),
+              TextButton(
+                onPressed: () => _openSubscribeDialog(context, ref),
+                child: const Text('設定'),
+              ),
             ],
           ),
           if (subs.isNotEmpty) ...[
@@ -494,13 +709,44 @@ const _popularStudySubjects = [
 /// 小寫——如果先裁再轉，剛好卡在頭尾的全形空白會因為裁切階段還不認得它是
 /// 空白而被跳過，轉換後反而留下裁不掉的殘留空白（該檔案內有詳細說明）。
 String? _normalizeStudyTargetPreview(String input) {
-  final converted = input.replaceAll('（', '(').replaceAll('）', ')').replaceAll('　', ' ');
+  final converted = input
+      .replaceAll('（', '(')
+      .replaceAll('）', ')')
+      .replaceAll('　', ' ');
   final normalized = converted.trim().toLowerCase();
   return normalized.isEmpty ? null : normalized;
 }
 
+class _RequestSubmissionSnapshot {
+  const _RequestSubmissionSnapshot({
+    required this.type,
+    required this.campus,
+    required this.minParticipants,
+    required this.maxParticipants,
+    required this.window,
+    required this.allowDowngrade,
+    required this.skillLevel,
+    required this.studyTarget,
+  });
+
+  final ActivityType type;
+  final String campus;
+  final int minParticipants;
+  final int maxParticipants;
+  final (DateTime, DateTime) window;
+  final bool allowDowngrade;
+  final SKILL_LEVEL? skillLevel;
+  final String? studyTarget;
+}
+
 class _CreateRequestForm extends ConsumerStatefulWidget {
-  const _CreateRequestForm();
+  const _CreateRequestForm({
+    required this.submissionGateway,
+    required this.now,
+  });
+
+  final MatchRequestSubmissionGateway submissionGateway;
+  final DateTime Function() now;
 
   @override
   ConsumerState<_CreateRequestForm> createState() => _CreateRequestFormState();
@@ -517,6 +763,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   int? _selectedMaxHeadcount;
   bool _allowDowngrade = false;
   bool _submitting = false;
+  bool _confirming = false;
   String? _error;
 
   // v1.34/v1.35 — 只在對應活動類型時才有意義，切換類型時一併清空（見
@@ -524,7 +771,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   SKILL_LEVEL? _selectedSkillLevel;
   final _studyTargetController = TextEditingController();
 
-  late final List<_TimeBucket> _buckets = _generateBuckets(DateTime.now());
+  late final List<_TimeBucket> _buckets;
   final Set<int> _selectedBucketIndices = {};
   bool _nowSelected = false;
   bool _detailedMode = false;
@@ -539,6 +786,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   final _headcountSectionKey = GlobalKey();
 
   @override
+  void initState() {
+    super.initState();
+    _buckets = _generateBuckets(widget.now());
+  }
+
+  @override
   void dispose() {
     _studyTargetController.dispose();
     super.dispose();
@@ -548,21 +801,31 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = key.currentContext;
       if (ctx == null) return;
-      Scrollable.ensureVisible(ctx, duration: AppMotion.normal, curve: AppMotion.curve, alignment: 0);
+      Scrollable.ensureVisible(
+        ctx,
+        duration: AppMotion.normal,
+        curve: AppMotion.curve,
+        alignment: 0,
+      );
     });
   }
 
   void _scrollToNextAfterTime() {
     final user = ref.read(myAppUserProvider).value;
     if (user == null) return;
-    final campuses = ref.read(campusOptionsProvider(user.school)).value ?? const [];
-    _scrollToSection(campuses.length > 1 ? _campusSectionKey : _headcountSectionKey);
+    final campuses =
+        ref.read(campusOptionsProvider(user.school)).value ?? const [];
+    _scrollToSection(
+      campuses.length > 1 ? _campusSectionKey : _headcountSectionKey,
+    );
   }
 
   List<int> _groupSizeOptions(ActivityType type) {
     final min = type.defaultMinParticipants ?? 3;
     final max = type.defaultMaxParticipants ?? min;
-    final step = (type.groupSizeStep != null && type.groupSizeStep! > 0) ? type.groupSizeStep! : 1;
+    final step = (type.groupSizeStep != null && type.groupSizeStep! > 0)
+        ? type.groupSizeStep!
+        : 1;
     return [for (var v = min; v <= max; v += step) v];
   }
 
@@ -589,20 +852,38 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 
   Future<void> _pickCustomTime({required bool isEarliest}) async {
-    final now = DateTime.now();
+    final now = widget.now();
     final initial = (isEarliest ? _customEarliest : _customLatest) ?? now;
     final clampedInitial = initial.isBefore(now) ? now : initial;
     final maxDate = now.add(const Duration(hours: 24));
 
     DateTime? picked;
     if (isCupertino) {
-      picked = await _pickCupertinoDateTime(initial: clampedInitial, minDate: now, maxDate: maxDate);
+      picked = await _pickCupertinoDateTime(
+        initial: clampedInitial,
+        minDate: now,
+        maxDate: maxDate,
+      );
     } else {
-      final date = await showDatePicker(context: context, initialDate: clampedInitial, firstDate: now, lastDate: maxDate);
+      final date = await showDatePicker(
+        context: context,
+        initialDate: clampedInitial,
+        firstDate: now,
+        lastDate: maxDate,
+      );
       if (date == null || !mounted) return;
-      final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(initial),
+      );
       if (time == null || !mounted) return;
-      picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      picked = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
     }
     if (picked == null || !mounted) return;
 
@@ -623,7 +904,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   /// 取代 Android 兩步驟的 `showDatePicker` + `showTimePicker`，符合 HIG 慣例。
   /// 邊界跟 Android 分支完全一致：夾在 `[minDate, maxDate]`（now()~now()+24h）
   /// 內，選完才回傳，取消回傳 null。
-  Future<DateTime?> _pickCupertinoDateTime({required DateTime initial, required DateTime minDate, required DateTime maxDate}) {
+  Future<DateTime?> _pickCupertinoDateTime({
+    required DateTime initial,
+    required DateTime minDate,
+    required DateTime maxDate,
+  }) {
     var selected = initial;
     return showCupertinoModalPopup<DateTime>(
       context: context,
@@ -639,8 +924,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    CupertinoButton(onPressed: () => Navigator.of(popupContext).pop(), child: const Text('取消')),
-                    CupertinoButton(onPressed: () => Navigator.of(popupContext).pop(selected), child: const Text('完成')),
+                    CupertinoButton(
+                      onPressed: () => Navigator.of(popupContext).pop(),
+                      child: const Text('取消'),
+                    ),
+                    CupertinoButton(
+                      onPressed: () => Navigator.of(popupContext).pop(selected),
+                      child: const Text('完成'),
+                    ),
                   ],
                 ),
               ),
@@ -664,7 +955,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   /// 「多選收斂為單一連續區間」（UI_PLAN §7）：取所選桶中最早的起始～最晚的
   /// 結束，即使中間有沒選到的桶也一樣收斂成一段連續時間。
   (DateTime, DateTime)? _resolveWindow() {
-    final now = DateTime.now();
+    final now = widget.now();
     if (_nowSelected) {
       return (now, now.add(const Duration(minutes: 30)));
     }
@@ -674,70 +965,193 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     }
     if (_selectedBucketIndices.isEmpty) return null;
     final selected = _selectedBucketIndices.map((i) => _buckets[i]).toList();
-    final earliest = selected.map((b) => b.start).reduce((a, b) => a.isBefore(b) ? a : b);
-    final latest = selected.map((b) => b.end).reduce((a, b) => a.isAfter(b) ? a : b);
+    final earliest = selected
+        .map((b) => b.start)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final latest = selected
+        .map((b) => b.end)
+        .reduce((a, b) => a.isAfter(b) ? a : b);
     // 防呆夾在 now()+24h 內——正常情況下桶本身已經過濾過，這裡只防呼叫
     // 這支函式的當下距離畫面產生桶清單的當下已經過了一段時間的邊界誤差。
     final cap = now.add(const Duration(hours: 24));
     return (earliest, latest.isAfter(cap) ? cap : latest);
   }
 
-  Future<void> _submit() async {
-    final type = _selectedType;
-    final campus = _selectedCampus;
-    final min = _selectedMinHeadcount;
-    final max = _selectedMaxHeadcount;
-    final window = _resolveWindow();
-    if (type == null || campus == null || min == null || max == null || window == null) {
-      setState(() => _error = '請完成所有選擇');
-      return;
-    }
-
+  Future<void> _submit(_RequestSubmissionSnapshot snapshot) async {
+    if (_submitting) return;
     setState(() {
       _submitting = true;
       _error = null;
     });
 
-    final client = ref.read(supabaseClientProvider);
+    // WidgetRef is tied to this form's lifecycle. Capture every dependency
+    // needed after an async boundary while the form is still mounted.
+    final submission = widget.submissionGateway.capture(ref);
+    final user = ref.read(myAppUserProvider).value;
+    final defaultCampusClient =
+        user != null && snapshot.campus != user.defaultCampus
+        ? ref.read(supabaseClientProvider)
+        : null;
+    final providerContainer = ProviderScope.containerOf(context, listen: false);
+
+    void invalidateActiveRequest() {
+      try {
+        providerContainer.invalidate(myActiveRequestProvider);
+      } on StateError {
+        // The complete ProviderScope may have been disposed while the RPC was
+        // in flight. There is no surviving cache to invalidate in that case.
+      }
+    }
+
+    void invalidateUser() {
+      try {
+        providerContainer.invalidate(myAppUserProvider);
+      } on StateError {
+        // See [invalidateActiveRequest].
+      }
+    }
+
     try {
-      final (earliest, latest) = window;
-      final request = await createRequest(
-        client,
-        activityTypeId: type.id,
-        campus: campus,
-        earliestStart: earliest.toUtc(),
-        latestStart: latest.toUtc(),
-        minParticipants: min,
-        maxParticipants: max,
-        allowDowngrade: _allowDowngrade,
-        skillLevel: _selectedSkillLevel,
-        studyTarget: _studyTargetController.text.isEmpty ? null : _studyTargetController.text,
+      final request = await submission.create(
+        activityTypeId: snapshot.type.id,
+        campus: snapshot.campus,
+        earliestStart: snapshot.window.$1.toUtc(),
+        latestStart: snapshot.window.$2.toUtc(),
+        minParticipants: snapshot.minParticipants,
+        maxParticipants: snapshot.maxParticipants,
+        allowDowngrade: snapshot.allowDowngrade,
+        skillLevel: snapshot.skillLevel,
+        studyTarget: snapshot.studyTarget,
       );
-      await submitRequest(client, request.id);
+      await submission.submit(request.id);
+      // The request now exists and is submitted. Invalidate immediately, even
+      // if this screen was removed while create was in flight, so another
+      // consumer cannot keep serving the pre-submit null cache.
+      invalidateActiveRequest();
       // v1.32 —「隨時可以改」：這次實際選的校區跟 default_campus 不同就回寫，
       // 下次建立揪團直接預設這裡選的（等同「上次使用的校區」）。安靜失敗——
       // 最壞情況只是下次還要重選一次，不影響本次配對送出。
-      final user = ref.read(myAppUserProvider).value;
-      if (user != null && campus != user.defaultCampus) {
+      if (user != null && defaultCampusClient != null) {
         try {
-          await client.from('app_user').update({'default_campus': campus}).eq('id', user.id);
-          ref.invalidate(myAppUserProvider);
+          await defaultCampusClient
+              .from('app_user')
+              .update({'default_campus': snapshot.campus})
+              .eq('id', user.id);
+          invalidateUser();
         } catch (_) {}
       }
-      // 反饋：「配對中結果選活動畫面還是可以去選」——myActiveRequestProvider
-      // 是普通 FutureProvider，建立/送出新 Request 這裡不會自動讓它重新查詢，
-      // 使用者若之後按瀏覽器上一頁/切分頁回到配對頁，會看到過期的快取值
-      // （仍是 null），配對頁誤以為沒有進行中的配對而繼續讓你填表單。這裡
-      // 送出成功當下就讓它失效，回配對頁時保證重新查一次。
-      ref.invalidate(myActiveRequestProvider);
       if (!mounted) return;
       context.push('/waiting-room/${request.id}');
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '送出失敗：${e.code.name}${e.detail != null ? '（${e.detail}）' : ''}');
+      setState(
+        () => _error =
+            '送出失敗：${e.code.name}${e.detail != null ? '（${e.detail}）' : ''}',
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  String _timeWindowLabel((DateTime, DateTime)? window) {
+    return formatMatchRequestWindow(window, relativeTo: widget.now());
+  }
+
+  String? _missingRequiredChoice((DateTime, DateTime)? window) {
+    if (_selectedType == null) return '請先選擇活動';
+    if (window == null) return '請先選擇時間';
+    if (_selectedCampus == null) return '請先選擇校區';
+    if (_selectedMinHeadcount == null) return '請先選擇最少人數';
+    if (_selectedMaxHeadcount == null) return '請先選擇最多人數';
+    return null;
+  }
+
+  List<AppSelectionSummaryItem> _selectionSummaryItems(
+    (DateTime, DateTime)? window, {
+    _RequestSubmissionSnapshot? snapshot,
+  }) {
+    final type = snapshot?.type ?? _selectedType;
+    final campus = snapshot?.campus ?? _selectedCampus;
+    final minParticipants = snapshot?.minParticipants ?? _selectedMinHeadcount;
+    final maxParticipants = snapshot?.maxParticipants ?? _selectedMaxHeadcount;
+    final allowDowngrade = snapshot?.allowDowngrade ?? _allowDowngrade;
+    final skillLevel = snapshot == null
+        ? _selectedSkillLevel
+        : snapshot.skillLevel;
+    final studyTarget = snapshot == null
+        ? _studyTargetController.text.trim()
+        : snapshot.studyTarget?.trim() ?? '';
+    final items = <AppSelectionSummaryItem>[
+      AppSelectionSummaryItem(label: '活動', value: type?.name ?? '尚未選擇'),
+      AppSelectionSummaryItem(label: '時間', value: _timeWindowLabel(window)),
+      AppSelectionSummaryItem(label: '校區', value: campus ?? '尚未選擇'),
+      AppSelectionSummaryItem(
+        label: '人數',
+        value: minParticipants == null || maxParticipants == null
+            ? '尚未選擇'
+            : '最少 $minParticipants 人，最多 $maxParticipants 人',
+      ),
+      if (type?.skillLevelEnabled == true)
+        AppSelectionSummaryItem(
+          label: '程度要求',
+          value: skillLevel == null ? '不限' : skillLevelLabel(skillLevel),
+        ),
+      if (type?.name == '讀書')
+        AppSelectionSummaryItem(
+          label: '讀書條件',
+          value: studyTarget.isEmpty ? '不限' : studyTarget,
+        ),
+      AppSelectionSummaryItem(
+        label: '降級配對',
+        value: allowDowngrade ? '接受' : '不接受',
+      ),
+    ];
+    return items;
+  }
+
+  Future<void> _confirmAndSubmit() async {
+    if (_confirming || _submitting) return;
+    final window = _resolveWindow();
+    final missing = _missingRequiredChoice(window);
+    if (missing != null) {
+      setState(() => _error = '請完成所有選擇：$missing');
+      return;
+    }
+
+    final snapshot = _RequestSubmissionSnapshot(
+      type: _selectedType!,
+      campus: _selectedCampus!,
+      minParticipants: _selectedMinHeadcount!,
+      maxParticipants: _selectedMaxHeadcount!,
+      window: window!,
+      allowDowngrade: _allowDowngrade,
+      skillLevel: _selectedSkillLevel,
+      studyTarget: _studyTargetController.text.isEmpty
+          ? null
+          : _studyTargetController.text,
+    );
+    setState(() {
+      _confirming = true;
+      _error = null;
+    });
+
+    var confirmed = false;
+    try {
+      confirmed = await showAppConfirmDialog(
+        context,
+        title: '確認配對條件',
+        confirmLabel: '確認送出',
+        barrierDismissible: false,
+        content: SingleChildScrollView(
+          child: AppSelectionSummary(
+            items: _selectionSummaryItems(snapshot.window, snapshot: snapshot),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+    if (confirmed && mounted) await _submit(snapshot);
   }
 
   /// 反饋：現有活動類型只有官方預設的固定清單可選，使用者想新增卻找不到入口
@@ -752,10 +1166,21 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       context: context,
       builder: (dialogContext) => AppAdaptiveDialog(
         title: '提議新活動類型',
-        content: AppTextField(controller: controller, label: '類型名稱', autofocus: true),
+        content: AppTextField(
+          controller: controller,
+          label: '類型名稱',
+          autofocus: true,
+        ),
         actions: [
-          AppDialogAction(label: '取消', onPressed: () => Navigator.of(dialogContext).pop(false)),
-          AppDialogAction(label: '送出', isDefault: true, onPressed: () => Navigator.of(dialogContext).pop(true)),
+          AppDialogAction(
+            label: '取消',
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+          AppDialogAction(
+            label: '送出',
+            isDefault: true,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
         ],
       ),
     );
@@ -767,10 +1192,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     try {
       await proposeActivityType(client, name);
       if (!mounted) return;
-      showAppSnackBar(context, '已送出「$name」，審核通過後才會出現在清單中', kind: AppSnackKind.success);
+      showAppSnackBar(
+        context,
+        '已送出「$name」，審核通過後才會出現在清單中',
+        kind: AppSnackKind.success,
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
-      final message = e.code == ApiErrorCode.duplicateTypeName ? '這個類型已經存在了' : '送出失敗：${e.code.name}';
+      final message = e.code == ApiErrorCode.duplicateTypeName
+          ? '這個類型已經存在了'
+          : '送出失敗：${e.code.name}';
       showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
@@ -792,405 +1223,582 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
           if (user == null) return const LoadingIndicator();
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
           final window = _resolveWindow();
-          final isCooldown = user.nextRequestAllowedAt != null && user.nextRequestAllowedAt!.isAfter(DateTime.now());
-          final pulseCampus = campusAsync.value?.isNotEmpty == true ? campusAsync.value!.first : null;
+          final isCooldown =
+              user.nextRequestAllowedAt != null &&
+              user.nextRequestAllowedAt!.isAfter(DateTime.now());
+          final pulseCampus = campusAsync.value?.isNotEmpty == true
+              ? campusAsync.value!.first
+              : null;
 
-          return ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+          return Column(
             children: [
-              if (pulseCampus != null) ...[
-                _CampusPulseBanner(school: user.school, campus: pulseCampus),
-                const SizedBox(height: AppSpacing.sm),
-                _AlertSubscriptionSection(school: user.school, campus: pulseCampus, types: types),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              if (isCooldown) ...[
-                AppCard(
-                  child: Row(
-                    children: [
-                      Icon(Icons.hourglass_top_rounded, color: Theme.of(context).colorScheme.error),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
+              Expanded(
+                child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  children: [
+                    if (pulseCampus != null) ...[
+                      _CampusPulseBanner(
+                        school: user.school,
+                        campus: pulseCampus,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _AlertSubscriptionSection(
+                        school: user.school,
+                        campus: pulseCampus,
+                        types: types,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    if (isCooldown) ...[
+                      AppCard(
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.hourglass_top_rounded,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '配對冷卻中（無法建立新配對）',
+                                    style: textTheme.titleSmall?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Wrap(
+                                    children: [
+                                      const Text('剩餘時間：'),
+                                      CountdownText(
+                                        deadline: user.nextRequestAllowedAt!,
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        expiredLabel: '已結束，刷新頁面即可發起配對',
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    AppSection(
+                      title: '活動',
+                      description: '今天想找人一起做什麼？',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GridView.count(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            crossAxisCount: 2,
+                            mainAxisSpacing: AppSpacing.sm,
+                            crossAxisSpacing: AppSpacing.sm,
+                            mainAxisExtent:
+                                72 + MediaQuery.textScalerOf(context).scale(24),
+                            children: [
+                              for (final type in types)
+                                _OptionCard(
+                                  icon: activityTypeIcon(type.name),
+                                  label: type.name,
+                                  selected: _selectedType?.id == type.id,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedType = type;
+                                      _selectedMinHeadcount = null;
+                                      _selectedMaxHeadcount = null;
+                                      _selectedSkillLevel = null;
+                                      _studyTargetController.clear();
+                                    });
+                                    _scrollToSection(_timeSectionKey);
+                                  },
+                                ),
+                              _AddOptionCard(
+                                label: '提議新增',
+                                onTap: _proposeActivityType,
+                              ),
+                            ],
+                          ),
+                          if (_selectedType?.description != null) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              _selectedType!.description!,
+                              style: textTheme.bodySmall,
+                            ),
+                          ],
+                          // v1.34 — 只有這個活動類型有開放 Skill Level 篩選才顯示，預設「不限」。
+                          if (_selectedType?.skillLevelEnabled == true) ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            Text('程度要求', style: textTheme.titleSmall),
+                            const SizedBox(height: AppSpacing.xs),
+                            Wrap(
+                              spacing: AppSpacing.sm,
+                              runSpacing: AppSpacing.xs,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('不限'),
+                                  selected: _selectedSkillLevel == null,
+                                  onSelected: AppHaptics.select(
+                                    (_) => setState(
+                                      () => _selectedSkillLevel = null,
+                                    ),
+                                  ),
+                                ),
+                                for (final level in SKILL_LEVEL.values)
+                                  ChoiceChip(
+                                    label: Text(skillLevelLabel(level)),
+                                    selected: _selectedSkillLevel == level,
+                                    onSelected: AppHaptics.select(
+                                      (_) => setState(
+                                        () => _selectedSkillLevel = level,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                          // v1.35 — 只有讀書類型顯示，選填。
+                          if (_selectedType?.name == '讀書') ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            Text(
+                              '想找同樣在準備什麼的人？（選填）',
+                              style: textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Wrap(
+                              spacing: AppSpacing.xs,
+                              runSpacing: AppSpacing.xs,
+                              children: [
+                                for (final subject in _popularStudySubjects)
+                                  ActionChip(
+                                    label: Text(subject),
+                                    onPressed: () => setState(
+                                      () =>
+                                          _studyTargetController.text = subject,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            AppTextField(
+                              controller: _studyTargetController,
+                              label: '科目/課程/考試名稱',
+                              hint: '例如：微積分(一)、雅思、多益',
+                              onChanged: (_) => setState(() {}),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
+                              '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (_studyTargetController.text.isNotEmpty) ...[
+                              const SizedBox(height: AppSpacing.xs),
+                              Builder(
+                                builder: (context) {
+                                  final normalized =
+                                      _normalizeStudyTargetPreview(
+                                        _studyTargetController.text,
+                                      );
+                                  return Text(
+                                    normalized == null
+                                        ? '目前輸入不會被當作指定條件（等同不限）'
+                                        : '將以「$normalized」進行比對',
+                                    style: textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    KeyedSubtree(
+                      key: _timeSectionKey,
+                      child: AppSection(
+                        title: '時間',
+                        description: '什麼時候？',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () => setState(() {
+                                  _detailedMode = !_detailedMode;
+                                  _nowSelected = false;
+                                  _selectedBucketIndices.clear();
+                                }),
+                                child: Text(_detailedMode ? '改選時段' : '自訂時間'),
+                              ),
+                            ),
+                            if (_detailedMode) ...[
+                              OutlinedButton(
+                                onPressed: () =>
+                                    _pickCustomTime(isEarliest: true),
+                                child: Text(
+                                  _customEarliest == null
+                                      ? '最早開始時間'
+                                      : _formatTime(_customEarliest!),
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              OutlinedButton(
+                                onPressed: () =>
+                                    _pickCustomTime(isEarliest: false),
+                                child: Text(
+                                  _customLatest == null
+                                      ? '最晚開始時間'
+                                      : _formatTime(_customLatest!),
+                                ),
+                              ),
+                            ] else
+                              Wrap(
+                                spacing: AppSpacing.sm,
+                                runSpacing: AppSpacing.sm,
+                                children: [
+                                  _TimeChip(
+                                    icon: Icons.flash_on_rounded,
+                                    label: '現在',
+                                    selected: _nowSelected,
+                                    onTap: _selectNow,
+                                  ),
+                                  for (var i = 0; i < _buckets.length; i++)
+                                    _TimeChip(
+                                      icon: _buckets[i].icon,
+                                      label: _buckets[i].displayLabel,
+                                      selected: _selectedBucketIndices.contains(
+                                        i,
+                                      ),
+                                      onTap: () => _toggleBucket(i),
+                                    ),
+                                ],
+                              ),
+                            if (window != null) ...[
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                '已選範圍：${_timeWindowLabel(window)}',
+                                style: textTheme.bodySmall,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    KeyedSubtree(
+                      key: _campusSectionKey,
+                      child: AppSection(
+                        title: '校區',
+                        description: '去哪個校區？',
+                        child: campusAsync.when(
+                          loading: () => const LoadingIndicator(),
+                          error: (error, stack) => Text('載入校區失敗：$error'),
+                          data: (campuses) {
+                            if (campuses.isEmpty) {
+                              return Text(
+                                '這個學校目前還沒有已核准的地點，請聯絡管理員',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              );
+                            }
+                            if (_selectedCampus == null ||
+                                !campuses.contains(_selectedCampus)) {
+                              // v1.32 — 優先帶入 app_user.default_campus（註冊時選過，或
+                              // 上次建立揪團時回寫的值），沒有才 fallback 第一個選項。
+                              final defaultCampus = user.defaultCampus;
+                              _selectedCampus =
+                                  (defaultCampus != null &&
+                                      campuses.contains(defaultCampus))
+                                  ? defaultCampus
+                                  : campuses.first;
+                            }
+                            // MVP 單校區假設（見 campusOptionsProvider 註解）：只有一個
+                            // 選項時直接帶入顯示，不再讓使用者多一步選擇；反饋：地點清單
+                            // 不該把測試/內部資料攤在使用者面前，這裡也不再列出任何原始
+                            // 地點名稱，只顯示校區。
+                            if (campuses.length == 1) {
+                              return Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on_rounded,
+                                    size: 20,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      '校區：${campuses.first}',
+                                      style: textTheme.titleSmall,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                            return Wrap(
+                              spacing: AppSpacing.sm,
+                              runSpacing: AppSpacing.sm,
+                              children: [
+                                for (final campus in campuses)
+                                  _TimeChip(
+                                    icon: Icons.location_on_rounded,
+                                    label: campus,
+                                    selected: _selectedCampus == campus,
+                                    onTap: () {
+                                      setState(() => _selectedCampus = campus);
+                                      _scrollToSection(_headcountSectionKey);
+                                    },
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    KeyedSubtree(
+                      key: _headcountSectionKey,
+                      child: AppSection(
+                        title: '人數',
+                        description: '整團大約要幾個人？',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '配對冷卻中（無法建立新配對）',
-                              style: textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold),
+                              '人數是整團的總人數，含你自己',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                const Text('剩餘時間：'),
-                                CountdownText(
-                                  deadline: user.nextRequestAllowedAt!,
-                                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold),
-                                  expiredLabel: '已結束，刷新頁面即可發起配對',
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              Text('今天想找人一起做什麼？',
-                  style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: AppSpacing.md),
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                mainAxisSpacing: AppSpacing.sm,
-                crossAxisSpacing: AppSpacing.sm,
-                childAspectRatio: 1.6,
-                children: [
-                  for (final type in types)
-                    _OptionCard(
-                      icon: activityTypeIcon(type.name),
-                      label: type.name,
-                      selected: _selectedType?.id == type.id,
-                      onTap: () {
-                        setState(() {
-                          _selectedType = type;
-                          _selectedMinHeadcount = null;
-                          _selectedMaxHeadcount = null;
-                          _selectedSkillLevel = null;
-                          _studyTargetController.clear();
-                        });
-                        _scrollToSection(_timeSectionKey);
-                      },
-                    ),
-                  _AddOptionCard(label: '提議新增', onTap: _proposeActivityType),
-                ],
-              ),
-              if (_selectedType?.description != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(_selectedType!.description!, style: textTheme.bodySmall),
-              ],
-              // v1.34 — 只有這個活動類型有開放 Skill Level 篩選才顯示，預設「不限」。
-              if (_selectedType?.skillLevelEnabled == true) ...[
-                const SizedBox(height: AppSpacing.lg),
-                Text('程度要求', style: textTheme.titleSmall),
-                const SizedBox(height: AppSpacing.xs),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('不限'),
-                      selected: _selectedSkillLevel == null,
-                      onSelected: AppHaptics.select((_) => setState(() => _selectedSkillLevel = null)),
-                    ),
-                    for (final level in SKILL_LEVEL.values)
-                      ChoiceChip(
-                        label: Text(skillLevelLabel(level)),
-                        selected: _selectedSkillLevel == level,
-                        onSelected: AppHaptics.select((_) => setState(() => _selectedSkillLevel = level)),
-                      ),
-                  ],
-                ),
-              ],
-              // v1.35 — 只有讀書類型顯示，選填。
-              if (_selectedType?.name == '讀書') ...[
-                const SizedBox(height: AppSpacing.lg),
-                Text('想找同樣在準備什麼的人？（選填）', style: textTheme.titleSmall),
-                const SizedBox(height: AppSpacing.xs),
-                Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    for (final subject in _popularStudySubjects)
-                      ActionChip(
-                        label: Text(subject),
-                        onPressed: () => setState(() => _studyTargetController.text = subject),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                AppTextField(
-                  controller: _studyTargetController,
-                  label: '科目/課程/考試名稱',
-                  hint: '例如：微積分(一)、雅思、多益',
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
-                  '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
-                  style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-                if (_studyTargetController.text.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Builder(builder: (context) {
-                    final normalized = _normalizeStudyTargetPreview(_studyTargetController.text);
-                    return Text(
-                      normalized == null ? '目前輸入不會被當作指定條件（等同不限）' : '將以「$normalized」進行比對',
-                      style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    );
-                  }),
-                ],
-              ],
-              const SizedBox(height: AppSpacing.xl),
-              KeyedSubtree(
-                key: _timeSectionKey,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('什麼時候？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _detailedMode = !_detailedMode;
-                        _nowSelected = false;
-                        _selectedBucketIndices.clear();
-                      }),
-                      child: Text(_detailedMode ? '改選時段' : '自訂時間'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              if (_detailedMode) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _pickCustomTime(isEarliest: true),
-                        child: Text(_customEarliest == null ? '最早開始時間' : _formatTime(_customEarliest!)),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _pickCustomTime(isEarliest: false),
-                        child: Text(_customLatest == null ? '最晚開始時間' : _formatTime(_customLatest!)),
-                      ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    _TimeChip(
-                      icon: Icons.flash_on_rounded,
-                      label: '現在',
-                      selected: _nowSelected,
-                      onTap: _selectNow,
-                    ),
-                    for (var i = 0; i < _buckets.length; i++)
-                      _TimeChip(
-                        icon: _buckets[i].icon,
-                        label: _buckets[i].displayLabel,
-                        selected: _selectedBucketIndices.contains(i),
-                        onTap: () => _toggleBucket(i),
-                      ),
-                  ],
-                ),
-              ],
-              if (window != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '已選範圍：${_formatTime(window.$1)} - ${_formatTime(window.$2)}'
-                  '${window.$2.day != window.$1.day ? '（跨日）' : ''}',
-                  style: textTheme.bodySmall,
-                ),
-              ],
-              const SizedBox(height: AppSpacing.xl),
-              campusAsync.when(
-                loading: () => const LoadingIndicator(),
-                error: (error, stack) => Text('載入校區失敗：$error'),
-                data: (campuses) {
-                  if (campuses.isEmpty) {
-                    return Text('這個學校目前還沒有已核准的地點，請聯絡管理員',
-                        style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.error));
-                  }
-                  if (_selectedCampus == null || !campuses.contains(_selectedCampus)) {
-                    // v1.32 — 優先帶入 app_user.default_campus（註冊時選過，或
-                    // 上次建立揪團時回寫的值），沒有才 fallback 第一個選項。
-                    final defaultCampus = user.defaultCampus;
-                    _selectedCampus = (defaultCampus != null && campuses.contains(defaultCampus))
-                        ? defaultCampus
-                        : campuses.first;
-                  }
-                  // MVP 單校區假設（見 campusOptionsProvider 註解）：只有一個
-                  // 選項時直接帶入顯示，不再讓使用者多一步選擇；反饋：地點清單
-                  // 不該把測試/內部資料攤在使用者面前，這裡也不再列出任何原始
-                  // 地點名稱，只顯示校區。
-                  if (campuses.length == 1) {
-                    return Row(
-                      children: [
-                        Icon(Icons.location_on_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            '校區：${campuses.first}',
-                            style: textTheme.titleSmall,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                  return KeyedSubtree(
-                    key: _campusSectionKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('去哪個校區？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: AppSpacing.sm),
-                        Wrap(
-                          spacing: AppSpacing.sm,
-                          children: [
-                            for (final campus in campuses)
-                              _TimeChip(
-                                icon: Icons.location_on_rounded,
-                                label: campus,
-                                selected: _selectedCampus == campus,
-                                onTap: () {
-                                  setState(() => _selectedCampus = campus);
-                                  _scrollToSection(_headcountSectionKey);
+                            const SizedBox(height: AppSpacing.sm),
+                            if (_selectedType == null)
+                              Text('請先選活動類型', style: textTheme.bodySmall)
+                            else
+                              reliabilityAsync.when(
+                                loading: () => const LoadingIndicator(),
+                                error: (error, stack) => Text('載入可信度失敗：$error'),
+                                data: (reliability) {
+                                  final options = _groupSizeOptions(
+                                    _selectedType!,
+                                  );
+                                  final scheme = Theme.of(context).colorScheme;
+                                  final hasLockedOption =
+                                      reliability.isNewUser &&
+                                      options.any((n) => n <= 2);
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('至少', style: textTheme.bodySmall),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Wrap(
+                                        spacing: AppSpacing.sm,
+                                        children: [
+                                          for (final n in options)
+                                            // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
+                                            // 反饋：disable 但沒有任何說明，使用者不知道為什麼點不動
+                                            // ——用 Tooltip（長按/hover 可看）+ 下方常駐提示文字
+                                            // 兩種方式解釋原因，不用等送出才看到 NEW_USER_LOW_HEADCOUNT。
+                                            Tooltip(
+                                              message:
+                                                  (n <= 2 &&
+                                                      reliability.isNewUser)
+                                                  ? '新用戶尚未開放 2 人以下場次'
+                                                  : '',
+                                              triggerMode:
+                                                  TooltipTriggerMode.tap,
+                                              child: ChoiceChip(
+                                                label: Text('$n 人'),
+                                                selected:
+                                                    _selectedMinHeadcount == n,
+                                                onSelected:
+                                                    (n <= 2 &&
+                                                        reliability.isNewUser)
+                                                    ? null
+                                                    : AppHaptics.select(
+                                                        (_) => setState(() {
+                                                          _selectedMinHeadcount =
+                                                              n;
+                                                          // 最多不能小於最少——若原本選的最多比新的
+                                                          // 最少還小，直接清掉讓使用者重選。
+                                                          if (_selectedMaxHeadcount !=
+                                                                  null &&
+                                                              _selectedMaxHeadcount! <
+                                                                  n) {
+                                                            _selectedMaxHeadcount =
+                                                                null;
+                                                          }
+                                                        }),
+                                                      ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      if (hasLockedOption) ...[
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Icon(
+                                              Icons.info_outline_rounded,
+                                              size: 14,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                            const SizedBox(
+                                              width: AppSpacing.xs,
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                '新用戶需要先完成一次活動、建立信譽後，才能發起 2 人以下的小型場次',
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: scheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      const SizedBox(height: AppSpacing.md),
+                                      Text('至多', style: textTheme.bodySmall),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      if (_selectedMinHeadcount == null)
+                                        Text(
+                                          '請先選「至少」人數',
+                                          style: textTheme.bodySmall,
+                                        )
+                                      else
+                                        Wrap(
+                                          spacing: AppSpacing.sm,
+                                          children: [
+                                            for (final n in options)
+                                              if (n >= _selectedMinHeadcount!)
+                                                ChoiceChip(
+                                                  label: Text('$n 人'),
+                                                  selected:
+                                                      _selectedMaxHeadcount ==
+                                                      n,
+                                                  onSelected: AppHaptics.select(
+                                                    (_) => setState(
+                                                      () =>
+                                                          _selectedMaxHeadcount =
+                                                              n,
+                                                    ),
+                                                  ),
+                                                ),
+                                          ],
+                                        ),
+                                    ],
+                                  );
                                 },
                               ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  );
-                },
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              KeyedSubtree(
-                key: _headcountSectionKey,
-                // 反饋：「找幾個人」被誤讀成「還要再找幾個人加入」——這裡填的
-                // min/max 其實是整團的總人數（含你自己），不是「除了你以外」
-                // 要湊的人數，補一行說明避免誤會。
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('整團大約要幾個人？', style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(
-                      '人數是整團的總人數，含你自己',
-                      style: textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(height: AppSpacing.xl),
+                    AppSection(
+                      title: '降級配對',
+                      description: '如果人數不足，可以選擇接受較少人也成立活動。',
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _allowDowngrade,
+                          onChanged: (v) => setState(() => _allowDowngrade = v),
+                          title: const Text('人數不夠時，接受少一點人也算成局？'),
+                        ),
+                      ),
                     ),
+                    const SizedBox(height: AppSpacing.xl),
+                    AppSection(
+                      title: '送出前確認',
+                      description: '請確認目前選擇；送出後會開始尋找符合條件的人。',
+                      child: AppSelectionSummary(
+                        items: _selectionSummaryItems(window),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
                   ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              if (_selectedType == null)
-                Text('請先選活動類型', style: textTheme.bodySmall)
-              else
-                reliabilityAsync.when(
-                  loading: () => const LoadingIndicator(),
-                  error: (error, stack) => Text('載入可信度失敗：$error'),
-                  data: (reliability) {
-                    final options = _groupSizeOptions(_selectedType!);
-                    final scheme = Theme.of(context).colorScheme;
-                    final hasLockedOption = reliability.isNewUser && options.any((n) => n <= 2);
-                    return AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('至少', style: textTheme.bodySmall),
-                          const SizedBox(height: AppSpacing.xs),
-                          Wrap(
-                            spacing: AppSpacing.sm,
-                            children: [
-                              for (final n in options)
-                                // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
-                                // 反饋：disable 但沒有任何說明，使用者不知道為什麼點不動
-                                // ——用 Tooltip（長按/hover 可看）+ 下方常駐提示文字
-                                // 兩種方式解釋原因，不用等送出才看到 NEW_USER_LOW_HEADCOUNT。
-                                Tooltip(
-                                  message: (n <= 2 && reliability.isNewUser) ? '新用戶尚未開放 2 人以下場次' : '',
-                                  triggerMode: TooltipTriggerMode.tap,
-                                  child: ChoiceChip(
-                                    label: Text('$n 人'),
-                                    selected: _selectedMinHeadcount == n,
-                                    onSelected: (n <= 2 && reliability.isNewUser)
-                                        ? null
-                                        : AppHaptics.select((_) => setState(() {
-                                              _selectedMinHeadcount = n;
-                                              // 最多不能小於最少——若原本選的最多比新的
-                                              // 最少還小，直接清掉讓使用者重選。
-                                              if (_selectedMaxHeadcount != null && _selectedMaxHeadcount! < n) {
-                                                _selectedMaxHeadcount = null;
-                                              }
-                                            })),
-                                  ),
-                                ),
-                            ],
+              AppStickyActionArea(
+                child: Builder(
+                  builder: (context) {
+                    final missing = _missingRequiredChoice(window);
+                    final actionHint = isCooldown ? '配對冷卻中，暫時無法送出' : missing;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (actionHint != null) ...[
+                          Text(
+                            actionHint,
+                            textAlign: TextAlign.center,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                          if (hasLockedOption) ...[
-                            const SizedBox(height: AppSpacing.xs),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(Icons.info_outline_rounded, size: 14, color: scheme.onSurfaceVariant),
-                                const SizedBox(width: AppSpacing.xs),
-                                Expanded(
-                                  child: Text(
-                                    '新用戶需要先完成一次活動、建立信譽後，才能發起 2 人以下的小型場次',
-                                    style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: AppSpacing.md),
-                          Text('至多', style: textTheme.bodySmall),
                           const SizedBox(height: AppSpacing.xs),
-                          if (_selectedMinHeadcount == null)
-                            Text('請先選「至少」人數', style: textTheme.bodySmall)
-                          else
-                            Wrap(
-                              spacing: AppSpacing.sm,
-                              children: [
-                                for (final n in options)
-                                  if (n >= _selectedMinHeadcount!)
-                                    ChoiceChip(
-                                      label: Text('$n 人'),
-                                      selected: _selectedMaxHeadcount == n,
-                                      onSelected: AppHaptics.select((_) => setState(() => _selectedMaxHeadcount = n)),
-                                    ),
-                              ],
-                            ),
                         ],
-                      ),
+                        if (_error != null) ...[
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                        ],
+                        AppButton(
+                          label: isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人',
+                          loading: _submitting,
+                          onPressed:
+                              isCooldown ||
+                                  missing != null ||
+                                  _confirming ||
+                                  _submitting
+                              ? null
+                              : _confirmAndSubmit,
+                        ),
+                      ],
                     );
                   },
                 ),
-              const SizedBox(height: AppSpacing.lg),
-              AppCard(
-                // AppCard 沒帶 onTap 時內部只有 Container/DecoratedBox，沒有
-                // Material 祖先——SwitchListTile 內建的 ListTile 找不到最近的
-                // Material 畫 ink splash，會噴 "background color or ink
-                // splashes may be invisible" assertion。這裡自己包一層透明
-                // Material 補上。
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _allowDowngrade,
-                    onChanged: (v) => setState(() => _allowDowngrade = v),
-                    title: const Text('人數不夠時，接受少一點人也算成局？'),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (_error != null) ...[
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              AppButton(
-                label: isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人',
-                loading: _submitting,
-                onPressed: isCooldown ? null : _submit,
               ),
             ],
           );
@@ -1203,7 +1811,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
 /// 選擇型大卡片——活動類型步驟用，比 [ChoiceChip] 更大的觸控面積跟視覺重量，
 /// 呼應「像 Tinder / Uber 那種快速決策」的反饋。
 class _OptionCard extends StatelessWidget {
-  const _OptionCard({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _OptionCard({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
@@ -1227,23 +1840,31 @@ class _OptionCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: selected ? Border.all(color: scheme.primary, width: 2) : null,
+            border: selected
+                ? Border.all(color: scheme.primary, width: 2)
+                : null,
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 28, color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
+              Icon(
+                icon,
+                size: 28,
+                color: selected
+                    ? scheme.onPrimaryContainer
+                    : scheme.onSurfaceVariant,
+              ),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 label,
                 textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
-                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                    ),
+                  color: selected
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurface,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
             ],
           ),
@@ -1278,7 +1899,10 @@ class _AddOptionCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: scheme.outlineVariant, style: BorderStyle.solid),
+            border: Border.all(
+              color: scheme.outlineVariant,
+              style: BorderStyle.solid,
+            ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Column(
@@ -1286,7 +1910,12 @@ class _AddOptionCard extends StatelessWidget {
             children: [
               Icon(Icons.add_rounded, size: 28, color: scheme.onSurfaceVariant),
               const SizedBox(height: AppSpacing.xs),
-              Text(label, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: scheme.onSurfaceVariant)),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -1298,7 +1927,12 @@ class _AddOptionCard extends StatelessWidget {
 /// 時段／校區步驟用的較小型選擇卡——維持多選/單選皆可的既有互動邏輯，只是
 /// 從純文字 [ChoiceChip] 換成帶 icon 的版本。
 class _TimeChip extends StatelessWidget {
-  const _TimeChip({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _TimeChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
@@ -1320,18 +1954,29 @@ class _TimeChip extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(AppRadius.pill),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
+              Icon(
+                icon,
+                size: 18,
+                color: selected
+                    ? scheme.onPrimaryContainer
+                    : scheme.onSurfaceVariant,
+              ),
               const SizedBox(width: AppSpacing.xs),
               Text(
                 label,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
-                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                    ),
+                  color: selected
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurface,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
             ],
           ),
