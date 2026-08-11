@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/department_options.dart';
 import '../data/school_labels.dart';
+import '../errors/user_error_message.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart';
 import '../profile/avatar_upload.dart';
@@ -30,7 +31,8 @@ class CompleteProfileScreen extends ConsumerStatefulWidget {
   const CompleteProfileScreen({super.key});
 
   @override
-  ConsumerState<CompleteProfileScreen> createState() => _CompleteProfileScreenState();
+  ConsumerState<CompleteProfileScreen> createState() =>
+      _CompleteProfileScreenState();
 }
 
 class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
@@ -69,7 +71,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     if (userId == null) return;
     setState(() => _uploadingAvatar = true);
     try {
-      final url = await pickAndUploadAvatar(ref.read(supabaseClientProvider), userId);
+      final url = await pickAndUploadAvatar(
+        ref.read(supabaseClientProvider),
+        userId,
+      );
       if (url != null && mounted) setState(() => _avatarUrl = url);
     } catch (e) {
       if (!mounted) return;
@@ -118,7 +123,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     final client = ref.read(supabaseClientProvider);
     try {
       // SPEC.md §2 point 5 / API.md §1 — NYCU 在校生年限軟性提醒：一次性、不阻擋。
-      final needsReminder = await checkEnrollmentReminder(client, degreeLevel: _degreeLevel);
+      final needsReminder = await checkEnrollmentReminder(
+        client,
+        degreeLevel: _degreeLevel,
+      );
       if (needsReminder && mounted) {
         final proceed = await _showSeniorityReminderDialog();
         if (proceed != true) {
@@ -132,8 +140,12 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         displayName: displayName,
         avatarUrl: _avatarUrl,
         degreeLevel: _degreeLevel,
-        department: _departmentController.text.trim().isEmpty ? null : _departmentController.text.trim(),
-        gender: _genderController.text.trim().isEmpty ? null : _genderController.text.trim(),
+        department: _departmentController.text.trim().isEmpty
+            ? null
+            : _departmentController.text.trim(),
+        gender: _genderController.text.trim().isEmpty
+            ? null
+            : _genderController.text.trim(),
         bio: _bioController.text.trim(),
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
@@ -148,7 +160,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
       if (mounted) context.go('/match');
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '送出失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } catch (e) {
       // callRpc 只把 PostgrestException 轉成 ApiException（見
       // lib/rpc/rpc_client.dart）——網路逾時/斷線等其他例外原本不會被上面那個
@@ -170,7 +182,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         title: '在校生身份提醒',
         content: const Text('提醒你，若已畢業，請注意在校生身份是本平台社群互信的基礎。'),
         actions: [
-          AppDialogAction(label: '我知道了，繼續', isDefault: true, onPressed: () => Navigator.of(context).pop(true)),
+          AppDialogAction(
+            label: '我知道了，繼續',
+            isDefault: true,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
         ],
       ),
     );
@@ -178,8 +194,12 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final school = schoolFromEmail(ref.watch(supabaseClientProvider).auth.currentUser?.email);
-    final campusAsync = school == null ? null : ref.watch(campusOptionsProvider(school));
+    final school = schoolFromEmail(
+      ref.watch(supabaseClientProvider).auth.currentUser?.email,
+    );
+    final campusAsync = school == null
+        ? null
+        : ref.watch(campusOptionsProvider(school));
 
     return Scaffold(
       appBar: AppBar(title: const Text('完善個人資料')),
@@ -195,10 +215,15 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                     children: [
                       CircleAvatar(
                         radius: 40,
-                        backgroundImage: _avatarUrl.isEmpty ? null : NetworkImage(_avatarUrl),
-                        child: _avatarUrl.isEmpty ? const Icon(Icons.person_rounded, size: 40) : null,
+                        backgroundImage: _avatarUrl.isEmpty
+                            ? null
+                            : NetworkImage(_avatarUrl),
+                        child: _avatarUrl.isEmpty
+                            ? const Icon(Icons.person_rounded, size: 40)
+                            : null,
                       ),
-                      if (_uploadingAvatar) const CircularProgressIndicator(strokeWidth: 2.4),
+                      if (_uploadingAvatar)
+                        const CircularProgressIndicator(strokeWidth: 2.4),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.sm),
@@ -211,13 +236,15 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                   // SPEC.md v1.33）；改用引導文案鼓勵上傳真人露臉照片，方便
                   // 配對成立後彼此認出對方。
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
                     child: Text(
                       '建議使用清楚露臉的個人照，配對成功後大家才容易認出你',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
@@ -232,16 +259,27 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
               initialValue: _degreeLevel,
               decoration: const InputDecoration(labelText: '學制'),
               items: const [
-                DropdownMenuItem(value: DEGREE_LEVEL.UNDERGRAD, child: Text('大學部')),
-                DropdownMenuItem(value: DEGREE_LEVEL.MASTER, child: Text('碩士班')),
+                DropdownMenuItem(
+                  value: DEGREE_LEVEL.UNDERGRAD,
+                  child: Text('大學部'),
+                ),
+                DropdownMenuItem(
+                  value: DEGREE_LEVEL.MASTER,
+                  child: Text('碩士班'),
+                ),
                 DropdownMenuItem(value: DEGREE_LEVEL.PHD, child: Text('博士班')),
               ],
               onChanged: (value) {
                 if (value == null) return;
                 setState(() {
                   _degreeLevel = value;
-                  final school = schoolFromEmail(ref.read(supabaseClientProvider).auth.currentUser?.email);
-                  if (!departmentOptionsFor(school, value).contains(_departmentController.text)) {
+                  final school = schoolFromEmail(
+                    ref.read(supabaseClientProvider).auth.currentUser?.email,
+                  );
+                  if (!departmentOptionsFor(
+                    school,
+                    value,
+                  ).contains(_departmentController.text)) {
                     _departmentController.clear();
                   }
                 });
@@ -273,9 +311,15 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                       const SizedBox(height: AppSpacing.md),
                       DropdownButtonFormField<String>(
                         initialValue: _defaultCampus,
-                        decoration: const InputDecoration(labelText: '你平常在哪個校區？'),
-                        items: [for (final c in campuses) DropdownMenuItem(value: c, child: Text(c))],
-                        onChanged: (value) => setState(() => _defaultCampus = value),
+                        decoration: const InputDecoration(
+                          labelText: '你平常在哪個校區？',
+                        ),
+                        items: [
+                          for (final c in campuses)
+                            DropdownMenuItem(value: c, child: Text(c)),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _defaultCampus = value),
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
@@ -287,7 +331,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                 },
               ),
             const SizedBox(height: AppSpacing.md),
-            AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
+            AppTextField(
+              controller: _genderController,
+              label: '性別（選填，僅供展示，不影響配對）',
+            ),
             const SizedBox(height: AppSpacing.md),
             AppTextField(
               controller: _bioController,
@@ -301,10 +348,16 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: AppSpacing.md),
             AppTextField(controller: _contactLineController, label: 'LINE'),
             const SizedBox(height: AppSpacing.md),
-            AppTextField(controller: _contactDiscordController, label: 'Discord'),
+            AppTextField(
+              controller: _contactDiscordController,
+              label: 'Discord',
+            ),
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
             const SizedBox(height: AppSpacing.lg),
             AppButton(label: '完成註冊', loading: _loading, onPressed: _submit),

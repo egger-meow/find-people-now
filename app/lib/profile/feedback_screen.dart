@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:io' show Platform;
 
 import '../auth/auth_providers.dart';
+import '../errors/user_error_message.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/feedback_rpc.dart';
 import '../theme/app_theme.dart';
@@ -44,7 +45,10 @@ class FeedbackScreen extends StatelessWidget {
           '我們無法做到絕對零風險——任何讓陌生人見面的服務都一樣——但這些機制的設計目標，就是把風險降到最低，'
           '並且讓你在感覺不對勁的第一時間，有實際能保護自己的工具，而不是只能默默忍受。',
     ),
-    ('怎麼確認大家都是在校學生？', '學校信箱驗證能確保曾是本校學生，但無法排除已畢業校友（部分學校畢業生信箱長期有效）；未來若能與校方系統整合會優先加上。'),
+    (
+      '怎麼確認大家都是在校學生？',
+      '學校信箱驗證能確保曾是本校學生，但無法排除已畢業校友（部分學校畢業生信箱長期有效）；未來若能與校方系統整合會優先加上。',
+    ),
   ];
 
   @override
@@ -66,9 +70,9 @@ class FeedbackScreen extends StatelessWidget {
               child: Text(
                 '常見問題',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             AppCard(
@@ -99,7 +103,12 @@ class _FaqTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ExpansionTile(
       tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      childrenPadding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+      childrenPadding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        0,
+        AppSpacing.md,
+        AppSpacing.md,
+      ),
       title: Text(question, style: Theme.of(context).textTheme.titleSmall),
       children: [
         Align(
@@ -167,7 +176,7 @@ class _FeedbackFormState extends ConsumerState<_FeedbackForm> {
       setState(() => _sent = true);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '送出失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '送出失敗，請檢查網路連線後再試一次');
@@ -192,13 +201,20 @@ class _FeedbackFormState extends ConsumerState<_FeedbackForm> {
           AppTextField(controller: _controller, label: '你想說的話', maxLines: 4),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
           if (_sent) ...[
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: Theme.of(context).colorScheme.primary, size: 18),
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 18,
+                ),
                 const SizedBox(width: AppSpacing.xs),
                 const Text('已收到你的回饋，謝謝！'),
               ],

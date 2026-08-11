@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/department_options.dart';
+import '../errors/user_error_message.dart';
+import '../widgets/app_error_state.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart' show myAppUserProvider;
 import '../rpc/api_exception.dart';
@@ -62,7 +64,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     if (userId == null) return;
     setState(() => _uploadingAvatar = true);
     try {
-      final url = await pickAndUploadAvatar(ref.read(supabaseClientProvider), userId);
+      final url = await pickAndUploadAvatar(
+        ref.read(supabaseClientProvider),
+        userId,
+      );
       if (url != null && mounted) setState(() => _avatarUrl = url);
     } catch (e) {
       if (!mounted) return;
@@ -116,8 +121,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         displayName: displayName,
         avatarUrl: _avatarUrl,
         degreeLevel: _degreeLevel,
-        department: _departmentController.text.trim().isEmpty ? null : _departmentController.text.trim(),
-        gender: _genderController.text.trim().isEmpty ? null : _genderController.text.trim(),
+        department: _departmentController.text.trim().isEmpty
+            ? null
+            : _departmentController.text.trim(),
+        gender: _genderController.text.trim().isEmpty
+            ? null
+            : _genderController.text.trim(),
         bio: _bioController.text.trim(),
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
@@ -127,7 +136,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       if (mounted) context.pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '儲存失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -142,7 +151,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       body: SafeArea(
         child: userAsync.when(
           loading: () => const LoadingIndicator(),
-          error: (error, stack) => Center(child: Text('載入失敗：$error')),
+          error: (error, stack) => const AppErrorState(),
           data: (user) {
             if (user == null) return const LoadingIndicator();
             if (!_initialized) {
@@ -169,8 +178,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         children: [
                           CircleAvatar(
                             radius: 40,
-                            backgroundImage: _avatarUrl.isEmpty ? null : NetworkImage(_avatarUrl),
-                            child: _avatarUrl.isEmpty ? const Icon(Icons.person_rounded, size: 40) : null,
+                            backgroundImage: _avatarUrl.isEmpty
+                                ? null
+                                : NetworkImage(_avatarUrl),
+                            child: _avatarUrl.isEmpty
+                                ? const Icon(Icons.person_rounded, size: 40)
+                                : null,
                           ),
                           if (_uploadingAvatar)
                             const CircularProgressIndicator(strokeWidth: 2.4),
@@ -184,12 +197,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                       // v1.33 — 移除「隨機頭像」按鈕，頭像從選填改硬性門檻，
                       // 見 SPEC.md v1.33。
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                        ),
                         child: Text(
                           '建議使用清楚露臉的個人照，配對成功後大家才容易認出你',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                       ),
@@ -203,24 +221,43 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   initialValue: _degreeLevel,
                   decoration: const InputDecoration(labelText: '學制'),
                   items: const [
-                    DropdownMenuItem(value: DEGREE_LEVEL.UNDERGRAD, child: Text('大學部')),
-                    DropdownMenuItem(value: DEGREE_LEVEL.MASTER, child: Text('碩士班')),
-                    DropdownMenuItem(value: DEGREE_LEVEL.PHD, child: Text('博士班')),
+                    DropdownMenuItem(
+                      value: DEGREE_LEVEL.UNDERGRAD,
+                      child: Text('大學部'),
+                    ),
+                    DropdownMenuItem(
+                      value: DEGREE_LEVEL.MASTER,
+                      child: Text('碩士班'),
+                    ),
+                    DropdownMenuItem(
+                      value: DEGREE_LEVEL.PHD,
+                      child: Text('博士班'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value == null) return;
                     setState(() {
                       _degreeLevel = value;
-                      if (!departmentOptionsFor(user.school, value).contains(_departmentController.text)) {
+                      if (!departmentOptionsFor(
+                        user.school,
+                        value,
+                      ).contains(_departmentController.text)) {
                         _departmentController.clear();
                       }
                     });
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                DepartmentField(controller: _departmentController, school: user.school, degreeLevel: _degreeLevel),
+                DepartmentField(
+                  controller: _departmentController,
+                  school: user.school,
+                  degreeLevel: _degreeLevel,
+                ),
                 const SizedBox(height: AppSpacing.md),
-                AppTextField(controller: _genderController, label: '性別（選填，僅供展示，不影響配對）'),
+                AppTextField(
+                  controller: _genderController,
+                  label: '性別（選填，僅供展示，不影響配對）',
+                ),
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(
                   controller: _bioController,
@@ -228,16 +265,30 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   hint: '一句話介紹自己；興趣、有什麼經驗或技能可以跟別人分享…',
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                Text('聯絡方式（至少填一項）', style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  '聯絡方式（至少填一項）',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 const SizedBox(height: AppSpacing.sm),
-                AppTextField(controller: _contactIgController, label: 'Instagram'),
+                AppTextField(
+                  controller: _contactIgController,
+                  label: 'Instagram',
+                ),
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(controller: _contactLineController, label: 'LINE'),
                 const SizedBox(height: AppSpacing.md),
-                AppTextField(controller: _contactDiscordController, label: 'Discord'),
+                AppTextField(
+                  controller: _contactDiscordController,
+                  label: 'Discord',
+                ),
                 if (_error != null) ...[
                   const SizedBox(height: AppSpacing.sm),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: AppSpacing.lg),
                 AppButton(label: '儲存', loading: _loading, onPressed: _submit),

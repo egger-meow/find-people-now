@@ -8,6 +8,7 @@ import '../activities/my_activities_providers.dart'
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
 import '../data/skill_level_labels.dart';
+import '../errors/user_error_message.dart';
 import '../generated/match_request.dart';
 import '../generated/supadart_header.dart'
     show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
@@ -17,6 +18,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_error_state.dart';
 import '../widgets/app_section.dart';
 import '../widgets/app_snack_bar.dart';
 import '../widgets/app_status_summary.dart';
@@ -85,7 +87,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       body: SafeArea(
         child: requestAsync.when(
           loading: () => const LoadingIndicator(),
-          error: (error, stack) => Center(child: Text('連線失敗：$error')),
+          error: (error, stack) => const AppErrorState(),
           data: (request) {
             if (request == null) {
               return const Center(child: Text('找不到這個配對，可能已經被取消了'));
@@ -96,7 +98,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
 
             return membersAsync.when(
               loading: () => const LoadingIndicator(),
-              error: (error, stack) => Center(child: Text('連線失敗：$error')),
+              error: (error, stack) => const AppErrorState(),
               data: (members) {
                 final isOwner = members.any(
                   (m) =>
@@ -202,7 +204,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       setState(() => _inviteToken = token);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '產生邀請連結失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -217,7 +219,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       setState(() => _inviteToken = null);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '撤銷失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -243,7 +245,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '退出失敗：${e.code.name}';
+        _error = userErrorMessage(e);
         _busy = false;
       });
     }
@@ -269,7 +271,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '取消失敗：${e.code.name}';
+        _error = userErrorMessage(e);
         _busy = false;
       });
     }

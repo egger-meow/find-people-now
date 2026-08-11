@@ -5,9 +5,12 @@ import 'package:go_router/go_router.dart';
 import '../account_deletion.dart';
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
+import '../errors/user_error_message.dart';
+import '../widgets/app_error_state.dart';
 import '../generated/app_user.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
-import '../match/match_providers.dart' show myAppUserProvider, myBadgesProvider, myReliabilityProvider;
+import '../match/match_providers.dart'
+    show myAppUserProvider, myBadgesProvider, myReliabilityProvider;
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart' show AchievementBadge, ReliabilityTier;
 import '../theme/app_theme.dart';
@@ -18,23 +21,23 @@ import '../widgets/app_dialog.dart';
 import '../widgets/loading_indicator.dart';
 
 String _themeModeLabel(ThemeMode mode) => switch (mode) {
-      ThemeMode.system => '跟隨系統',
-      ThemeMode.light => '亮色',
-      ThemeMode.dark => '暗色',
-    };
+  ThemeMode.system => '跟隨系統',
+  ThemeMode.light => '亮色',
+  ThemeMode.dark => '暗色',
+};
 
 String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
-      DEGREE_LEVEL.UNDERGRAD => '大學部',
-      DEGREE_LEVEL.MASTER => '碩士班',
-      DEGREE_LEVEL.PHD => '博士班',
-    };
+  DEGREE_LEVEL.UNDERGRAD => '大學部',
+  DEGREE_LEVEL.MASTER => '碩士班',
+  DEGREE_LEVEL.PHD => '博士班',
+};
 
 String _tierLabel(ReliabilityTier tier) => switch (tier) {
-      ReliabilityTier.trusted => 'Trusted',
-      ReliabilityTier.normal => 'Normal',
-      ReliabilityTier.newUser => 'New',
-      ReliabilityTier.unknown => '—',
-    };
+  ReliabilityTier.trusted => 'Trusted',
+  ReliabilityTier.normal => 'Normal',
+  ReliabilityTier.newUser => 'New',
+  ReliabilityTier.unknown => '—',
+};
 
 Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
   final confirmed = await showAppConfirmDialog(
@@ -64,9 +67,9 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         text,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -96,7 +99,10 @@ class _BadgesSection extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(badge.icon, style: const TextStyle(fontSize: 22)),
-                    Text(badge.label, style: Theme.of(context).textTheme.labelSmall),
+                    Text(
+                      badge.label,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ],
                 ),
               ),
@@ -132,7 +138,7 @@ class ProfileScreen extends ConsumerWidget {
       body: SafeArea(
         child: userAsync.when(
           loading: () => const LoadingIndicator(),
-          error: (error, stack) => Center(child: Text('載入失敗：$error')),
+          error: (error, stack) => const AppErrorState(),
           data: (user) {
             if (user == null) return const LoadingIndicator();
             return AdaptiveRefresh(
@@ -143,91 +149,104 @@ class ProfileScreen extends ConsumerWidget {
               slivers: [
                 SliverPadding(
                   padding: const EdgeInsets.all(AppSpacing.lg),
-                  sliver: SliverList.list(children: [
-                    _ProfileHeaderCard(user: user),
-                    const SizedBox(height: AppSpacing.sm),
-                    reliabilityAsync.when(
-                      loading: () => const SizedBox.shrink(),
-                      error: (error, stack) => const SizedBox.shrink(),
-                      data: (reliability) => AppCard(
-                        child: Row(
-                          children: [
-                            Icon(Icons.verified_rounded, color: Theme.of(context).colorScheme.primary),
-                            const SizedBox(width: AppSpacing.sm),
-                            Text('可信度等級：${_tierLabel(reliability.tier)}',
-                                style: Theme.of(context).textTheme.titleSmall),
-                          ],
+                  sliver: SliverList.list(
+                    children: [
+                      _ProfileHeaderCard(user: user),
+                      const SizedBox(height: AppSpacing.sm),
+                      reliabilityAsync.when(
+                        loading: () => const SizedBox.shrink(),
+                        error: (error, stack) => const SizedBox.shrink(),
+                        data: (reliability) => AppCard(
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.verified_rounded,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                '可信度等級：${_tierLabel(reliability.tier)}',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    const _BadgesSection(),
-                    const SizedBox(height: AppSpacing.lg),
-                    const _SectionLabel('設定'),
-                    AppCard(
-                      padding: EdgeInsets.zero,
-                      child: Column(
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.all(AppSpacing.md),
-                            child: _ThemeModeSection(),
-                          ),
-                          const Divider(height: 1),
-                          Padding(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            child: _MoreInfoSection(user: user),
-                          ),
-                          const Divider(height: 1),
-                          Padding(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            child: _ContactsSection(user: user),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    const _SectionLabel('說明與回饋'),
-                    AppCard(
-                      padding: EdgeInsets.zero,
-                      // AppCard 沒帶 onTap 時只有 Container/DecoratedBox，沒有
-                      // Material 祖先給裡面的 ListTile 畫 ink splash——自己補一層
-                      // 透明 Material。
-                      child: Material(
-                        type: MaterialType.transparency,
+                      const SizedBox(height: AppSpacing.sm),
+                      const _BadgesSection(),
+                      const SizedBox(height: AppSpacing.lg),
+                      const _SectionLabel('設定'),
+                      AppCard(
+                        padding: EdgeInsets.zero,
                         child: Column(
                           children: [
-                            ListTile(
-                              leading: const Icon(Icons.question_answer_outlined),
-                              title: const Text('反饋 / 常見問答'),
-                              trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: () => context.push('/profile/feedback'),
+                            const Padding(
+                              padding: EdgeInsets.all(AppSpacing.md),
+                              child: _ThemeModeSection(),
                             ),
                             const Divider(height: 1),
-                            ListTile(
-                              leading: const Icon(Icons.menu_book_outlined),
-                              title: const Text('使用說明'),
-                              trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: () => context.push('/help'),
+                            Padding(
+                              padding: const EdgeInsets.all(AppSpacing.md),
+                              child: _MoreInfoSection(user: user),
+                            ),
+                            const Divider(height: 1),
+                            Padding(
+                              padding: const EdgeInsets.all(AppSpacing.md),
+                              child: _ContactsSection(user: user),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    AppCard(
-                      padding: EdgeInsets.zero,
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: ListTile(
-                          leading: const Icon(Icons.logout_rounded),
-                          title: const Text('登出'),
-                          onTap: () => _confirmSignOut(context, ref),
+                      const SizedBox(height: AppSpacing.lg),
+                      const _SectionLabel('說明與回饋'),
+                      AppCard(
+                        padding: EdgeInsets.zero,
+                        // AppCard 沒帶 onTap 時只有 Container/DecoratedBox，沒有
+                        // Material 祖先給裡面的 ListTile 畫 ink splash——自己補一層
+                        // 透明 Material。
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: Column(
+                            children: [
+                              ListTile(
+                                leading: const Icon(
+                                  Icons.question_answer_outlined,
+                                ),
+                                title: const Text('反饋 / 常見問答'),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: () => context.push('/profile/feedback'),
+                              ),
+                              const Divider(height: 1),
+                              ListTile(
+                                leading: const Icon(Icons.menu_book_outlined),
+                                title: const Text('使用說明'),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: () => context.push('/help'),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _DeleteAccountSection(),
-                    ]),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: ListTile(
+                            leading: const Icon(Icons.logout_rounded),
+                            title: const Text('登出'),
+                            onTap: () => _confirmSignOut(context, ref),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _DeleteAccountSection(),
+                    ],
+                  ),
                 ),
               ],
             );
@@ -250,15 +269,22 @@ class _ProfileHeaderCard extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 32,
-            backgroundImage: user.avatarUrl.isEmpty ? null : NetworkImage(user.avatarUrl),
-            child: user.avatarUrl.isEmpty ? const Icon(Icons.person_rounded, size: 32) : null,
+            backgroundImage: user.avatarUrl.isEmpty
+                ? null
+                : NetworkImage(user.avatarUrl),
+            child: user.avatarUrl.isEmpty
+                ? const Icon(Icons.person_rounded, size: 32)
+                : null,
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(user.displayName, style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  user.displayName,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   '${schoolLabel(user.school)} · ${user.department ?? '未填科系'} · ${_degreeLabel(user.degreeLevel)}',
@@ -304,16 +330,24 @@ class _MoreInfoSectionState extends State<_MoreInfoSection> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('更多資料', style: Theme.of(context).textTheme.titleSmall),
-              Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded),
+              Icon(
+                _expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+              ),
             ],
           ),
           if (_expanded) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text('性別：${widget.user.gender ?? '未填（僅供展示，不影響配對）'}',
-                style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              '性別：${widget.user.gender ?? '未填（僅供展示，不影響配對）'}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
-            Text('自我介紹：${widget.user.bio.isNotEmpty ? widget.user.bio : '還沒有寫自我介紹'}',
-                style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              '自我介紹：${widget.user.bio.isNotEmpty ? widget.user.bio : '還沒有寫自我介紹'}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ],
         ],
       ),
@@ -331,7 +365,8 @@ class _ContactsSection extends StatelessWidget {
     final lines = <String>[
       if (user.contactIg?.isNotEmpty == true) 'IG: ${user.contactIg}',
       if (user.contactLine?.isNotEmpty == true) 'LINE: ${user.contactLine}',
-      if (user.contactDiscord?.isNotEmpty == true) 'Discord: ${user.contactDiscord}',
+      if (user.contactDiscord?.isNotEmpty == true)
+        'Discord: ${user.contactDiscord}',
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,7 +376,8 @@ class _ContactsSection extends StatelessWidget {
         if (lines.isEmpty)
           const Text('還沒有留下任何聯絡方式')
         else
-          for (final line in lines) Text(line, style: Theme.of(context).textTheme.bodyMedium),
+          for (final line in lines)
+            Text(line, style: Theme.of(context).textTheme.bodyMedium),
       ],
     );
   }
@@ -378,7 +414,8 @@ class _ThemeModeSection extends ConsumerWidget {
 /// 而不是藏進另一層選單，符合「好找」但仍跟一般操作有明顯區隔。
 class _DeleteAccountSection extends ConsumerStatefulWidget {
   @override
-  ConsumerState<_DeleteAccountSection> createState() => _DeleteAccountSectionState();
+  ConsumerState<_DeleteAccountSection> createState() =>
+      _DeleteAccountSectionState();
 }
 
 class _DeleteAccountSectionState extends ConsumerState<_DeleteAccountSection> {
@@ -408,7 +445,7 @@ class _DeleteAccountSectionState extends ConsumerState<_DeleteAccountSection> {
       // 這裡不需要、也不應該手動導覽。
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '刪除失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -428,7 +465,10 @@ class _DeleteAccountSectionState extends ConsumerState<_DeleteAccountSection> {
           ),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
           const SizedBox(height: AppSpacing.sm),
           OutlinedButton(

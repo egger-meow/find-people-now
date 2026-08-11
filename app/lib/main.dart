@@ -1,15 +1,69 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'errors/user_error_message.dart';
 import 'router/app_router.dart';
 import 'supabase_bootstrap.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_providers.dart';
+import 'widgets/app_error_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initSupabase();
-  runApp(const ProviderScope(child: MyApp()));
+  _installUserSafeErrorBoundary();
+
+  try {
+    await initSupabase();
+    runApp(const ProviderScope(child: MyApp()));
+  } catch (error, stackTrace) {
+    _reportUnexpectedError(error, stackTrace);
+    runApp(const _StartupErrorApp());
+  }
+}
+
+void _installUserSafeErrorBoundary() {
+  ErrorWidget.builder = buildUserSafeErrorWidget;
+
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    _reportUnexpectedError(error, stackTrace);
+    return true;
+  };
+}
+
+void _reportUnexpectedError(Object error, StackTrace stackTrace) {
+  FlutterError.reportError(
+    FlutterErrorDetails(
+      exception: error,
+      stack: stackTrace,
+      library: 'find_people_now',
+    ),
+  );
+}
+
+/// Public for regression coverage without mutating Flutter's global builder.
+Widget buildUserSafeErrorWidget(FlutterErrorDetails details) {
+  if (kDebugMode) FlutterError.presentError(details);
+  return const AppErrorState();
+}
+
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '敢不敢揪',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      home: const Scaffold(
+        body: SafeArea(
+          child: AppErrorState(message: userSafeUnexpectedErrorMessage),
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends ConsumerWidget {
@@ -46,7 +100,10 @@ class MyApp extends ConsumerWidget {
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
-            textScaler: mq.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.3),
+            textScaler: mq.textScaler.clamp(
+              minScaleFactor: 0.9,
+              maxScaleFactor: 1.3,
+            ),
           ),
           child: child!,
         );

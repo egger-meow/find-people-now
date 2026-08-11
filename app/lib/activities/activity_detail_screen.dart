@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
 import '../data/skill_level_labels.dart';
+import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
@@ -34,6 +35,7 @@ import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_error_state.dart';
 import '../widgets/app_glass_surface.dart';
 import '../widgets/app_section.dart';
 import '../widgets/app_sheet.dart';
@@ -220,11 +222,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      showAppSnackBar(
-        context,
-        '退出活動失敗：${e.code.name}',
-        kind: AppSnackKind.error,
-      );
+      showAppSnackBar(context, userErrorMessage(e), kind: AppSnackKind.error);
     } finally {
       if (mounted) setState(() => _leaving = false);
     }
@@ -259,7 +257,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
       body: SafeArea(
         child: activityAsync.when(
           loading: () => const LoadingIndicator(),
-          error: (error, stack) => Center(child: Text('連線失敗：$error')),
+          error: (error, stack) => const AppErrorState(),
           data: (activity) {
             if (activity == null) {
               return const Center(child: Text('找不到這個活動'));
@@ -868,7 +866,7 @@ class _CompletionReportSheetState
       setState(() {
         _error = e.code == ApiErrorCode.alreadyReported
             ? '你已經回報過了'
-            : '回報失敗：${e.code.name}';
+            : userErrorMessage(e);
       });
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -894,7 +892,7 @@ class _CompletionReportSheetState
             return rosterAsync.when(
               loading: () =>
                   const SizedBox(height: 120, child: LoadingIndicator()),
-              error: (error, stack) => Text('載入失敗：$error'),
+              error: (error, stack) => const AppErrorState(),
               data: (roster) {
                 final candidates = roster
                     .where(
@@ -1234,7 +1232,7 @@ class _ActivityOfficialLocationProposalActionState
       if (!mounted) return;
       final message = e.code == ApiErrorCode.duplicateLocationName
           ? '這個地點已經存在了'
-          : '送出失敗：${e.code.name}';
+          : userErrorMessage(e);
       showAppSnackBar(context, message, kind: AppSnackKind.error);
     } finally {
       nameController.dispose();
@@ -1280,7 +1278,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '投票失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1300,7 +1298,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '提案失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1364,7 +1362,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '新增失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1590,7 +1588,7 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
       setState(() {
         _error = e.code == ApiErrorCode.meetingPointUpdateCooldown
             ? '更新太頻繁，請稍後再試'
-            : '更新失敗：${e.code.name}';
+            : userErrorMessage(e);
       });
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1609,7 +1607,7 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
         children: [
           updatesAsync.when(
             loading: () => const LoadingIndicator(),
-            error: (error, stack) => Text('載入失敗：$error'),
+            error: (error, stack) => const AppErrorState(),
             data: (updates) => updates.isEmpty
                 ? Text(
                     '目前還沒有人設定集合地點',
@@ -1765,7 +1763,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
       showAppSnackBar(context, '已更新見面提示', kind: AppSnackKind.success);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '更新失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1847,7 +1845,7 @@ class _MembersTab extends ConsumerWidget {
 
     return rosterAsync.when(
       loading: () => const LoadingIndicator(),
-      error: (error, stack) => Center(child: Text('載入失敗：$error')),
+      error: (error, stack) => const AppErrorState(),
       data: (rawRoster) {
         final roster = [
           for (final member in rawRoster)
@@ -2750,7 +2748,7 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = '送出失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

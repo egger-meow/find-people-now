@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
+import '../errors/user_error_message.dart';
 import '../generated/downgrade_request.dart';
 import '../generated/supadart_header.dart' show DOWNGRADE_RESPONSE;
 import '../rpc/api_exception.dart';
@@ -22,7 +23,8 @@ class DowngradeConsentGate extends ConsumerStatefulWidget {
   final Widget child;
 
   @override
-  ConsumerState<DowngradeConsentGate> createState() => _DowngradeConsentGateState();
+  ConsumerState<DowngradeConsentGate> createState() =>
+      _DowngradeConsentGateState();
 }
 
 class _DowngradeConsentGateState extends ConsumerState<DowngradeConsentGate> {
@@ -72,10 +74,12 @@ class _DowngradeConsentDialog extends ConsumerStatefulWidget {
   final DowngradeRequest downgradeRequest;
 
   @override
-  ConsumerState<_DowngradeConsentDialog> createState() => _DowngradeConsentDialogState();
+  ConsumerState<_DowngradeConsentDialog> createState() =>
+      _DowngradeConsentDialogState();
 }
 
-class _DowngradeConsentDialogState extends ConsumerState<_DowngradeConsentDialog> {
+class _DowngradeConsentDialogState
+    extends ConsumerState<_DowngradeConsentDialog> {
   bool _busy = false;
   String? _error;
 
@@ -94,13 +98,14 @@ class _DowngradeConsentDialogState extends ConsumerState<_DowngradeConsentDialog
       Navigator.of(context).pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.code == ApiErrorCode.consentWindowClosed || e.code == ApiErrorCode.alreadyResponded) {
+      if (e.code == ApiErrorCode.consentWindowClosed ||
+          e.code == ApiErrorCode.alreadyResponded) {
         // 已經過期或已回應過（例如另一台裝置搶先按過）——直接關閉，不用讓
         // 使用者對著一個回應不了的彈窗卡住。
         Navigator.of(context).pop();
         return;
       }
-      setState(() => _error = '回應失敗：${e.code.name}');
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -123,18 +128,31 @@ class _DowngradeConsentDialogState extends ConsumerState<_DowngradeConsentDialog
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('剩餘時間'),
-                CountdownText(deadline: dg.expireAt, style: Theme.of(context).textTheme.titleSmall),
+                CountdownText(
+                  deadline: dg.expireAt,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
               ],
             ),
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
           ],
         ),
         actions: [
-          AppDialogAction(label: '不同意', onPressed: _busy ? null : () => _respond(false)),
-          AppDialogAction(label: '同意', isDefault: true, onPressed: _busy ? null : () => _respond(true)),
+          AppDialogAction(
+            label: '不同意',
+            onPressed: _busy ? null : () => _respond(false),
+          ),
+          AppDialogAction(
+            label: '同意',
+            isDefault: true,
+            onPressed: _busy ? null : () => _respond(true),
+          ),
         ],
       ),
     );

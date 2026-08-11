@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/auth_providers.dart';
 import '../data/activity_type_icons.dart';
 import '../data/skill_level_labels.dart';
+import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/match_request.dart';
@@ -20,6 +21,7 @@ import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_error_state.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_section.dart';
@@ -157,7 +159,7 @@ class CreateRequestScreen extends ConsumerWidget {
       body: SafeArea(
         child: activeRequest.when(
           loading: () => const LoadingIndicator(),
-          error: (error, stack) => Center(child: Text('載入失敗：$error')),
+          error: (error, stack) => const AppErrorState(),
           data: (request) {
             if (request != null) {
               // UI_PLAN §2.2 送出前預先攔截 — 還在找人流程中（REQUESTING/
@@ -180,7 +182,7 @@ class CreateRequestScreen extends ConsumerWidget {
             final activeActivity = ref.watch(myActiveActivityProvider);
             return activeActivity.when(
               loading: () => const LoadingIndicator(),
-              error: (error, stack) => Center(child: Text('載入失敗：$error')),
+              error: (error, stack) => const AppErrorState(),
               data: (activity) {
                 if (activity != null) {
                   return _ActiveActivityBlock(activity: activity);
@@ -229,7 +231,7 @@ class CreateRequestScreen extends ConsumerWidget {
           ApiErrorCode.inviteLinkExpired => '邀請碼不存在或已失效，請向朋友要一個新的',
           ApiErrorCode.requestFull => '這個房間已經滿了',
           ApiErrorCode.alreadyRequesting => '你已經有進行中的配對了',
-          _ => '加入失敗：${e.code.name}',
+          _ => userErrorMessage(e),
         };
         setDialogState(() => errorText = message);
       }
@@ -630,7 +632,7 @@ class _AlertSubscriptionSection extends ConsumerWidget {
       if (!context.mounted) return;
       final message = e.code == ApiErrorCode.tooManyAlertSubscriptions
           ? '同時最多只能設定 5 個提醒，先取消一些吧'
-          : '設定失敗：${e.code.name}';
+          : userErrorMessage(e);
       showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
@@ -1044,10 +1046,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       context.push('/waiting-room/${request.id}');
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(
-        () => _error =
-            '送出失敗：${e.code.name}${e.detail != null ? '（${e.detail}）' : ''}',
-      );
+      setState(() => _error = userErrorMessage(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -1201,7 +1200,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       if (!mounted) return;
       final message = e.code == ApiErrorCode.duplicateTypeName
           ? '這個類型已經存在了'
-          : '送出失敗：${e.code.name}';
+          : userErrorMessage(e);
       showAppSnackBar(context, message, kind: AppSnackKind.error);
     }
   }
@@ -1215,10 +1214,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
 
     return typesAsync.when(
       loading: () => const LoadingIndicator(),
-      error: (error, stack) => Center(child: Text('載入活動類型失敗：$error')),
+      error: (error, stack) => const AppErrorState(),
       data: (types) => userAsync.when(
         loading: () => const LoadingIndicator(),
-        error: (error, stack) => Center(child: Text('載入個人資料失敗：$error')),
+        error: (error, stack) => const AppErrorState(),
         data: (user) {
           if (user == null) return const LoadingIndicator();
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
@@ -1517,7 +1516,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         description: '去哪個校區？',
                         child: campusAsync.when(
                           loading: () => const LoadingIndicator(),
-                          error: (error, stack) => Text('載入校區失敗：$error'),
+                          error: (error, stack) => const AppErrorState(),
                           data: (campuses) {
                             if (campuses.isEmpty) {
                               return Text(
@@ -1605,7 +1604,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                             else
                               reliabilityAsync.when(
                                 loading: () => const LoadingIndicator(),
-                                error: (error, stack) => Text('載入可信度失敗：$error'),
+                                error: (error, stack) => const AppErrorState(),
                                 data: (reliability) {
                                   final options = _groupSizeOptions(
                                     _selectedType!,

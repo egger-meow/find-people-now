@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
+import '../errors/user_error_message.dart';
 import '../generated/supadart_header.dart'
     show DEGREE_LEVEL, PENDING_CONFIRMATION_STATUS;
 import '../rpc/api_exception.dart';
@@ -118,7 +119,7 @@ class _PendingConfirmationCardState
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '載入失敗：${e.code.name}';
+        _error = userErrorMessage(e);
         _loading = false;
       });
     }
@@ -150,10 +151,7 @@ class _PendingConfirmationCardState
         await _load();
       } on ApiException catch (e) {
         if (!mounted) return;
-        setState(
-          () => _error =
-              '回應失敗：${e.code.name}${e.detail != null ? '（${e.detail}）' : ''}',
-        );
+        setState(() => _error = userErrorMessage(e));
       } finally {
         if (mounted) setState(() => _busy = false);
       }

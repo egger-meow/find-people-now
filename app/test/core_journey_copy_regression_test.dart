@@ -676,7 +676,9 @@ void main() {
     await tester.tap(find.text('確認送出'));
     await _settle(tester);
 
-    expect(find.text('送出失敗：invalidInput（測試細節）'), findsOneWidget);
+    expect(find.text('部分資料不正確，請檢查後再試'), findsOneWidget);
+    expect(find.textContaining('invalidInput'), findsNothing);
+    expect(find.textContaining('測試細節'), findsNothing);
     expect(gateway.calls, ['create']);
   });
 }
