@@ -128,6 +128,14 @@ enum SCHOOL { NYCU, NTHU }
 
 enum SKILL_LEVEL { BEGINNER, CASUAL, ADVANCED, COMPETITIVE }
 
+enum LEVEL_SYSTEM {
+  NONE,
+  BASKETBALL_INTENSITY,
+  BADMINTON_LEVEL,
+  TENNIS_NTRP,
+  TABLE_TENNIS_SKILL,
+}
+
 // Utils
 extension DurationFromString on Duration {
   static Duration fromString(String str) {

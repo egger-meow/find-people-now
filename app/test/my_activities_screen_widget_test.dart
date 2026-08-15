@@ -28,6 +28,8 @@ ActivityType _type(String id, String name) => ActivityType(
   createdAt: _now,
   skillLevelEnabled: false,
   sortOrder: 0,
+  levelSystem: LEVEL_SYSTEM.NONE,
+  aliases: const [],
 );
 
 MatchRequest _request(String id, REQUEST_STATUS status, String typeId) =>

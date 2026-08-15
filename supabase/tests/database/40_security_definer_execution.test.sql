@@ -31,7 +31,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_request(uuid, text, timestamp with time zone, timestamp with time zone, integer, integer, boolean, public.skill_level, text)',
+    'public.create_request(uuid, text, timestamp with time zone, timestamp with time zone, integer, integer, boolean, text, integer, text)',
     'execute'
   ),
   'authenticated can execute the current client create_request RPC'

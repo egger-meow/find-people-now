@@ -94,6 +94,8 @@ erDiagram
         text description "nullable，前端「?」按鈕顯示的玩法說明；審核時由 admin 一併設定（v1.10）"
         bool skill_level_enabled "預設 false；per-type 設定欄位，admin 審核時可打開，不需改程式碼（v1.34）"
         int sort_order "預設 100；顯示排序，小的在前，同值 fallback name；admin 可在 Studio 調整（v1.38）"
+        enum level_system "NONE | BASKETBALL_INTENSITY | BADMINTON_LEVEL | TENNIS_NTRP | TABLE_TENNIS_SKILL，預設 NONE（v1.42）"
+        text_array aliases "nullable，別名清單例如桌球的 ['乒乓球', 'Ping Pong', 'Table Tennis']，用於搜尋（v1.42）"
         enum status "PENDING | APPROVED | REJECTED"
         uuid created_by FK
         timestamptz created_at
@@ -125,7 +127,9 @@ erDiagram
         timestamptz revoked_at "nullable，owner 主動撤銷邀請連結的時間（v1.5）"
         bool allow_downgrade
         enum status "DRAFT | REQUESTING | PENDING_CONFIRMATION | MATCHED | EXPIRED | CANCELLED（v1.4 新增 PENDING_CONFIRMATION）"
-        enum skill_level "nullable，BEGINNER|CASUAL|ADVANCED|COMPETITIVE；null=不限（wildcard）；只在 activity_type.skill_level_enabled=true 時有意義（v1.34）"
+        enum skill_level "DEPRECATED（v1.42 廢棄，由 sport_level 取代）；nullable，BEGINNER|CASUAL|ADVANCED|COMPETITIVE"
+        text sport_level "nullable，運動專屬等級代碼（例如 HIGH、LEVEL_8_10、NTRP_3_5、REGULAR_PLAYER），null=不限（v1.42）"
+        int sport_level_rating "nullable，選填積分數值（例如桌球 1450）（v1.42）"
         text study_target "nullable，使用者原始輸入（未清理）；只在讀書類型有意義；前端顯示讀這欄（v1.35）"
         text study_target_normalized "nullable，正規化後字串；撮合比對只用這欄，不對外顯示（v1.35）"
         timestamptz created_at
@@ -319,6 +323,7 @@ erDiagram
 | `notification_event_type` | `MATCH_SUCCESS` `DOWNGRADE_REQUEST` `DOWNGRADE_RESULT` `ACTIVITY_REMINDER` `COMPLETE_CONFIRMATION` `LOCATION_NOT_YET_PROPOSED`（v1.11） `MEETING_POINT_UPDATED`（v1.11.1） `MATCH_NOT_FORMED`（v1.12） `ACTIVITY_UPCOMING`（v1.13） `MEMBER_ARRIVED`（v1.24） `ALERT_TRIGGERED`（v1.27） | §16 開放問題 5（清單可能擴充） |
 | `report_category` | `SPAM` `HARASSMENT` `OTHER` | §12.1.6（v1.18） |
 | `report_status` | `PENDING` `REVIEWED` | §12.1.6（v1.18） |
+| `level_system` | `NONE` `BASKETBALL_INTENSITY` `BADMINTON_LEVEL` `TENNIS_NTRP` `TABLE_TENNIS_SKILL` | §5、§7（v1.42，運動專屬分級系統） |
 
 > **註記**：`request_member_status` 與 `activity_member_status` 兩個欄位 SPEC 只寫了「status」沒列值域，此處補定為最小可用集合（成員可在配對前退出 Request → `LEFT`；成員可個別取消已成立的活動 → `CANCELLED`，活動本身可能照常進行）。這是 schema 層補完，不是產品邏輯變更。
 
@@ -382,3 +387,5 @@ erDiagram
 49. **`activity_type.skill_level_enabled` 沿用 `group_size_step`（設計備註 22）建立的「per-type 設定欄位」模式，不做成獨立表（v1.34）**：曾考慮開一張 `activity_type_skill_config` 之類的表承載未來可能的更多 per-type 篩選條件，否決理由跟設計備註 22 同源——目前只有一種篩選維度（程度），為此開一張表換不到任何實質彈性，只是多一層 join；`skill_level_enabled` 是單一 boolean，跟 `group_size_step` 一樣由 admin 直接在 Studio 設定，不需要專屬 admin RPC。`match_request.skill_level` 用 enum（`BEGINNER`/`CASUAL`/`ADVANCED`/`COMPETITIVE`）而非 int 等級碼：相容性判準（設計備註見 `fn_skill_level_match`）目前只有「相等或有一方 null」，不需要順序比較，enum 比 int 多一層型別安全（DB 直接擋掉非法字串），且錯誤訊息/前端顯示不需要額外的數字-文字對照表。
 50. **`match_request.study_target`/`study_target_normalized` 只綁定「讀書」固定類型，不比照 `skill_level_enabled` 做成通用 per-type flag（v1.35）**：曾考慮抽象成跟 skill_level 一樣的機制（例如 `activity_type.free_text_match_enabled`），否決理由是兩者性質不同——`skill_level` 是「選擇一個固定等級」，天生就是可以套用到任何新競技類型的通用機制；`study_target` 是「自由文字＋正規化比對」，這套正規化規則（全形轉半形、大小寫）只對「讀書」這種輸入科目/課程/考試名稱的情境有意義，套到其他類型（例如未來若有其他自由文字欄位）不會是同一套正規化規則，抽象成通用機制反而會綁死「所有自由文字欄位都用同一種正規化」這個不成立的假設。原文/正規化兩欄分開存也是同樣的「不過度抽象」精神的延伸：不做成「一個欄位 + 讀取時即時正規化」，是因為撮合是熱路徑（`fn_run_matching_engine`），每次比對都重新正規化雙方字串不如寫入時算好一次划算，且分兩欄後前端顯示（讀原文）與比對邏輯（讀正規化）天然不會互相干擾。
 51. **`activity_type.sort_order` 排序用單一 int，不開 `category` 欄位或分類表（v1.38）**：使用者要求類型清單依「運動類優先 → 讀書 → …… → 麻將墊底」呈現，取代原本 `order by name` 的中文字面排序。曾考慮加 `category`（運動/靜態/社交…）並在前端分組渲染，否決理由有兩層：其一，目前唯一成立的需求是**排序**而非**分組顯示**，加了 category 卻不分組就只是死欄位（同設計備註 35 對 `location.category` 的判斷）；其二，category 本身無法表達同一類別內部誰先誰後（運動類裡籃球該不該排在羽球前面），最後仍要再加一個排序欄位，變成兩個欄位共同表達一件事，正是設計備註 22 反對 `group_size_mode` 的同一個理由。沿用 `group_size_step`/`skill_level_enabled` 已建立的「per-type 設定欄位、admin 在 Studio 直接調」模式，不新增 admin RPC。數值刻意留大間隔（10/20/100/900）而非連號：admin 之後要在兩個既有類型之間插入新類型時不必重排整批既有值；使用者提案通過的新類型走 default 100 落在中段。排序在 `search_activity_type` 這支 RPC 內完成、不放到 client 端：排序規則屬於 admin 可調的營運設定，跟 `app_config` 的既有精神一致，硬編在 client 就得改版才能調。
+52. **`activity_type.level_system` 與 `match_request.sport_level`/`sport_level_rating`（v1.42 運動專屬分級重構）**：推翻 v1.34 舊有的單一 generic `skill_level` enum，改為由活動類型本身的 `level_system`（`NONE`、`BASKETBALL_INTENSITY`、`BADMINTON_LEVEL`、`TENNIS_NTRP`、`TABLE_TENNIS_SKILL`）定義真實運動員所使用的等級體系。Request 上的 `sport_level`（text）與 `sport_level_rating`（nullable int）由撮合引擎 helper `fn_sport_level_match` 依各運動分級規則進行精確/相鄰容許撮合，且 null 視為 wildcard（不限/不知道）。
+53. **`activity_type.aliases`（v1.42 別名模糊搜尋）**：`text[]` 欄位儲存常見別名（例如桌球的 `['乒乓球', 'Ping Pong', 'Table Tennis']`），`search_activity_type` 支援主名稱與別名陣列的 ILIKE 模糊查詢，降低使用者輸入俗稱找不到活動的阻礙。

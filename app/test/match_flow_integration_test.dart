@@ -160,7 +160,8 @@ void main() {
       expect(created.minParticipants, 3);
       expect(created.maxParticipants, 5);
       expect(created.allowDowngrade, isTrue);
-      expect(created.skillLevel, isNull);
+      expect(created.sportLevel, isNull);
+      expect(created.sportLevelRating, isNull);
       expect(created.studyTarget, isNull);
 
       final submitted = await submitRequest(client, created.id);

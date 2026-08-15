@@ -104,6 +104,8 @@ void main() {
       createdAt: now,
       skillLevelEnabled: false,
       sortOrder: 0,
+      levelSystem: LEVEL_SYSTEM.NONE,
+      aliases: const [],
     );
 
     await tester.pumpWidget(

@@ -6,13 +6,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/activity_type_icons.dart';
-import '../data/skill_level_labels.dart';
+import '../data/sport_level_config.dart';
 import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/match_request.dart';
 import '../generated/supadart_header.dart'
-    show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL, SKILL_LEVEL;
+    show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
@@ -54,7 +54,8 @@ abstract interface class MatchRequestSubmissionSession {
     required int minParticipants,
     required int maxParticipants,
     required bool allowDowngrade,
-    required SKILL_LEVEL? skillLevel,
+    required String? sportLevel,
+    int? sportLevelRating,
     required String? studyTarget,
   });
 
@@ -86,7 +87,8 @@ class _RpcMatchRequestSubmissionSession
     required int minParticipants,
     required int maxParticipants,
     required bool allowDowngrade,
-    required SKILL_LEVEL? skillLevel,
+    required String? sportLevel,
+    int? sportLevelRating,
     required String? studyTarget,
   }) {
     return createRequest(
@@ -98,7 +100,8 @@ class _RpcMatchRequestSubmissionSession
       minParticipants: minParticipants,
       maxParticipants: maxParticipants,
       allowDowngrade: allowDowngrade,
-      skillLevel: skillLevel,
+      sportLevel: sportLevel,
+      sportLevelRating: sportLevelRating,
       studyTarget: studyTarget,
     );
   }
@@ -727,7 +730,8 @@ class _RequestSubmissionSnapshot {
     required this.maxParticipants,
     required this.window,
     required this.allowDowngrade,
-    required this.skillLevel,
+    required this.sportLevel,
+    this.sportLevelRating,
     required this.studyTarget,
   });
 
@@ -737,7 +741,8 @@ class _RequestSubmissionSnapshot {
   final int maxParticipants;
   final (DateTime, DateTime) window;
   final bool allowDowngrade;
-  final SKILL_LEVEL? skillLevel;
+  final String? sportLevel;
+  final int? sportLevelRating;
   final String? studyTarget;
 }
 
@@ -768,9 +773,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   bool _confirming = false;
   String? _error;
 
-  // v1.34/v1.35 — 只在對應活動類型時才有意義，切換類型時一併清空（見
-  // 活動類型 _OptionCard 的 onTap）。
-  SKILL_LEVEL? _selectedSkillLevel;
+  // v1.42 — 運動專屬強度/實力/NTRP 等級與選填積分
+  String? _selectedSportLevel;
+  final _ratingController = TextEditingController();
   final _studyTargetController = TextEditingController();
 
   late final List<_TimeBucket> _buckets;
@@ -795,6 +800,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
 
   @override
   void dispose() {
+    _ratingController.dispose();
     _studyTargetController.dispose();
     super.dispose();
   }
@@ -1022,7 +1028,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         minParticipants: snapshot.minParticipants,
         maxParticipants: snapshot.maxParticipants,
         allowDowngrade: snapshot.allowDowngrade,
-        skillLevel: snapshot.skillLevel,
+        sportLevel: snapshot.sportLevel,
+        sportLevelRating: snapshot.sportLevelRating,
         studyTarget: snapshot.studyTarget,
       );
       await submission.submit(request.id);
@@ -1074,12 +1081,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     final minParticipants = snapshot?.minParticipants ?? _selectedMinHeadcount;
     final maxParticipants = snapshot?.maxParticipants ?? _selectedMaxHeadcount;
     final allowDowngrade = snapshot?.allowDowngrade ?? _allowDowngrade;
-    final skillLevel = snapshot == null
-        ? _selectedSkillLevel
-        : snapshot.skillLevel;
+    final sportLevel = snapshot == null
+        ? _selectedSportLevel
+        : snapshot.sportLevel;
+    final sportLevelRating = snapshot == null
+        ? int.tryParse(_ratingController.text.trim())
+        : snapshot.sportLevelRating;
     final studyTarget = snapshot == null
         ? _studyTargetController.text.trim()
         : snapshot.studyTarget?.trim() ?? '';
+    final sportConfig = SportLevelConfig.forSystem(type?.levelSystem);
     final items = <AppSelectionSummaryItem>[
       AppSelectionSummaryItem(label: '活動', value: type?.name ?? '尚未選擇'),
       AppSelectionSummaryItem(label: '時間', value: _timeWindowLabel(window)),
@@ -1090,10 +1101,13 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
             ? '尚未選擇'
             : '最少 $minParticipants 人，最多 $maxParticipants 人',
       ),
-      if (type?.skillLevelEnabled == true)
+      if (sportConfig != null)
         AppSelectionSummaryItem(
-          label: '程度要求',
-          value: skillLevel == null ? '不限' : skillLevelLabel(skillLevel),
+          label: sportConfig.fieldLabel,
+          value: sportConfig.formatFieldSummary(
+            sportLevel,
+            rating: sportLevelRating,
+          ),
         ),
       if (type?.name == '讀書')
         AppSelectionSummaryItem(
@@ -1117,6 +1131,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       return;
     }
 
+    final rating = int.tryParse(_ratingController.text.trim());
     final snapshot = _RequestSubmissionSnapshot(
       type: _selectedType!,
       campus: _selectedCampus!,
@@ -1124,7 +1139,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       maxParticipants: _selectedMaxHeadcount!,
       window: window!,
       allowDowngrade: _allowDowngrade,
-      skillLevel: _selectedSkillLevel,
+      sportLevel: _selectedSportLevel,
+      sportLevelRating: rating,
       studyTarget: _studyTargetController.text.isEmpty
           ? null
           : _studyTargetController.text,
@@ -1321,7 +1337,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       _selectedType = type;
                                       _selectedMinHeadcount = null;
                                       _selectedMaxHeadcount = null;
-                                      _selectedSkillLevel = null;
+                                      _selectedSportLevel = null;
+                                      _ratingController.clear();
                                       _studyTargetController.clear();
                                     });
                                     _scrollToSection(_timeSectionKey);
@@ -1340,37 +1357,80 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                               style: textTheme.bodySmall,
                             ),
                           ],
-                          // v1.34 — 只有這個活動類型有開放 Skill Level 篩選才顯示，預設「不限」。
-                          if (_selectedType?.skillLevelEnabled == true) ...[
-                            const SizedBox(height: AppSpacing.lg),
-                            Text('程度要求', style: textTheme.titleSmall),
-                            const SizedBox(height: AppSpacing.xs),
-                            Wrap(
-                              spacing: AppSpacing.sm,
-                              runSpacing: AppSpacing.xs,
-                              children: [
-                                ChoiceChip(
-                                  label: const Text('不限'),
-                                  selected: _selectedSkillLevel == null,
-                                  onSelected: AppHaptics.select(
-                                    (_) => setState(
-                                      () => _selectedSkillLevel = null,
-                                    ),
+                          // v1.42 — 運動專屬強度/實力/NTRP 等級與選填積分
+                          Builder(
+                            builder: (context) {
+                              final sportConfig = SportLevelConfig.forSystem(
+                                _selectedType?.levelSystem,
+                              );
+                              if (sportConfig == null) {
+                                return const SizedBox.shrink();
+                              }
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.lg),
+                                  Text(
+                                    sportConfig.sectionTitle,
+                                    style: textTheme.titleSmall,
                                   ),
-                                ),
-                                for (final level in SKILL_LEVEL.values)
-                                  ChoiceChip(
-                                    label: Text(skillLevelLabel(level)),
-                                    selected: _selectedSkillLevel == level,
-                                    onSelected: AppHaptics.select(
-                                      (_) => setState(
-                                        () => _selectedSkillLevel = level,
+                                  if (sportConfig.helperText != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      sportConfig.helperText!,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                     ),
+                                  ],
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Wrap(
+                                    spacing: AppSpacing.sm,
+                                    runSpacing: AppSpacing.xs,
+                                    children: [
+                                      ChoiceChip(
+                                        label: Text(sportConfig.wildcardLabel),
+                                        selected: _selectedSportLevel == null,
+                                        onSelected: AppHaptics.select(
+                                          (_) => setState(
+                                            () => _selectedSportLevel = null,
+                                          ),
+                                        ),
+                                      ),
+                                      for (final opt in sportConfig.options)
+                                        ChoiceChip(
+                                          label: Text(opt.displayChipLabel),
+                                          selected:
+                                              _selectedSportLevel == opt.value,
+                                          onSelected: AppHaptics.select(
+                                            (_) => setState(
+                                              () =>
+                                                  _selectedSportLevel =
+                                                      opt.value,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                              ],
-                            ),
-                          ],
+                                  if (sportConfig.supportsRating) ...[
+                                    const SizedBox(height: AppSpacing.sm),
+                                    AppTextField(
+                                      controller: _ratingController,
+                                      label:
+                                          sportConfig.ratingLabel ?? '積分（選填）',
+                                      hint:
+                                          sportConfig.ratingHint ??
+                                          '例如：約 1450',
+                                      keyboardType: TextInputType.number,
+                                      onChanged: (_) => setState(() {}),
+                                    ),
+                                  ],
+                                ],
+                              );
+                            },
+                          ),
                           // v1.35 — 只有讀書類型顯示，選填。
                           if (_selectedType?.name == '讀書') ...[
                             const SizedBox(height: AppSpacing.lg),

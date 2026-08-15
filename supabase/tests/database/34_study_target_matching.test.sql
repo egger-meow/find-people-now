@@ -238,7 +238,7 @@ begin
     p_min_participants     := 2,
     p_max_participants      := 4,
     p_allow_downgrade        := false,
-    p_skill_level             := null,
+    p_sport_level            := null,
     p_study_target             := '  微積分（一）　'
   );
   update fixtures set t6_req_id = v_req.id;

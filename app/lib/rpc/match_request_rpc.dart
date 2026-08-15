@@ -1,7 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../generated/match_request.dart';
-import '../generated/supadart_header.dart' show SKILL_LEVEL;
 import 'rpc_client.dart';
 
 /// Works around a supadart codegen gap (v1.34): `RPC_COVERAGE.md`'s
@@ -48,7 +47,8 @@ Future<MatchRequest> createRequest(
   required int minParticipants,
   int? maxParticipants,
   bool allowDowngrade = false,
-  SKILL_LEVEL? skillLevel,
+  String? sportLevel,
+  int? sportLevelRating,
   String? studyTarget,
 }) {
   return callRpc<MatchRequest>(
@@ -62,7 +62,8 @@ Future<MatchRequest> createRequest(
       'p_min_participants': minParticipants,
       'p_max_participants': maxParticipants,
       'p_allow_downgrade': allowDowngrade,
-      'p_skill_level': skillLevel?.name,
+      'p_sport_level': sportLevel,
+      'p_sport_level_rating': sportLevelRating,
       'p_study_target': studyTarget,
     },
     decode: (data) => decodeMatchRequest(data as Map<String, dynamic>),

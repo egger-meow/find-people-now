@@ -16,6 +16,8 @@ class ActivityType implements SupadartClass<ActivityType> {
   final String? description;
   final bool skillLevelEnabled;
   final int sortOrder;
+  final LEVEL_SYSTEM levelSystem;
+  final List<String> aliases;
 
   const ActivityType({
     required this.id,
@@ -30,6 +32,8 @@ class ActivityType implements SupadartClass<ActivityType> {
     this.description,
     required this.skillLevelEnabled,
     required this.sortOrder,
+    required this.levelSystem,
+    required this.aliases,
   });
 
   static String get table_name => 'activity_type';
@@ -45,6 +49,8 @@ class ActivityType implements SupadartClass<ActivityType> {
   static String get c_description => 'description';
   static String get c_skillLevelEnabled => 'skill_level_enabled';
   static String get c_sortOrder => 'sort_order';
+  static String get c_levelSystem => 'level_system';
+  static String get c_aliases => 'aliases';
 
   static List<ActivityType> converter(List<Map<String, dynamic>> data) {
     return data.map(ActivityType.fromJson).toList();
@@ -67,6 +73,8 @@ class ActivityType implements SupadartClass<ActivityType> {
     String? description,
     bool? skillLevelEnabled,
     int? sortOrder,
+    LEVEL_SYSTEM? levelSystem,
+    List<String>? aliases,
   }) {
     return {
       if (id != null) 'id': id,
@@ -84,6 +92,9 @@ class ActivityType implements SupadartClass<ActivityType> {
       if (description != null) 'description': description,
       if (skillLevelEnabled != null) 'skill_level_enabled': skillLevelEnabled,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (levelSystem != null)
+        'level_system': levelSystem.toString().split('.').last,
+      if (aliases != null) 'aliases': aliases.map((e) => e).toList(),
     };
   }
 
@@ -100,6 +111,8 @@ class ActivityType implements SupadartClass<ActivityType> {
     String? description,
     bool? skillLevelEnabled,
     required int sortOrder,
+    required LEVEL_SYSTEM levelSystem,
+    required List<String> aliases,
   }) {
     return _generateMap(
       id: id,
@@ -114,6 +127,8 @@ class ActivityType implements SupadartClass<ActivityType> {
       description: description,
       skillLevelEnabled: skillLevelEnabled,
       sortOrder: sortOrder,
+      levelSystem: levelSystem,
+      aliases: aliases,
     );
   }
 
@@ -130,6 +145,8 @@ class ActivityType implements SupadartClass<ActivityType> {
     String? description,
     bool? skillLevelEnabled,
     int? sortOrder,
+    LEVEL_SYSTEM? levelSystem,
+    List<String>? aliases,
   }) {
     return _generateMap(
       id: id,
@@ -144,6 +161,8 @@ class ActivityType implements SupadartClass<ActivityType> {
       description: description,
       skillLevelEnabled: skillLevelEnabled,
       sortOrder: sortOrder,
+      levelSystem: levelSystem,
+      aliases: aliases,
     );
   }
 
@@ -181,6 +200,14 @@ class ActivityType implements SupadartClass<ActivityType> {
       sortOrder: jsonn['sort_order'] != null
           ? int.parse(jsonn['sort_order'].toString())
           : 0,
+      levelSystem: jsonn['level_system'] != null
+          ? LEVEL_SYSTEM.values.byName(jsonn['level_system'].toString())
+          : LEVEL_SYSTEM.values.first,
+      aliases: jsonn['aliases'] != null
+          ? (jsonn['aliases'] as List<dynamic>)
+                .map((v) => v.toString())
+                .toList()
+          : <String>[],
     );
   }
 
@@ -197,6 +224,8 @@ class ActivityType implements SupadartClass<ActivityType> {
     String? description,
     bool? skillLevelEnabled,
     int? sortOrder,
+    LEVEL_SYSTEM? levelSystem,
+    List<String>? aliases,
   }) {
     return {
       if (id != null) 'id': id,
@@ -214,6 +243,8 @@ class ActivityType implements SupadartClass<ActivityType> {
       if (description != null) 'description': description,
       if (skillLevelEnabled != null) 'skill_level_enabled': skillLevelEnabled,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (levelSystem != null) 'level_system': levelSystem,
+      if (aliases != null) 'aliases': aliases,
     };
   }
 
@@ -231,6 +262,8 @@ class ActivityType implements SupadartClass<ActivityType> {
       description: description,
       skillLevelEnabled: skillLevelEnabled,
       sortOrder: sortOrder,
+      levelSystem: levelSystem,
+      aliases: aliases,
     );
   }
 
@@ -248,6 +281,8 @@ class ActivityType implements SupadartClass<ActivityType> {
     Object? description = _unset,
     Object? skillLevelEnabled = _unset,
     Object? sortOrder = _unset,
+    Object? levelSystem = _unset,
+    Object? aliases = _unset,
   }) {
     return ActivityType(
       id: id == _unset ? this.id : id as String,
@@ -274,6 +309,10 @@ class ActivityType implements SupadartClass<ActivityType> {
           ? this.skillLevelEnabled
           : skillLevelEnabled as bool,
       sortOrder: sortOrder == _unset ? this.sortOrder : sortOrder as int,
+      levelSystem: levelSystem == _unset
+          ? this.levelSystem
+          : levelSystem as LEVEL_SYSTEM,
+      aliases: aliases == _unset ? this.aliases : aliases as List<String>,
     );
   }
 }

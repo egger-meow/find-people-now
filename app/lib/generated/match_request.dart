@@ -22,6 +22,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   final SKILL_LEVEL? skillLevel;
   final String? studyTarget;
   final String? studyTargetNormalized;
+  final String? sportLevel;
+  final int? sportLevelRating;
 
   const MatchRequest({
     required this.id,
@@ -42,6 +44,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     this.skillLevel,
     this.studyTarget,
     this.studyTargetNormalized,
+    this.sportLevel,
+    this.sportLevelRating,
   });
 
   static String get table_name => 'match_request';
@@ -63,6 +67,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
   static String get c_skillLevel => 'skill_level';
   static String get c_studyTarget => 'study_target';
   static String get c_studyTargetNormalized => 'study_target_normalized';
+  static String get c_sportLevel => 'sport_level';
+  static String get c_sportLevelRating => 'sport_level_rating';
 
   static List<MatchRequest> converter(List<Map<String, dynamic>> data) {
     return data.map(MatchRequest.fromJson).toList();
@@ -91,6 +97,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     SKILL_LEVEL? skillLevel,
     String? studyTarget,
     String? studyTargetNormalized,
+    String? sportLevel,
+    int? sportLevelRating,
   }) {
     return {
       if (id != null) 'id': id,
@@ -115,6 +123,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       if (studyTarget != null) 'study_target': studyTarget,
       if (studyTargetNormalized != null)
         'study_target_normalized': studyTargetNormalized,
+      if (sportLevel != null) 'sport_level': sportLevel,
+      if (sportLevelRating != null) 'sport_level_rating': sportLevelRating,
     };
   }
 
@@ -137,6 +147,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     SKILL_LEVEL? skillLevel,
     String? studyTarget,
     String? studyTargetNormalized,
+    String? sportLevel,
+    int? sportLevelRating,
   }) {
     return _generateMap(
       id: id,
@@ -157,6 +169,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       skillLevel: skillLevel,
       studyTarget: studyTarget,
       studyTargetNormalized: studyTargetNormalized,
+      sportLevel: sportLevel,
+      sportLevelRating: sportLevelRating,
     );
   }
 
@@ -179,6 +193,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     SKILL_LEVEL? skillLevel,
     String? studyTarget,
     String? studyTargetNormalized,
+    String? sportLevel,
+    int? sportLevelRating,
   }) {
     return _generateMap(
       id: id,
@@ -199,6 +215,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       skillLevel: skillLevel,
       studyTarget: studyTarget,
       studyTargetNormalized: studyTargetNormalized,
+      sportLevel: sportLevel,
+      sportLevelRating: sportLevelRating,
     );
   }
 
@@ -252,6 +270,12 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       studyTargetNormalized: jsonn['study_target_normalized'] != null
           ? jsonn['study_target_normalized'].toString()
           : null,
+      sportLevel: jsonn['sport_level'] != null
+          ? jsonn['sport_level'].toString()
+          : null,
+      sportLevelRating: jsonn['sport_level_rating'] != null
+          ? int.parse(jsonn['sport_level_rating'].toString())
+          : null,
     );
   }
 
@@ -274,6 +298,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     SKILL_LEVEL? skillLevel,
     String? studyTarget,
     String? studyTargetNormalized,
+    String? sportLevel,
+    int? sportLevelRating,
   }) {
     return {
       if (id != null) 'id': id,
@@ -295,6 +321,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       if (studyTarget != null) 'study_target': studyTarget,
       if (studyTargetNormalized != null)
         'study_target_normalized': studyTargetNormalized,
+      if (sportLevel != null) 'sport_level': sportLevel,
+      if (sportLevelRating != null) 'sport_level_rating': sportLevelRating,
     };
   }
 
@@ -318,6 +346,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       skillLevel: skillLevel,
       studyTarget: studyTarget,
       studyTargetNormalized: studyTargetNormalized,
+      sportLevel: sportLevel,
+      sportLevelRating: sportLevelRating,
     );
   }
 
@@ -341,6 +371,8 @@ class MatchRequest implements SupadartClass<MatchRequest> {
     Object? skillLevel = _unset,
     Object? studyTarget = _unset,
     Object? studyTargetNormalized = _unset,
+    Object? sportLevel = _unset,
+    Object? sportLevelRating = _unset,
   }) {
     return MatchRequest(
       id: id == _unset ? this.id : id as String,
@@ -383,6 +415,12 @@ class MatchRequest implements SupadartClass<MatchRequest> {
       studyTargetNormalized: studyTargetNormalized == _unset
           ? this.studyTargetNormalized
           : studyTargetNormalized as String?,
+      sportLevel: sportLevel == _unset
+          ? this.sportLevel
+          : sportLevel as String?,
+      sportLevelRating: sportLevelRating == _unset
+          ? this.sportLevelRating
+          : sportLevelRating as int?,
     );
   }
 }

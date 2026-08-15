@@ -7,7 +7,7 @@ import '../activities/my_activities_providers.dart'
     show invalidateMyActivityList;
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
-import '../data/skill_level_labels.dart';
+import '../data/sport_level_config.dart';
 import '../errors/user_error_message.dart';
 import '../generated/match_request.dart';
 import '../generated/supadart_header.dart'
@@ -588,25 +588,38 @@ class _RequestInfoCard extends ConsumerWidget {
               ),
             ],
           ),
-          if (request.skillLevel != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                Icon(
-                  Icons.military_tech_rounded,
-                  size: 20,
-                  color: scheme.primary,
+          typeAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
+            data: (type) {
+              final sportConfig = SportLevelConfig.forSystem(type?.levelSystem);
+              if (sportConfig == null || request.sportLevel == null) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.sm),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.military_tech_rounded,
+                      size: 20,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        sportConfig.formatFieldSummary(
+                          request.sportLevel,
+                          rating: request.sportLevelRating,
+                        ),
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    '程度：${skillLevelLabel(request.skillLevel!)}',
-                    style: textTheme.bodyMedium,
-                  ),
-                ),
-              ],
-            ),
-          ],
+              );
+            },
+          ),
           if (request.studyTarget != null &&
               request.studyTarget!.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),

@@ -33,6 +33,8 @@ final _types = <ActivityType>[
     groupSizeStep: 1,
     skillLevelEnabled: true,
     sortOrder: 1,
+    levelSystem: LEVEL_SYSTEM.BADMINTON_LEVEL,
+    aliases: const [],
   ),
   ActivityType(
     id: 'study',
@@ -44,18 +46,20 @@ final _types = <ActivityType>[
     groupSizeStep: 1,
     skillLevelEnabled: false,
     sortOrder: 2,
+    levelSystem: LEVEL_SYSTEM.NONE,
+    aliases: const [],
   ),
 ];
 
 final _user = AppUser(
-  id: 'user-1',
-  email: 'tester@nycu.edu.tw',
+  id: 'user-42',
+  email: 'user42@nycu.edu.tw',
   school: SCHOOL.NYCU,
-  displayName: '測試者',
-  avatarUrl: 'https://example.com/avatar.png',
+  displayName: '測試使用者',
+  avatarUrl: 'https://avatar/42',
   bio: '',
+  degreeLevel: DEGREE_LEVEL.UNDERGRAD,
   createdAt: DateTime(2026),
-  degreeLevel: DEGREE_LEVEL.MASTER,
   defaultCampus: '光復',
 );
 
@@ -71,7 +75,8 @@ class _CreateInvocation {
     required this.minParticipants,
     required this.maxParticipants,
     required this.allowDowngrade,
-    required this.skillLevel,
+    required this.sportLevel,
+    this.sportLevelRating,
     required this.studyTarget,
   });
 
@@ -82,7 +87,8 @@ class _CreateInvocation {
   final int minParticipants;
   final int maxParticipants;
   final bool allowDowngrade;
-  final SKILL_LEVEL? skillLevel;
+  final String? sportLevel;
+  final int? sportLevelRating;
   final String? studyTarget;
 }
 
@@ -116,7 +122,8 @@ class _FakeSubmissionGateway
         createdAt: DateTime(2026),
         school: SCHOOL.NYCU,
         campus: invocation.campus,
-        skillLevel: invocation.skillLevel,
+        sportLevel: invocation.sportLevel,
+        sportLevelRating: invocation.sportLevelRating,
         studyTarget: invocation.studyTarget,
       );
 
@@ -129,7 +136,8 @@ class _FakeSubmissionGateway
     required int minParticipants,
     required int maxParticipants,
     required bool allowDowngrade,
-    required SKILL_LEVEL? skillLevel,
+    required String? sportLevel,
+    int? sportLevelRating,
     required String? studyTarget,
   }) async {
     calls.add('create');
@@ -141,7 +149,8 @@ class _FakeSubmissionGateway
       minParticipants: minParticipants,
       maxParticipants: maxParticipants,
       allowDowngrade: allowDowngrade,
-      skillLevel: skillLevel,
+      sportLevel: sportLevel,
+      sportLevelRating: sportLevelRating,
       studyTarget: studyTarget,
     );
     creates.add(invocation);
@@ -360,7 +369,7 @@ void main() {
 
   testWidgets('所有決策區塊與 disabled 原因維持可見繁中文字串', (tester) async {
     await tester.pumpWidget(
-      _host(textScaler: TextScaler.linear(2), bottomInset: 160),
+      _host(textScaler: const TextScaler.linear(2), bottomInset: 160),
     );
     await _settle(tester);
 
@@ -426,6 +435,8 @@ void main() {
       groupSizeStep: 1,
       skillLevelEnabled: false,
       sortOrder: 1,
+      levelSystem: LEVEL_SYSTEM.NONE,
+      aliases: const [],
     );
     await tester.pumpWidget(
       _host(textScaler: const TextScaler.linear(2), types: [longType]),
@@ -452,7 +463,7 @@ void main() {
 
     await tester.tap(find.text('羽球'));
     await tester.pump();
-    expect(find.text('程度要求'), findsOneWidget);
+    expect(find.text('羽球實力'), findsOneWidget);
 
     await _scrollTo(tester, find.text('讀書'));
     await tester.tap(find.text('讀書'));
@@ -464,7 +475,7 @@ void main() {
   testWidgets('摘要更新選擇，取消確認後保留內容', (tester) async {
     await tester.pumpWidget(_host(now: () => _fixedNow));
     await _settle(tester);
-    await _selectCompleteRequest(tester, skill: '進階', allowDowngrade: true);
+    await _selectCompleteRequest(tester, skill: '8–10 級', allowDowngrade: true);
     await _scrollTo(tester, find.text('送出前確認'));
 
     expect(find.byType(AppSelectionSummary), findsOneWidget);
@@ -472,7 +483,7 @@ void main() {
     expect(find.text(_fixedWindowLabel), findsOneWidget);
     expect(find.text('光復'), findsWidgets);
     expect(find.text('最少 3 人，最多 5 人'), findsOneWidget);
-    expect(find.text('進階'), findsWidgets);
+    expect(find.text('實力：8–10 級'), findsWidgets);
     expect(find.text('接受'), findsOneWidget);
 
     await tester.tap(find.text('送出，開始找人'));
@@ -480,7 +491,7 @@ void main() {
     expect(find.text('確認配對條件'), findsOneWidget);
     expect(find.text('確認送出'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
-    for (final value in ['羽球', '光復', '最少 3 人，最多 5 人', '進階', '接受']) {
+    for (final value in ['羽球', '光復', '最少 3 人，最多 5 人', '實力：8–10 級', '接受']) {
       expect(find.text(value), findsWidgets);
     }
     expect(find.text(_fixedWindowLabel), findsWidgets);
@@ -488,7 +499,7 @@ void main() {
     await tester.tap(find.text('取消'));
     await _settle(tester);
     expect(find.text('最少 3 人，最多 5 人'), findsOneWidget);
-    expect(find.text('進階'), findsWidgets);
+    expect(find.text('實力：8–10 級'), findsWidgets);
     expect(find.text('接受'), findsOneWidget);
     expect(find.text(_fixedWindowLabel), findsOneWidget);
   });
@@ -507,7 +518,7 @@ void main() {
       ),
     );
     await _settle(tester);
-    await _selectCompleteRequest(tester, skill: '進階', allowDowngrade: true);
+    await _selectCompleteRequest(tester, skill: '8–10 級', allowDowngrade: true);
 
     await _scrollTo(tester, find.text('送出前確認'));
     expect(find.text(_fixedWindowLabel), findsOneWidget);
@@ -549,7 +560,7 @@ void main() {
     expect(invocation.minParticipants, 3);
     expect(invocation.maxParticipants, 5);
     expect(invocation.allowDowngrade, isTrue);
-    expect(invocation.skillLevel, SKILL_LEVEL.ADVANCED);
+    expect(invocation.sportLevel, 'LEVEL_8_10');
     expect(invocation.studyTarget, isNull);
     expect(activeRequestLoads, greaterThanOrEqualTo(2));
     expect(find.text('等待室：request-exact-42'), findsOneWidget);

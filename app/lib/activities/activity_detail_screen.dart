@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
-import '../data/skill_level_labels.dart';
+import '../data/sport_level_config.dart';
 import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
@@ -2231,11 +2231,15 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                           : '可信度 ${_tierLabel(member.reliabilityTier)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
-                    // v1.34/v1.35 — 該成員發起/加入配對當下指定的程度／讀書目標，
+                    // v1.34/v1.35/v1.42 — 該成員發起/加入配對當下指定的程度／讀書目標，
                     // 兩者互斥（分屬不同活動類型），非 null 才顯示。
-                    if (member.skillLevel != null)
+                    if (member.sportLevel != null)
                       Text(
-                        '程度：${skillLevelLabel(member.skillLevel!)}',
+                        SportLevelConfig.format(
+                          member.levelSystem,
+                          member.sportLevel,
+                          rating: member.sportLevelRating,
+                        ),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     if (member.studyTarget != null &&
@@ -2472,11 +2476,15 @@ class _ProfileCardSheet extends StatelessWidget {
               ),
             ),
           ),
-          if (member.skillLevel != null) ...[
+          if (member.sportLevel != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Center(
               child: Text(
-                '程度：${skillLevelLabel(member.skillLevel!)}',
+                SportLevelConfig.format(
+                  member.levelSystem,
+                  member.sportLevel,
+                  rating: member.sportLevelRating,
+                ),
                 style: textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),

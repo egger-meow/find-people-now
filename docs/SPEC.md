@@ -304,10 +304,20 @@
 > 4. 🟡 **第 12.1 節「一對一散步」worked example 移除**：這是低人數安全機制原本的動機性範例，但 v1.41 之後散步已經選不到 2 人局，繼續留著會跟現狀不一致。機制本身（New 等級准入 + `PENDING_CONFIRMATION` 對稱確認）保留不動，改註記成「目前預設類型組合下不會在正常流程觸發，但不是死碼」——理由見 12.1 節開頭新增的說明。
 > 5. 🟢 **不動 `create_request` RPC 的硬性下限**：RPC 本身 `p_min_participants < 2` 才報錯（第 6.2 節/`20260724120300_rpc_match_request.sql`），這個全域下限跟各活動類型的 `default_min_participants` 是兩件事——後者只是 UI 選項產生器的輸入，不是伺服器端強制的每類型下限（繞過 UI 直接呼叫 RPC 理論上仍能組出 2 人局，這正是第 12.1 節機制要繼續存在的原因，見上一點）。這次不新增「RPC 端也強制 ≥3」的檢查，範圍限定在調整預設資料與 UI，避免不小心動到未來低人數類型（例如 admin 手動核准的一對一自習夥伴）的合法路徑。
 
-> **v1.42 變更紀錄**（「咖啡」擴大為「吃飯/咖啡/探店」，上限 4→6 人，第 1、6.2 節）：
-> 1. 🟡 **產品決策**：原本「咖啡」類型太窄，很多校外聚會（吃飯、咖啡廳、探店）本質上是同一種「約出去吃點東西、順便聊天」的局，硬分成好幾個類型只會稀釋配對池（呼應第 5 節「新增類型前先比對既有類型」的既有精神，這裡反過來從官方類型本身擴大涵蓋範圍）。改名不改 `id`（`update activity_type set name = ...`），既有的 `match_request`/`activity` 參照不受影響。人數上限從 4 調到 6（比運動類稍寬，這類場合天生比較適合隨性聚會，但仍遠低於「先聚了再說」的 20 人，畢竟還是要能坐同一桌）；最低人數比照 v1.41 的團體活動底線一起調成 3（原本 2）。見 `20260806030000_coffee_type_broaden_to_eating_out.sql`。
-> 2. 🟢 **補上 `description`**（原本「咖啡」跟其餘 6 個 MVP 起始類型一樣沒有 description，只有後來新增的桌遊/麻將/先聚了再說才有）：「約校外吃飯、喝咖啡、探新開的店，順便聊天。時間地點由發起人與成員自行協調。」
-> 3. 🟢 **pgTAP 測試連帶更新**：全 repo 有 20 幾個測試檔案拿 `where name = '咖啡'` 當「隨便一個合法 activity_type_id」的 fixture（跟咖啡本身的人數語意無關），改名後這些查詢會撈到 `null`、造成 `match_request` insert 違反 NOT NULL 約束——逐一改成 `where name = '吃飯/咖啡/探店'`，不影響各測試原本要驗證的行為（確認過沒有任何測試依賴咖啡類型自己的 `default_min_participants`/`default_max_participants`，都是在 `match_request` 列上直接寫死自己的 min/max）。
+> **v1.43 變更紀錄**（運動專屬分級系統重構 + 新增網球與桌球官方活動類型）：
+> 1. 🟢 **運動專屬分級語意**：推翻過去全域通用的 generic `skill_level`（初階/中階/進階/競技），改為由各運動真實術語與體系定義的 `level_system`：
+>    - 籃球：強度（輕鬆 / 一般 / 高強度 / 競技）
+>    - 羽球：實力（1–5 級 / 6–7 級 / 8–10 級 / 11 級以上）
+>    - 網球：NTRP（≤2.0 / 2.5 / 3.0 / 3.5 / 4.0 / 4.5 / 5.0+，提供「不知道 NTRP 沒關係，可選不限」友善說明）
+>    - 桌球：實力（休閒新手 / 有基本功 / 固定打球 / 校隊 / 積分賽程度）+ 選填積分（純數字，例如約 1450）
+> 2. 🟢 **官方新增活動類型**：
+>    - 網球（Tennis）：`level_system = TENNIS_NTRP`，`default_min = 2, default_max = 8`，`sort_order = 10`
+>    - 桌球（Table Tennis）：`level_system = TABLE_TENNIS_SKILL`，`aliases = ['乒乓球', 'Ping Pong', 'Table Tennis']`，`default_min = 2, default_max = 8`，`sort_order = 10`
+> 3. 🟢 **Sport-aware 撮合相容性判定**（`fn_sport_level_match`）：
+>    - `null` 等級值視為 wildcard（不限/不知道），任何等級皆可配對
+>    - 籃球/羽球/網球：等階序數相同或相鄰 1 級（distance ≤ 1）視為相容
+>    - 桌球：若雙方皆填寫積分則計算差距（`|rating_a - rating_b| <= 200`），否則依等級序數相鄰判定
+> 4. 🟢 **維持既有簡潔人數模型**：不引入 active/inactive players、上場/場下、先發/替補、輪替容量等任何複雜抽象，維持純粹的 `min_participants` 與 `max_participants`。
 
 ---
 

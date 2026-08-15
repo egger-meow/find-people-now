@@ -7,7 +7,7 @@ import '../generated/activity_location_vote.dart';
 import '../generated/activity_meeting_point_update.dart';
 import '../generated/completion_report.dart';
 import '../generated/location.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_MEMBER_STATUS, DEGREE_LEVEL, SCHOOL, SKILL_LEVEL;
+import '../generated/supadart_header.dart' show ACTIVITY_MEMBER_STATUS, DEGREE_LEVEL, LEVEL_SYSTEM, SCHOOL;
 import '../rpc/activity_rpc.dart';
 import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
 
@@ -65,6 +65,36 @@ final approvedLocationsProvider =
   return rows.map(Location.fromJson).toList();
 });
 
+/// 最近一次通過的集合地點／提示歷史（API.md §6.4.1）。用 Realtime 訂閱，
+/// 比照地點投票「有人提議就即時反映」的互動模式（UI_PLAN §4.1）。
+final activityMeetingPointStreamProvider =
+    StreamProvider.family<ActivityMeetingPointUpdate?, String>((ref, activityId) {
+  final client = ref.watch(supabaseClientProvider);
+  return client
+      .from('activity_meeting_point_update')
+      .stream(primaryKey: ['id'])
+      .eq('activity_id', activityId)
+      .order('created_at', ascending: false)
+      .limit(1)
+      .map((rows) => rows.isEmpty ? null : ActivityMeetingPointUpdate.fromJson(rows.first));
+});
+
+/// 集合地點更新紀錄（append-only，見 `update_meeting_point` 註解）——新到舊
+/// 排序，畫面只需要顯示最新一筆＋歷史。
+final activityMeetingPointUpdatesStreamProvider =
+    StreamProvider.family<List<ActivityMeetingPointUpdate>, String>((ref, activityId) {
+  final client = ref.watch(supabaseClientProvider);
+  return client
+      .from('activity_meeting_point_update')
+      .stream(primaryKey: ['id'])
+      .eq('activity_id', activityId)
+      .map((rows) {
+        final list = rows.map(ActivityMeetingPointUpdate.fromJson).toList();
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return list;
+      });
+});
+
 /// Arrival Check（v1.24）+ Vibe Tags（v1.28）共用的底層 stream——兩者都只需要
 /// `activity_member` 的一小撮欄位（`arrived_at`/`vibe_tags`），不把整個成員
 /// 名單（[activityMemberRosterProvider]，每次事件都要重打
@@ -120,32 +150,10 @@ final activityMeetingHintStreamProvider =
   });
 });
 
-/// 集合地點更新紀錄（append-only，見 `update_meeting_point` 註解）——新到舊
-/// 排序，畫面只需要顯示最新一筆＋歷史。
-final activityMeetingPointUpdatesStreamProvider =
-    StreamProvider.family<List<ActivityMeetingPointUpdate>, String>((ref, activityId) {
-  final client = ref.watch(supabaseClientProvider);
-  return client
-      .from('activity_meeting_point_update')
-      .stream(primaryKey: ['id'])
-      .eq('activity_id', activityId)
-      .map((rows) {
-        final list = rows.map(ActivityMeetingPointUpdate.fromJson).toList();
-        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return list;
-      });
-});
-
-/// UI_PLAN.md §4.1 Tab 2「成員」的資料層——合併三個來源，依 `userId` 對齊：
-/// 1. `activity_member` 直讀（RLS 已放行同活動成員互看，見
-///    `my_activity_members_select`）：`source_request_id`（分組用）+ `status`。
-/// 2. `get_activity_contacts`：`display_name`/`avatar_url`（無條件回傳）+
-///    `contacts`（依 24h/再約規則決定 null 與否）。
-/// 3. `get_activity_member_profiles`（v1.23，`bio` 為 v1.33 新增）：
-///    `school`/`department`/`degree_level`/`bio`/可信度等級——`get_activity_contacts`
-///    沒有的欄位，`app_user` RLS 又擋掉直讀其他成員，見 SPEC.md v1.23/v1.33。
-///    `bio` 供個人檔案卡使用（`activity_detail_screen.dart` 的
-///    `_ProfileCardSheet`）。
+/// UI_PLAN.md §4.1「名單」分頁籤的資料層——合併 `activity_member` +
+/// `get_activity_contacts` + `get_activity_member_profiles` 三份來源，組出
+/// 完整成員狀態（包含姓名、大頭貼、聯絡方式、系級、自我介紹、可信度評級、
+/// 抵達狀態、參與方式標籤、指定程度、讀書目標）。
 ///
 /// 不用 Realtime：成員名單/聯絡方式不像地點投票有「即時得票數」的明確需求
 /// （UI_PLAN §4.1 只有 Tab 1 提到即時），下拉刷新已足夠。
@@ -165,11 +173,13 @@ class MemberRosterEntry {
   final DateTime? arrivedAt;
   final List<String> vibeTags;
 
-  /// v1.34/v1.35 — 該成員原始 Request 的程度/讀書目標，來自
+  /// v1.34/v1.35/v1.42 — 該成員原始 Request 的程度/讀書目標，來自
   /// `get_activity_member_profiles`（透過 `source_request_id` join 回
   /// `match_request`，見該 RPC 的 migration 註解）。null = 沒指定，或該活動
   /// 類型不適用。
-  final SKILL_LEVEL? skillLevel;
+  final LEVEL_SYSTEM? levelSystem;
+  final String? sportLevel;
+  final int? sportLevelRating;
   final String? studyTarget;
 
   MemberRosterEntry({
@@ -187,7 +197,9 @@ class MemberRosterEntry {
     required this.meetingHint,
     required this.arrivedAt,
     required this.vibeTags,
-    required this.skillLevel,
+    this.levelSystem,
+    this.sportLevel,
+    this.sportLevelRating,
     required this.studyTarget,
   });
 
@@ -206,7 +218,9 @@ class MemberRosterEntry {
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
         vibeTags: vibeTags,
-        skillLevel: skillLevel,
+        levelSystem: levelSystem,
+        sportLevel: sportLevel,
+        sportLevelRating: sportLevelRating,
         studyTarget: studyTarget,
       );
 
@@ -225,7 +239,9 @@ class MemberRosterEntry {
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
         vibeTags: vibeTags,
-        skillLevel: skillLevel,
+        levelSystem: levelSystem,
+        sportLevel: sportLevel,
+        sportLevelRating: sportLevelRating,
         studyTarget: studyTarget,
       );
 
@@ -244,7 +260,9 @@ class MemberRosterEntry {
         meetingHint: meetingHint,
         arrivedAt: arrivedAt,
         vibeTags: vibeTags,
-        skillLevel: skillLevel,
+        levelSystem: levelSystem,
+        sportLevel: sportLevel,
+        sportLevelRating: sportLevelRating,
         studyTarget: studyTarget,
       );
 }
@@ -284,7 +302,9 @@ final activityMemberRosterProvider =
       meetingHint: row['meeting_hint'] as String?,
       arrivedAt: row['arrived_at'] == null ? null : DateTime.parse(row['arrived_at'] as String),
       vibeTags: (row['vibe_tags'] as List?)?.cast<String>() ?? const [],
-      skillLevel: profile?.skillLevel,
+      levelSystem: profile?.levelSystem,
+      sportLevel: profile?.sportLevel,
+      sportLevelRating: profile?.sportLevelRating,
       studyTarget: profile?.studyTarget,
     );
   }).toList();
