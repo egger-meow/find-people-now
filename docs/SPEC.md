@@ -315,8 +315,9 @@
 >    - 桌球（Table Tennis）：`level_system = TABLE_TENNIS_SKILL`，`aliases = ['乒乓球', 'Ping Pong', 'Table Tennis']`，`default_min = 2, default_max = 8`，`sort_order = 10`
 > 3. 🟢 **Sport-aware 撮合相容性判定**（`fn_sport_level_match`）：
 >    - `null` 等級值視為 wildcard（不限/不知道），任何等級皆可配對
->    - 籃球/羽球/網球：等階序數相同或相鄰 1 級（distance ≤ 1）視為相容
->    - 桌球：若雙方皆填寫積分則計算差距（`|rating_a - rating_b| <= 200`），否則依等級序數相鄰判定
+>    - 籃球/羽球/桌球：等階序數相同或相鄰 1 級（distance ≤ 1）視為相容
+>    - 網球：NTRP 差值 ≤ 0.5 級（或 wildcard）視為相容
+>    - 桌球選填積分（`sport_level_rating`）為輔助資訊（可供配對後展示、未來排序參考），**不作為硬性否決閘門**；只要粗粒度實力等級相容（或未指定），即判定相容，未知/未填積分絕不降低相容性。
 > 4. 🟢 **維持既有簡潔人數模型**：不引入 active/inactive players、上場/場下、先發/替補、輪替容量等任何複雜抽象，維持純粹的 `min_participants` 與 `max_participants`。
 
 ---

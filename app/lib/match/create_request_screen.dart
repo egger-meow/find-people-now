@@ -1104,7 +1104,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       if (sportConfig != null)
         AppSelectionSummaryItem(
           label: sportConfig.fieldLabel,
-          value: sportConfig.formatFieldSummary(
+          value: sportConfig.formatLevel(
             sportLevel,
             rating: sportLevelRating,
           ),

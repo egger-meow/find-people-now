@@ -77,19 +77,19 @@ class SportLevelConfig {
   }
 
   /// 取得選項顯示名稱（若為 null 則回傳 [wildcardLabel] 或預設「不限」）
-  String formatLevel(String? value, {bool short = false}) {
+  String formatLevel(String? value, {bool short = false, int? rating}) {
     if (value == null) return wildcardLabel;
     final opt = findOption(value);
-    if (opt == null) return value;
-    return short ? opt.displayChipLabel : opt.label;
+    final text = opt == null ? value : (short ? opt.displayChipLabel : opt.label);
+    if (supportsRating && rating != null && rating > 0) {
+      return '$text（積分約 $rating）';
+    }
+    return text;
   }
 
-  /// 格式化為完整屬性字串（例如：「強度：高強度」、「實力：6–7 級」、「NTRP：3.5」）
+  /// 格式化為完整屬性字串（例如：「強度：高強度」、「實力：6–7 級」、「NTRP：3.5」、「實力：固定打球」）
   String formatFieldSummary(String? value, {int? rating}) {
-    final levelStr = formatLevel(value);
-    if (supportsRating && rating != null && rating > 0) {
-      return '$fieldLabel：$levelStr（積分約 $rating）';
-    }
+    final levelStr = formatLevel(value, rating: rating);
     return '$fieldLabel：$levelStr';
   }
 

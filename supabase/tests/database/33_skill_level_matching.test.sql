@@ -7,7 +7,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(20);
+select plan(22);
 
 -- -----------------------------------------------------------------------------
 -- 0. Pure function unit tests on fn_sport_level_match
@@ -25,6 +25,8 @@ select is(fn_sport_level_match('TENNIS_NTRP', null, 'NTRP_5_0_PLUS'), true, '網
 
 select is(fn_sport_level_match('TABLE_TENNIS_SKILL', 'BASIC_SKILLS', 'REGULAR_PLAYER'), true, '桌球：有基本功 ↔ 固定打球 相鄰相容');
 select is(fn_sport_level_match('TABLE_TENNIS_SKILL', 'CASUAL_BEGINNER', 'VARSITY_TOURNAMENT'), false, '桌球：休閒新手 ↔ 校隊/積分賽 跨級不相容');
+select is(fn_sport_level_match('TABLE_TENNIS_SKILL', null, 'VARSITY_TOURNAMENT'), true, '桌球：wildcard ↔ 校隊/積分賽 相容');
+select is(fn_sport_level_match('TABLE_TENNIS_SKILL', 'REGULAR_PLAYER', 'REGULAR_PLAYER'), true, '桌球：固定打球 ↔ 固定打球 同級相容');
 
 select is(fn_sport_level_match('NONE', 'ANY', 'OTHER'), true, 'NONE 類型一律相容');
 
