@@ -483,7 +483,7 @@ void main() {
     expect(find.text(_fixedWindowLabel), findsOneWidget);
     expect(find.text('光復'), findsWidgets);
     expect(find.text('最少 3 人，最多 5 人'), findsOneWidget);
-    expect(find.text('實力：8–10 級'), findsWidgets);
+    expect(find.text('8–10 級'), findsWidgets);
     expect(find.text('接受'), findsOneWidget);
 
     await tester.tap(find.text('送出，開始找人'));
@@ -491,7 +491,7 @@ void main() {
     expect(find.text('確認配對條件'), findsOneWidget);
     expect(find.text('確認送出'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
-    for (final value in ['羽球', '光復', '最少 3 人，最多 5 人', '實力：8–10 級', '接受']) {
+    for (final value in ['羽球', '光復', '最少 3 人，最多 5 人', '8–10 級', '接受']) {
       expect(find.text(value), findsWidgets);
     }
     expect(find.text(_fixedWindowLabel), findsWidgets);
@@ -499,7 +499,7 @@ void main() {
     await tester.tap(find.text('取消'));
     await _settle(tester);
     expect(find.text('最少 3 人，最多 5 人'), findsOneWidget);
-    expect(find.text('實力：8–10 級'), findsWidgets);
+    expect(find.text('8–10 級'), findsWidgets);
     expect(find.text('接受'), findsOneWidget);
     expect(find.text(_fixedWindowLabel), findsOneWidget);
   });
