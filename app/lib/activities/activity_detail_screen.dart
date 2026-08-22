@@ -382,10 +382,10 @@ class ActivityDetailBodyLayout extends StatelessWidget {
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.md,
+                      AppSpacing.lg,
                       AppSpacing.sm,
+                      AppSpacing.lg,
                       AppSpacing.md,
-                      0,
                     ),
                     child: AppGlassSurface(
                       padding: EdgeInsets.zero,
@@ -393,11 +393,8 @@ class ActivityDetailBodyLayout extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.md,
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                      0,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
                     ),
                     child: navigation,
                   ),
