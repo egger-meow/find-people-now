@@ -284,6 +284,9 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 approvedLocationsAsync.hasError;
             return ActivityDetailBodyLayout(
               summary: ActivityDetailStatusSummary(activity: activity),
+              completionBanner: activity.status == ACTIVITY_STATUS.ONGOING
+                  ? _CompletionReportBanner(activityId: activity.id)
+                  : null,
               navigation: _ActivityDetailNavigation(
                 index: _sectionIndex,
                 onChanged: (value) => setState(() => _sectionIndex = value),
@@ -359,12 +362,14 @@ class ActivityDetailBodyLayout extends StatelessWidget {
   const ActivityDetailBodyLayout({
     super.key,
     required this.summary,
+    this.completionBanner,
     required this.navigation,
     required this.content,
     required this.stickyAction,
   });
 
   final Widget summary;
+  final Widget? completionBanner;
   final Widget navigation;
   final Widget content;
   final Widget stickyAction;
@@ -392,6 +397,13 @@ class ActivityDetailBodyLayout extends StatelessWidget {
                       child: summary,
                     ),
                   ),
+                  if (completionBanner != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                      ),
+                      child: completionBanner!,
+                    ),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg,
@@ -767,12 +779,7 @@ class _CompletionReportBanner extends ConsumerWidget {
       data: (report) {
         if (report != null) return const SizedBox.shrink();
         return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            AppSpacing.sm,
-            AppSpacing.md,
-            0,
-          ),
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
           child: AppGlassSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: AppSection(
@@ -1885,10 +1892,6 @@ class _MembersTab extends ConsumerWidget {
               padding: const EdgeInsets.all(AppSpacing.lg),
               sliver: SliverList.list(
                 children: [
-                  if (activityStatus == ACTIVITY_STATUS.ONGOING) ...[
-                    _CompletionReportBanner(activityId: activityId),
-                    const SizedBox(height: AppSpacing.md),
-                  ],
                   if (showArrival && joinedCount > 0) ...[
                     AppGlassSurface(
                       padding: const EdgeInsets.all(AppSpacing.md),
