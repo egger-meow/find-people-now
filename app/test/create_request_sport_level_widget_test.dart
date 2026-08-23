@@ -204,14 +204,13 @@ Future<void> _scrollBackToTop(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('Basketball renders intensity options (輕鬆, 一般, 高強度, 競技)', (tester) async {
+  testWidgets('Basketball renders intensity options directly upon selection', (tester) async {
     final gateway = _MockSubmissionGateway();
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('籃球'));
     await tester.pumpAndSettle();
-    await _scrollBackToTop(tester);
 
     expect(find.text('籃球強度'), findsOneWidget);
     expect(find.text('不限'), findsWidgets);
@@ -228,7 +227,6 @@ void main() {
 
     await tester.tap(find.text('網球'));
     await tester.pumpAndSettle();
-    await _scrollBackToTop(tester);
 
     expect(find.text('網球 NTRP'), findsOneWidget);
     expect(find.text('不知道 NTRP 沒關係，可選不限'), findsOneWidget);
@@ -249,7 +247,6 @@ void main() {
 
     await tester.tap(find.text('桌球'));
     await tester.pumpAndSettle();
-    await _scrollBackToTop(tester);
 
     expect(find.text('桌球實力'), findsOneWidget);
     expect(find.text('不限 / 不確定'), findsOneWidget);
@@ -267,13 +264,57 @@ void main() {
 
     await tester.tap(find.text('網球'));
     await tester.pumpAndSettle();
-    await _scrollBackToTop(tester);
     expect(find.text('網球 NTRP'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('讀書'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('讀書'));
     await tester.pumpAndSettle();
-    await _scrollBackToTop(tester);
     expect(find.text('網球 NTRP'), findsNothing);
     expect(find.text('想找同樣在準備什麼的人？（選填）'), findsOneWidget);
+  });
+
+  testWidgets('Selecting study chip fills study target input and advances to time section', (tester) async {
+    final gateway = _MockSubmissionGateway();
+    await tester.pumpWidget(_buildTestApp(gateway: gateway));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('讀書'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('讀書'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('微積分'), findsOneWidget);
+    await tester.tap(find.text('微積分'));
+    await tester.pumpAndSettle();
+
+    // Verify it scrolled to the time section
+    expect(find.text('現在'), findsOneWidget);
+
+    // Verify study target is reflected in selection summary
+    await tester.scrollUntilVisible(
+      find.text('送出前確認'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('讀書條件'), findsOneWidget);
+    expect(find.text('微積分'), findsWidgets);
+  });
+
+  testWidgets('Selecting sport level chip advances to time section', (tester) async {
+    final gateway = _MockSubmissionGateway();
+    await tester.pumpWidget(_buildTestApp(gateway: gateway));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('籃球'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('高強度'), findsOneWidget);
+    await tester.tap(find.text('高強度'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('現在'), findsOneWidget);
   });
 }

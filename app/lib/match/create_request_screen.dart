@@ -788,9 +788,18 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   // 反饋：「選完一個項目會自然滑到下一個要選的東西標題」——每個步驟選完後，
   // 自動把畫面捲到下一步的標題，減少使用者自己往下滑找下一步的摩擦。只在
   // 「從未選到已選」這個轉換點觸發一次，避免多選的時段桶每次切換都跳動。
+  // 若選擇的活動類型附帶二級參數（例如運動強度/實力/NTRP、讀書科目），
+  // 則先捲動聚焦到二級參數區塊，待填妥後再前進至時間區塊。
+  final _activityParamsKey = GlobalKey();
   final _timeSectionKey = GlobalKey();
   final _campusSectionKey = GlobalKey();
   final _headcountSectionKey = GlobalKey();
+
+  bool _typeHasParameters(ActivityType? type) {
+    if (type == null) return false;
+    return SportLevelConfig.forSystem(type.levelSystem) != null ||
+        type.name == '讀書';
+  }
 
   @override
   void initState() {
@@ -805,16 +814,24 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     super.dispose();
   }
 
-  void _scrollToSection(GlobalKey key) {
+  void _scrollToSection(GlobalKey key, {double? alignment = 0}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = key.currentContext;
       if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: AppMotion.normal,
-        curve: AppMotion.curve,
-        alignment: 0,
-      );
+      if (alignment != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
+          alignment: alignment,
+        );
+      } else {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
+        );
+      }
     });
   }
 
@@ -1333,6 +1350,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                   label: type.name,
                                   selected: _selectedType?.id == type.id,
                                   onTap: () {
+                                    final hasParams = _typeHasParameters(type);
                                     setState(() {
                                       _selectedType = type;
                                       _selectedMinHeadcount = null;
@@ -1341,7 +1359,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       _ratingController.clear();
                                       _studyTargetController.clear();
                                     });
-                                    _scrollToSection(_timeSectionKey);
+                                    if (hasParams) {
+                                      _scrollToSection(
+                                        _activityParamsKey,
+                                        alignment: null,
+                                      );
+                                    } else {
+                                      _scrollToSection(_timeSectionKey);
+                                    }
                                   },
                                 ),
                               _AddOptionCard(
@@ -1357,141 +1382,197 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                               style: textTheme.bodySmall,
                             ),
                           ],
-                          // v1.42 — 運動專屬強度/實力/NTRP 等級與選填積分
-                          Builder(
-                            builder: (context) {
-                              final sportConfig = SportLevelConfig.forSystem(
-                                _selectedType?.levelSystem,
-                              );
-                              if (sportConfig == null) {
-                                return const SizedBox.shrink();
-                              }
-                              return Column(
+                          if (_typeHasParameters(_selectedType))
+                            KeyedSubtree(
+                              key: _activityParamsKey,
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const SizedBox(height: AppSpacing.lg),
-                                  Text(
-                                    sportConfig.sectionTitle,
-                                    style: textTheme.titleSmall,
+                                  // v1.42 — 運動專屬強度/實力/NTRP 等級與選填積分
+                                  Builder(
+                                    builder: (context) {
+                                      final sportConfig =
+                                          SportLevelConfig.forSystem(
+                                            _selectedType?.levelSystem,
+                                          );
+                                      if (sportConfig == null) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(height: AppSpacing.lg),
+                                          Text(
+                                            sportConfig.sectionTitle,
+                                            style: textTheme.titleSmall,
+                                          ),
+                                          if (sportConfig.helperText !=
+                                              null) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              sportConfig.helperText!,
+                                              style: textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: Theme.of(
+                                                      context,
+                                                    ).colorScheme.onSurfaceVariant,
+                                                  ),
+                                            ),
+                                          ],
+                                          const SizedBox(height: AppSpacing.xs),
+                                          Wrap(
+                                            spacing: AppSpacing.sm,
+                                            runSpacing: AppSpacing.xs,
+                                            children: [
+                                              ChoiceChip(
+                                                label: Text(
+                                                  sportConfig.wildcardLabel,
+                                                ),
+                                                selected:
+                                                    _selectedSportLevel == null,
+                                                onSelected: AppHaptics.select(
+                                                  (_) {
+                                                    setState(
+                                                      () =>
+                                                          _selectedSportLevel =
+                                                              null,
+                                                    );
+                                                    if (!sportConfig
+                                                        .supportsRating) {
+                                                      _scrollToSection(
+                                                        _timeSectionKey,
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              for (final opt
+                                                  in sportConfig.options)
+                                                ChoiceChip(
+                                                  label: Text(
+                                                    opt.displayChipLabel,
+                                                  ),
+                                                  selected:
+                                                      _selectedSportLevel ==
+                                                      opt.value,
+                                                  onSelected: AppHaptics.select(
+                                                    (_) {
+                                                      setState(
+                                                        () =>
+                                                            _selectedSportLevel =
+                                                                opt.value,
+                                                      );
+                                                      if (!sportConfig
+                                                          .supportsRating) {
+                                                        _scrollToSection(
+                                                          _timeSectionKey,
+                                                        );
+                                                      }
+                                                    },
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          if (sportConfig.supportsRating) ...[
+                                            const SizedBox(
+                                              height: AppSpacing.sm,
+                                            ),
+                                            AppTextField(
+                                              controller: _ratingController,
+                                              label:
+                                                  sportConfig.ratingLabel ??
+                                                  '積分（選填）',
+                                              hint:
+                                                  sportConfig.ratingHint ??
+                                                  '例如：約 1450',
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              onChanged: (_) => setState(() {}),
+                                              onSubmitted: (_) =>
+                                                  _scrollToSection(
+                                                    _timeSectionKey,
+                                                  ),
+                                            ),
+                                          ],
+                                        ],
+                                      );
+                                    },
                                   ),
-                                  if (sportConfig.helperText != null) ...[
-                                    const SizedBox(height: 2),
+                                  // v1.35 — 只有讀書類型顯示，選填。
+                                  if (_selectedType?.name == '讀書') ...[
+                                    const SizedBox(height: AppSpacing.lg),
                                     Text(
-                                      sportConfig.helperText!,
+                                      '想找同樣在準備什麼的人？（選填）',
+                                      style: textTheme.titleSmall,
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Wrap(
+                                      spacing: AppSpacing.xs,
+                                      runSpacing: AppSpacing.xs,
+                                      children: [
+                                        for (final subject
+                                            in _popularStudySubjects)
+                                          ActionChip(
+                                            label: Text(subject),
+                                            onPressed: () {
+                                              setState(
+                                                () =>
+                                                    _studyTargetController
+                                                        .text = subject,
+                                              );
+                                              _scrollToSection(_timeSectionKey);
+                                            },
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                    AppTextField(
+                                      controller: _studyTargetController,
+                                      label: '科目/課程/考試名稱',
+                                      hint: '例如：微積分(一)、雅思、多益',
+                                      onChanged: (_) => setState(() {}),
+                                      onSubmitted: (_) =>
+                                          _scrollToSection(_timeSectionKey),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Text(
+                                      '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
+                                      '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
                                       style: textTheme.bodySmall?.copyWith(
                                         color: Theme.of(
                                           context,
                                         ).colorScheme.onSurfaceVariant,
                                       ),
                                     ),
-                                  ],
-                                  const SizedBox(height: AppSpacing.xs),
-                                  Wrap(
-                                    spacing: AppSpacing.sm,
-                                    runSpacing: AppSpacing.xs,
-                                    children: [
-                                      ChoiceChip(
-                                        label: Text(sportConfig.wildcardLabel),
-                                        selected: _selectedSportLevel == null,
-                                        onSelected: AppHaptics.select(
-                                          (_) => setState(
-                                            () => _selectedSportLevel = null,
-                                          ),
-                                        ),
+                                    if (_studyTargetController
+                                        .text
+                                        .isNotEmpty) ...[
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Builder(
+                                        builder: (context) {
+                                          final normalized =
+                                              _normalizeStudyTargetPreview(
+                                                _studyTargetController.text,
+                                              );
+                                          return Text(
+                                            normalized == null
+                                                ? '目前輸入不會被當作指定條件（等同不限）'
+                                                : '將以「$normalized」進行比對',
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.onSurfaceVariant,
+                                                ),
+                                          );
+                                        },
                                       ),
-                                      for (final opt in sportConfig.options)
-                                        ChoiceChip(
-                                          label: Text(opt.displayChipLabel),
-                                          selected:
-                                              _selectedSportLevel == opt.value,
-                                          onSelected: AppHaptics.select(
-                                            (_) => setState(
-                                              () =>
-                                                  _selectedSportLevel =
-                                                      opt.value,
-                                            ),
-                                          ),
-                                        ),
                                     ],
-                                  ),
-                                  if (sportConfig.supportsRating) ...[
-                                    const SizedBox(height: AppSpacing.sm),
-                                    AppTextField(
-                                      controller: _ratingController,
-                                      label:
-                                          sportConfig.ratingLabel ?? '積分（選填）',
-                                      hint:
-                                          sportConfig.ratingHint ??
-                                          '例如：約 1450',
-                                      keyboardType: TextInputType.number,
-                                      onChanged: (_) => setState(() {}),
-                                    ),
                                   ],
                                 ],
-                              );
-                            },
-                          ),
-                          // v1.35 — 只有讀書類型顯示，選填。
-                          if (_selectedType?.name == '讀書') ...[
-                            const SizedBox(height: AppSpacing.lg),
-                            Text(
-                              '想找同樣在準備什麼的人？（選填）',
-                              style: textTheme.titleSmall,
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Wrap(
-                              spacing: AppSpacing.xs,
-                              runSpacing: AppSpacing.xs,
-                              children: [
-                                for (final subject in _popularStudySubjects)
-                                  ActionChip(
-                                    label: Text(subject),
-                                    onPressed: () => setState(
-                                      () =>
-                                          _studyTargetController.text = subject,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            AppTextField(
-                              controller: _studyTargetController,
-                              label: '科目/課程/考試名稱',
-                              hint: '例如：微積分(一)、雅思、多益',
-                              onChanged: (_) => setState(() {}),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
-                              '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
-                              style: textTheme.bodySmall?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
-                            if (_studyTargetController.text.isNotEmpty) ...[
-                              const SizedBox(height: AppSpacing.xs),
-                              Builder(
-                                builder: (context) {
-                                  final normalized =
-                                      _normalizeStudyTargetPreview(
-                                        _studyTargetController.text,
-                                      );
-                                  return Text(
-                                    normalized == null
-                                        ? '目前輸入不會被當作指定條件（等同不限）'
-                                        : '將以「$normalized」進行比對',
-                                    style: textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ],
                         ],
                       ),
                     ),
