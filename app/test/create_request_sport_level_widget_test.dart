@@ -11,8 +11,8 @@ import 'package:find_people_now/match/create_request_screen.dart';
 import 'package:find_people_now/match/match_providers.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
+import 'package:find_people_now/rpc/campus_demand_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
-import 'package:find_people_now/widgets/app_section.dart';
 
 final _testTypes = <ActivityType>[
   ActivityType(
@@ -178,6 +178,9 @@ Widget _buildTestApp({required _MockSubmissionGateway gateway}) {
       campusPulseProvider.overrideWith(
         (ref, key) => Stream.value(const <CampusPulseEntry>[]),
       ),
+      campusDemandsProvider.overrideWith(
+        (ref, key) => Stream.value(const <CampusDemandCard>[]),
+      ),
       myActiveAlertSubscriptionsProvider.overrideWith(
         (ref) async => const <ActivityAlertSubscription>[],
       ),
@@ -192,12 +195,10 @@ Widget _buildTestApp({required _MockSubmissionGateway gateway}) {
   );
 }
 
-Future<void> _scrollBackToTop(WidgetTester tester) async {
+Future<void> _scrollTo(WidgetTester tester, Finder finder) async {
   await tester.scrollUntilVisible(
-    find.byWidgetPredicate(
-      (widget) => widget is AppSection && widget.title == '活動',
-    ),
-    -300,
+    finder,
+    300,
     scrollable: find.byType(Scrollable).first,
   );
   await tester.pumpAndSettle();
@@ -209,6 +210,7 @@ void main() {
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
+    await _scrollTo(tester, find.text('籃球'));
     await tester.tap(find.text('籃球'));
     await tester.pumpAndSettle();
 
@@ -225,6 +227,7 @@ void main() {
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
+    await _scrollTo(tester, find.text('網球'));
     await tester.tap(find.text('網球'));
     await tester.pumpAndSettle();
 
@@ -245,6 +248,7 @@ void main() {
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
+    await _scrollTo(tester, find.text('桌球'));
     await tester.tap(find.text('桌球'));
     await tester.pumpAndSettle();
 
@@ -262,6 +266,7 @@ void main() {
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
+    await _scrollTo(tester, find.text('網球'));
     await tester.tap(find.text('網球'));
     await tester.pumpAndSettle();
     expect(find.text('網球 NTRP'), findsOneWidget);
@@ -279,8 +284,7 @@ void main() {
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('讀書'));
-    await tester.pumpAndSettle();
+    await _scrollTo(tester, find.text('讀書'));
     await tester.tap(find.text('讀書'));
     await tester.pumpAndSettle();
 
@@ -308,6 +312,7 @@ void main() {
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
 
+    await _scrollTo(tester, find.text('籃球'));
     await tester.tap(find.text('籃球'));
     await tester.pumpAndSettle();
 

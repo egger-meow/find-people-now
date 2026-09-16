@@ -5,7 +5,6 @@ import '../../generated/supadart_header.dart' show SCHOOL;
 import '../../rpc/campus_demand_rpc.dart';
 import '../../theme/app_haptics.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/skeleton.dart';
@@ -97,10 +96,14 @@ class CampusDemandsSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 區塊頂部：標題 + 校區切換按鈕
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
           children: [
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   Icons.local_fire_department_rounded,
@@ -294,17 +297,22 @@ class CampusDemandsSection extends ConsumerWidget {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.xs,
                         children: [
-                          AppButton(
-                            label: '自己揪一個',
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(120, 44),
+                            ),
                             onPressed: () {
                               AppHaptics.tap();
                               onCreateNewRequest();
                             },
+                            child: const Text('自己揪一個'),
                           ),
-                          const SizedBox(width: AppSpacing.sm),
                           TextButton.icon(
                             icon: const Icon(Icons.notifications_active_outlined, size: 16),
                             label: const Text('設定時效提醒'),

@@ -10,12 +10,13 @@ import '../data/sport_level_config.dart';
 import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_type.dart';
+import '../generated/app_user.dart';
 import '../generated/match_request.dart';
-import '../generated/supadart_header.dart'
-    show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
+import '../generated/supadart_header.dart' show SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
+import '../rpc/campus_demand_rpc.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
@@ -32,6 +33,9 @@ import '../widgets/app_text_field.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
 import 'match_providers.dart';
+import 'widgets/activity_demand_detail_sheet.dart';
+import 'widgets/campus_demands_section.dart';
+import 'widgets/pinned_active_status_card.dart';
 
 /// Submission boundary for the create-request journey. Production uses the
 /// existing RPC wrappers; widget tests can replace only this boundary while
@@ -137,8 +141,6 @@ class CreateRequestScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activeRequest = ref.watch(myActiveRequestProvider);
-
     return Scaffold(
       // [AppStickyActionArea] consumes viewInsets itself so the action and the
       // remaining scrollable form move together above the keyboard. Letting
@@ -160,43 +162,9 @@ class CreateRequestScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        child: activeRequest.when(
-          loading: () => const LoadingIndicator(),
-          error: (error, stack) => const AppErrorState(),
-          data: (request) {
-            if (request != null) {
-              // UI_PLAN §2.2 送出前預先攔截 — 還在找人流程中（REQUESTING/
-              // PENDING_CONFIRMATION）的 Request 就不重新顯示表單。
-              //
-              // 反饋：原本用 post-frame callback 自動 context.push 去等待室——
-              // 這個畫面是分頁 branch 的 root，在 IndexedStack 底下離開等待室
-              // 後仍留在樹裡；只要 myActiveRequestProvider 因為任何原因重新
-              // build（realtime 狀態流常會這樣），就會再 push 一次等待室，使用
-              // 者從等待室按上一頁等於直接被彈回去，感覺「按兩次上一頁才出
-              // 得去」甚至卡死在這個 loading 字樣。改成跟下面 [_ActiveActivityBlock]
-              // 一致的靜態卡片＋按鈕，讓使用者自己決定要不要回等待室，不再有
-              // build 過程中觸發導覽的問題。
-              return _ActiveRequestBlock(request: request);
-            }
-            // 反饋：使用者目前有 MATCHED/ONGOING 活動時，配對頁該直接告知
-            // 「當前有活動，無法建立新配對」，而不是讓使用者填完整張表單才在
-            // 送出當下收到 ACTIVE_ACTIVITY_IN_PROGRESS 錯誤（見
-            // match_providers.dart 的 [myActiveActivityProvider] 註解）。
-            final activeActivity = ref.watch(myActiveActivityProvider);
-            return activeActivity.when(
-              loading: () => const LoadingIndicator(),
-              error: (error, stack) => const AppErrorState(),
-              data: (activity) {
-                if (activity != null) {
-                  return _ActiveActivityBlock(activity: activity);
-                }
-                return _CreateRequestForm(
-                  submissionGateway: submissionGateway,
-                  now: now,
-                );
-              },
-            );
-          },
+        child: _CreateRequestForm(
+          submissionGateway: submissionGateway,
+          now: now,
         ),
       ),
     );
@@ -279,111 +247,6 @@ class CreateRequestScreen extends ConsumerWidget {
       // picks up the new membership.
       ref.invalidate(myActiveRequestProvider);
     }
-  }
-}
-
-/// 跟 [_ActiveActivityBlock] 同一種靜態卡片＋按鈕模式，取代原本 build 過程中
-/// 用 post-frame callback 自動 push 去等待室的做法（見上面呼叫處註解）。
-class _ActiveRequestBlock extends StatelessWidget {
-  const _ActiveRequestBlock({required this.request});
-
-  final MatchRequest request;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final statusLabel = request.status == REQUEST_STATUS.PENDING_CONFIRMATION
-        ? '小人數確認中'
-        : '配對中';
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.hourglass_top_rounded,
-              size: 48,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              '你已經有進行中的配對',
-              style: textTheme.titleLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '狀態：$statusLabel — 完成或取消前無法建立新配對',
-              style: textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AppButton(
-              label: '前往等待室',
-              onPressed: () => context.push('/waiting-room/${request.id}'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 反饋：「如果有活動 active 或成立，配對頁直接灰掉，寫當前有活動，使用者
-/// 無法建立新活動」——取代原本「已經有活動就整頁自動導走」的做法，改成配對頁
-/// 本身顯示明確、不可互動的狀態卡，並提供前往該活動的入口。
-class _ActiveActivityBlock extends StatelessWidget {
-  const _ActiveActivityBlock({required this.activity});
-
-  final Activity activity;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final statusLabel = activity.status == ACTIVITY_STATUS.ONGOING
-        ? '進行中'
-        : '已成團，等待開始';
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.event_busy_rounded,
-              size: 48,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              '你目前有進行中的活動',
-              style: textTheme.titleLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '狀態：$statusLabel — 活動結束前無法建立新配對',
-              style: textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AppButton(
-              label: '前往這個活動',
-              onPressed: () => context.push('/activity/${activity.id}'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -477,73 +340,99 @@ String formatMatchRequestWindow(
   return '$startLabel - ${dateLabel(window.$2)} ${_formatTime(window.$2)}';
 }
 
-/// Campus Activity Pulse（v1.26）——首頁氣氛指標：「這個校區現在有人在揪」的
-/// 匿名聚合信號，不是可操作的清單（沒有點擊進某個 Request 的入口，那會
-/// 違背盲配設計）。空狀態刻意不顯示大大的「目前沒有活動」，安靜收合即可，
-/// 避免對冷啟動的校區造成反效果。
-class _CampusPulseBanner extends ConsumerWidget {
-  const _CampusPulseBanner({required this.school, required this.campus});
+/// Alert Subscription（v1.27）——「羽球在光復校區 3 小時內出現就通知我」。
+/// 顯示目前有效的訂閱（可取消）+ 一個開新訂閱的入口。
+Future<void> _showSubscribeAlertDialog({
+  required BuildContext context,
+  required WidgetRef ref,
+  required SCHOOL school,
+  required String campus,
+  required List<ActivityType> types,
+}) async {
+  if (types.isEmpty) return;
+  ActivityType selectedType = types.first;
+  int hours = 3;
 
-  final SCHOOL school;
-  final String campus;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pulseAsync = ref.watch(campusPulseProvider((school, campus)));
-    final entries = pulseAsync.value;
-    if (entries == null || entries.isEmpty) return const SizedBox.shrink();
-
-    final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('🔥', style: TextStyle(fontSize: 16)),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                '$campus 現在有人在揪',
-                style: textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
+        title: '設定提醒',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '活動類型',
+              style: Theme.of(dialogContext).textTheme.labelMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            DropdownButton<ActivityType>(
+              isExpanded: true,
+              value: selectedType,
+              items: [
+                for (final type in types)
+                  DropdownMenuItem(value: type, child: Text(type.name)),
+              ],
+              onChanged: (value) {
+                if (value != null) setDialogState(() => selectedType = value);
+              },
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              '$campus 出現在幾小時內就通知我',
+              style: Theme.of(dialogContext).textTheme.labelMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: AppSpacing.xs,
+              children: [
+                for (final option in const [1, 3, 6, 12, 24])
+                  ChoiceChip(
+                    label: Text('$option 小時'),
+                    selected: hours == option,
+                    onSelected: AppHaptics.select(
+                      (_) => setDialogState(() => hours = option),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          AppDialogAction(
+            label: '取消',
+            onPressed: () => Navigator.of(dialogContext).pop(false),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            children: [
-              for (final entry in entries)
-                Chip(
-                  avatar: Icon(
-                    activityTypeIcon(entry.activityTypeName),
-                    size: 16,
-                    color: scheme.primary,
-                  ),
-                  label: Text(
-                    '${entry.activityTypeName} · ${entry.personCount} 人在等',
-                  ),
-                  visualDensity: const VisualDensity(
-                    horizontal: -2,
-                    vertical: -1,
-                  ),
-                ),
-            ],
+          AppDialogAction(
+            label: '設定提醒',
+            isDefault: true,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
           ),
         ],
       ),
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  try {
+    await subscribeActivityAlert(
+      ref.read(supabaseClientProvider),
+      activityTypeId: selectedType.id,
+      school: school,
+      campus: campus,
+      lookaheadHours: hours,
     );
+    ref.invalidate(myActiveAlertSubscriptionsProvider);
+  } on ApiException catch (e) {
+    if (!context.mounted) return;
+    final message = e.code == ApiErrorCode.tooManyAlertSubscriptions
+        ? '同時最多只能設定 5 個提醒，先取消一些吧'
+        : userErrorMessage(e);
+    showAppSnackBar(context, message, kind: AppSnackKind.error);
   }
 }
 
-/// Alert Subscription（v1.27）——「羽球在光復校區 3 小時內出現就通知我」。
-/// 顯示目前有效的訂閱（可取消）+ 一個開新訂閱的入口，跟 [_CampusPulseBanner]
-/// 同一個位置群組，兩者都是「不用一直盯著等待室，系統會告訴你」這個產品
-/// 目標的兩面。
 class _AlertSubscriptionSection extends ConsumerWidget {
   const _AlertSubscriptionSection({
     required this.school,
@@ -554,91 +443,6 @@ class _AlertSubscriptionSection extends ConsumerWidget {
   final SCHOOL school;
   final String campus;
   final List<ActivityType> types;
-
-  Future<void> _openSubscribeDialog(BuildContext context, WidgetRef ref) async {
-    if (types.isEmpty) return;
-    ActivityType selectedType = types.first;
-    int hours = 3;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
-          title: '設定提醒',
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '活動類型',
-                style: Theme.of(dialogContext).textTheme.labelMedium,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              DropdownButton<ActivityType>(
-                isExpanded: true,
-                value: selectedType,
-                items: [
-                  for (final type in types)
-                    DropdownMenuItem(value: type, child: Text(type.name)),
-                ],
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => selectedType = value);
-                },
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                '$campus 出現在幾小時內就通知我',
-                style: Theme.of(dialogContext).textTheme.labelMedium,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Wrap(
-                spacing: AppSpacing.xs,
-                children: [
-                  for (final option in const [1, 3, 6, 12, 24])
-                    ChoiceChip(
-                      label: Text('$option 小時'),
-                      selected: hours == option,
-                      onSelected: AppHaptics.select(
-                        (_) => setDialogState(() => hours = option),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            AppDialogAction(
-              label: '取消',
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-            ),
-            AppDialogAction(
-              label: '設定提醒',
-              isDefault: true,
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-
-    try {
-      await subscribeActivityAlert(
-        ref.read(supabaseClientProvider),
-        activityTypeId: selectedType.id,
-        school: school,
-        campus: campus,
-        lookaheadHours: hours,
-      );
-      ref.invalidate(myActiveAlertSubscriptionsProvider);
-    } on ApiException catch (e) {
-      if (!context.mounted) return;
-      final message = e.code == ApiErrorCode.tooManyAlertSubscriptions
-          ? '同時最多只能設定 5 個提醒，先取消一些吧'
-          : userErrorMessage(e);
-      showAppSnackBar(context, message, kind: AppSnackKind.error);
-    }
-  }
 
   Future<void> _cancel(WidgetRef ref, String subscriptionId) async {
     await unsubscribeActivityAlert(
@@ -664,7 +468,13 @@ class _AlertSubscriptionSection extends ConsumerWidget {
               const SizedBox(width: AppSpacing.xs),
               const Expanded(child: Text('沒等到想要的活動？設定提醒，出現就通知你')),
               TextButton(
-                onPressed: () => _openSubscribeDialog(context, ref),
+                onPressed: () => _showSubscribeAlertDialog(
+                  context: context,
+                  ref: ref,
+                  school: school,
+                  campus: campus,
+                  types: types,
+                ),
                 child: const Text('設定'),
               ),
             ],
@@ -791,6 +601,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   // 若選擇的活動類型附帶二級參數（例如運動強度/實力/NTRP、讀書科目），
   // 則先捲動聚焦到二級參數區塊，待填妥後再前進至時間區塊。
   final _activityParamsKey = GlobalKey();
+  final _formTopKey = GlobalKey();
   final _timeSectionKey = GlobalKey();
   final _campusSectionKey = GlobalKey();
   final _headcountSectionKey = GlobalKey();
@@ -1076,6 +887,102 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     }
   }
 
+  Future<void> _showDemandDetailSheet({
+    required BuildContext context,
+    required CampusDemandCard demand,
+    required AppUser user,
+    required List<ActivityType> types,
+    required bool hasActiveState,
+    required MatchRequest? activeRequest,
+    required Activity? activeActivity,
+    required bool isCooldown,
+  }) {
+    return showActivityDemandDetailSheet(
+      context,
+      demand: demand,
+      canParticipate: !hasActiveState && !isCooldown,
+      disabledReason: activeRequest != null
+          ? '你已在配對等待室中，無法同時加入其他活動'
+          : (activeActivity != null
+              ? '你目前有進行中的活動，活動結束前無法加入'
+              : (isCooldown ? '配對冷卻中，暫時無法加入' : null)),
+      relativeNow: widget.now(),
+      onParticipate: () async {
+        await _participateDemand(demand, types);
+      },
+      onCustomize: () {
+        _applyDemandToForm(demand, types);
+      },
+    );
+  }
+
+  Future<void> _participateDemand(
+    CampusDemandCard demand,
+    List<ActivityType> types,
+  ) async {
+    final type = types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
+        types.where((t) => t.name == demand.activityTypeName).firstOrNull;
+    if (type == null) {
+      showAppSnackBar(context, '找不到對應的活動類型', kind: AppSnackKind.error);
+      return;
+    }
+
+    final snapshot = _RequestSubmissionSnapshot(
+      type: type,
+      campus: demand.campus,
+      minParticipants: demand.minParticipants,
+      maxParticipants: demand.maxParticipants,
+      window: (demand.earliestStart, demand.latestStart),
+      allowDowngrade: true,
+      sportLevel: demand.sportLevel,
+      sportLevelRating: demand.sportLevelRating,
+      studyTarget: demand.studyTarget,
+    );
+
+    await _submit(snapshot);
+  }
+
+  void _applyDemandToForm(
+    CampusDemandCard demand,
+    List<ActivityType> types,
+  ) {
+    final type = types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
+        types.where((t) => t.name == demand.activityTypeName).firstOrNull;
+
+    setState(() {
+      if (type != null) {
+        _selectedType = type;
+      }
+      _selectedCampus = demand.campus;
+      ref.read(selectedCampusProvider.notifier).setCampus(demand.campus);
+      _selectedMinHeadcount = demand.minParticipants;
+      _selectedMaxHeadcount = demand.maxParticipants;
+      _selectedSportLevel = demand.sportLevel;
+      if (demand.sportLevelRating != null) {
+        _ratingController.text = demand.sportLevelRating.toString();
+      } else {
+        _ratingController.clear();
+      }
+      if (demand.studyTarget != null && demand.studyTarget!.isNotEmpty) {
+        _studyTargetController.text = demand.studyTarget!;
+      } else {
+        _studyTargetController.clear();
+      }
+      _detailedMode = true;
+      _nowSelected = false;
+      _selectedBucketIndices.clear();
+      _customEarliest = demand.earliestStart;
+      _customLatest = demand.latestStart;
+    });
+
+    _scrollToSection(_formTopKey);
+    showAppSnackBar(
+      context,
+      '已為你預填「${demand.activityTypeName}」的條件，可自由微調後送出',
+      kind: AppSnackKind.neutral,
+    );
+  }
+
   String _timeWindowLabel((DateTime, DateTime)? window) {
     return formatMatchRequestWindow(window, relativeTo: widget.now());
   }
@@ -1253,14 +1160,26 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         error: (error, stack) => const AppErrorState(),
         data: (user) {
           if (user == null) return const LoadingIndicator();
+          final activeRequest = ref.watch(myActiveRequestProvider).value;
+          final activeActivity = ref.watch(myActiveActivityProvider).value;
+          final hasActiveState = activeRequest != null || activeActivity != null;
+
+          final globalCampus = ref.watch(selectedCampusProvider);
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
+          final campuses = campusAsync.value ?? const [];
+          final effectiveCampus = globalCampus ??
+              _selectedCampus ??
+              user.defaultCampus ??
+              (campuses.isNotEmpty ? campuses.first : '光復校區');
+
+          if (_selectedCampus == null && campuses.contains(effectiveCampus)) {
+            _selectedCampus = effectiveCampus;
+          }
+
           final window = _resolveWindow();
           final isCooldown =
               user.nextRequestAllowedAt != null &&
               user.nextRequestAllowedAt!.isAfter(DateTime.now());
-          final pulseCampus = campusAsync.value?.isNotEmpty == true
-              ? campusAsync.value!.first
-              : null;
 
           return Column(
             children: [
@@ -1270,18 +1189,18 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   children: [
-                    if (pulseCampus != null) ...[
-                      _CampusPulseBanner(
-                        school: user.school,
-                        campus: pulseCampus,
+                    if (hasActiveState) ...[
+                      PinnedActiveStatusCard(
+                        request: activeRequest,
+                        activity: activeActivity,
+                        onOpenWaitingRoom: activeRequest != null
+                            ? () => context.push('/waiting-room/${activeRequest.id}')
+                            : null,
+                        onOpenActivity: activeActivity != null
+                            ? () => context.push('/activity/${activeActivity.id}')
+                            : null,
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      _AlertSubscriptionSection(
-                        school: user.school,
-                        campus: pulseCampus,
-                        types: types,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
                     ],
                     if (isCooldown) ...[
                       AppCard(
@@ -1327,11 +1246,54 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                     ],
-                    AppSection(
-                      title: '活動',
-                      description: '今天想找人一起做什麼？',
+                    CampusDemandsSection(
+                      school: user.school,
+                      campus: effectiveCampus,
+                      availableCampuses: campuses,
+                      onSelectCampus: (c) {
+                        ref.read(selectedCampusProvider.notifier).setCampus(c);
+                        setState(() => _selectedCampus = c);
+                      },
+                      onSelectDemand: (demand) => _showDemandDetailSheet(
+                        context: context,
+                        demand: demand,
+                        user: user,
+                        types: types,
+                        hasActiveState: hasActiveState,
+                        activeRequest: activeRequest,
+                        activeActivity: activeActivity,
+                        isCooldown: isCooldown,
+                      ),
+                      onCreateNewRequest: () => _scrollToSection(_formTopKey),
+                      onSetAlert: () => _showSubscribeAlertDialog(
+                        context: context,
+                        ref: ref,
+                        school: user.school,
+                        campus: effectiveCampus,
+                        types: types,
+                      ),
+                      canParticipate: !hasActiveState && !isCooldown,
+                      disabledReason: activeRequest != null
+                          ? '你已在配對等待室中，無法同時加入其他活動'
+                          : (activeActivity != null
+                              ? '你目前有進行中的活動，活動結束前無法加入'
+                              : (isCooldown ? '配對冷卻中，暫時無法加入' : null)),
+                      relativeNow: widget.now(),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _AlertSubscriptionSection(
+                      school: user.school,
+                      campus: effectiveCampus,
+                      types: types,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    KeyedSubtree(
+                      key: _formTopKey,
+                      child: AppSection(
+                        title: '活動',
+                        description: '今天想找人一起做什麼？',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1576,7 +1538,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
                     KeyedSubtree(
                       key: _timeSectionKey,
                       child: AppSection(
@@ -1713,6 +1676,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                     selected: _selectedCampus == campus,
                                     onTap: () {
                                       setState(() => _selectedCampus = campus);
+                                      ref
+                                          .read(selectedCampusProvider.notifier)
+                                          .setCampus(campus);
                                       _scrollToSection(_headcountSectionKey);
                                     },
                                   ),
@@ -1897,7 +1863,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                 child: Builder(
                   builder: (context) {
                     final missing = _missingRequiredChoice(window);
-                    final actionHint = isCooldown ? '配對冷卻中，暫時無法送出' : missing;
+                    final actionHint = hasActiveState
+                        ? (activeRequest != null
+                            ? '你已有進行中的配對，請先前往等待室或取消後再發起新配對'
+                            : '你目前有進行中的活動，請先前往活動或結束後再發起新配對')
+                        : (isCooldown ? '配對冷卻中，暫時無法送出' : missing);
                     return Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1907,9 +1877,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                             actionHint,
                             textAlign: TextAlign.center,
                             style: textTheme.bodySmall?.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                              color: hasActiveState
+                                  ? Theme.of(context).colorScheme.error
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xs),
@@ -1925,10 +1897,12 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                           const SizedBox(height: AppSpacing.xs),
                         ],
                         AppButton(
-                          label: isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人',
+                          label: hasActiveState
+                              ? (activeRequest != null ? '已在配對等待室中' : '活動進行中')
+                              : (isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人'),
                           loading: _submitting,
-                          onPressed:
-                              isCooldown ||
+                          onPressed: hasActiveState ||
+                                  isCooldown ||
                                   missing != null ||
                                   _confirming ||
                                   _submitting

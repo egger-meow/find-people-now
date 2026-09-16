@@ -17,6 +17,7 @@ import 'package:find_people_now/match/match_providers.dart';
 import 'package:find_people_now/rpc/activity_type_rpc.dart';
 import 'package:find_people_now/rpc/api_exception.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
+import 'package:find_people_now/rpc/campus_demand_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
 import 'package:find_people_now/widgets/app_section.dart';
 import 'package:find_people_now/widgets/app_selection_summary.dart';
@@ -195,6 +196,9 @@ List<Override> _overrides({
   campusPulseProvider.overrideWith(
     (ref, key) => Stream.value(const <CampusPulseEntry>[]),
   ),
+  campusDemandsProvider.overrideWith(
+    (ref, key) => Stream.value(const <CampusDemandCard>[]),
+  ),
   myActiveAlertSubscriptionsProvider.overrideWith(
     (ref) async => const <ActivityAlertSubscription>[],
   ),
@@ -311,6 +315,7 @@ Future<void> _selectCompleteRequest(
   String? studyTarget,
   bool allowDowngrade = false,
 }) async {
+  await _scrollTo(tester, find.text(activity));
   await tester.tap(find.text(activity));
   await _settle(tester);
   if (skill != null || studyTarget != null) {
@@ -444,6 +449,7 @@ void main() {
     await _settle(tester);
 
     final typeLabel = find.text(longTypeName);
+    await _scrollTo(tester, typeLabel);
     expect(typeLabel, findsOneWidget);
     final text = tester.widget<Text>(typeLabel);
     expect(text.maxLines, isNull);
@@ -461,13 +467,14 @@ void main() {
     await tester.pumpWidget(_host());
     await _settle(tester);
 
+    await _scrollTo(tester, find.text('羽球'));
     await tester.tap(find.text('羽球'));
-    await tester.pump();
+    await _settle(tester);
     expect(find.text('羽球實力'), findsOneWidget);
 
-    await _scrollTo(tester, find.text('讀書'));
+    await _scrollBackTo(tester, find.text('讀書'));
     await tester.tap(find.text('讀書'));
-    await tester.pump();
+    await _settle(tester);
     expect(find.text('想找同樣在準備什麼的人？（選填）'), findsOneWidget);
     expect(find.text('科目/課程/考試名稱'), findsOneWidget);
   });
@@ -656,6 +663,7 @@ void main() {
     );
     await tester.pumpWidget(_host(types: [restrictedType], isNewUser: true));
     await _settle(tester);
+    await _scrollTo(tester, find.text('羽球'));
     await tester.tap(find.text('羽球'));
     await _settle(tester);
     await _scrollTo(tester, find.text('至少'));
