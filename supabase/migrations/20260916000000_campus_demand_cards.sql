@@ -9,7 +9,7 @@
 -- 2. 新增 get_campus_demands(p_school, p_campus)：
 --    首頁改版為「匿名活動需求卡」的核心決策資料來源。
 --    依 (activity_type_id, at.name, campus, earliest_start, latest_start,
---        sport_level, sport_level_rating, study_target) 聚合有效需求。
+--        sport_level, sport_level_rating, study_target, min_participants, max_participants) 聚合有效需求。
 --    回傳欄位：
 --      - activity_type_id (uuid)
 --      - activity_type_name (text)
@@ -115,8 +115,8 @@ begin
       mr.sport_level,
       mr.sport_level_rating,
       mr.study_target,
-      min(mr.min_participants)::int as min_participants,
-      max(mr.max_participants)::int as max_participants,
+      mr.min_participants::int as min_participants,
+      mr.max_participants::int as max_participants,
       count(distinct rm.user_id)::int as person_count,
       count(distinct mr.id)::int as request_count
     from match_request mr
@@ -134,7 +134,9 @@ begin
      mr.latest_start,
      mr.sport_level,
      mr.sport_level_rating,
-     mr.study_target
+     mr.study_target,
+     mr.min_participants,
+     mr.max_participants
    order by
      mr.earliest_start asc,
      count(distinct rm.user_id) desc;

@@ -19,7 +19,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(8);
+select plan(12);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -45,6 +45,7 @@ declare
   v_owner3          uuid := gen_random_uuid();
   v_owner4          uuid := gen_random_uuid();
   v_owner5          uuid := gen_random_uuid();
+  v_owner6          uuid := gen_random_uuid();
   v_invitee1        uuid := gen_random_uuid();
   v_left_invitee    uuid := gen_random_uuid();
   v_badminton_id    uuid;
@@ -56,6 +57,7 @@ declare
   v_request3        uuid;
   v_request4        uuid;
   v_request5        uuid;
+  v_request6        uuid;
   v_request_expired uuid;
   v_time_start      timestamptz := now() + interval '2 hours';
   v_time_end        timestamptz := now() + interval '4 hours';
@@ -67,18 +69,18 @@ begin
     (v_viewer, 'cd_viewer@nycu.edu.tw'), (v_deleted, 'cd_deleted@nycu.edu.tw'),
     (v_owner1, 'cd_o1@nycu.edu.tw'), (v_owner2, 'cd_o2@nycu.edu.tw'),
     (v_owner3, 'cd_o3@nycu.edu.tw'), (v_owner4, 'cd_o4@nycu.edu.tw'),
-    (v_owner5, 'cd_o5@nycu.edu.tw'), (v_invitee1, 'cd_i1@nycu.edu.tw'),
-    (v_left_invitee, 'cd_left@nycu.edu.tw');
+    (v_owner5, 'cd_o5@nycu.edu.tw'), (v_owner6, 'cd_o6@nycu.edu.tw'),
+    (v_invitee1, 'cd_i1@nycu.edu.tw'), (v_left_invitee, 'cd_left@nycu.edu.tw');
 
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_ig)
   select u, u::text || '@nycu.edu.tw', 'NYCU', 'CD ' || u::text, 'https://avatar.cd', 'UNDERGRAD', 'cd_ig'
-    from unnest(array[v_viewer, v_deleted, v_owner1, v_owner2, v_owner3, v_owner4, v_owner5, v_invitee1, v_left_invitee]) as u;
+    from unnest(array[v_viewer, v_deleted, v_owner1, v_owner2, v_owner3, v_owner4, v_owner5, v_owner6, v_invitee1, v_left_invitee]) as u;
 
   update app_user
      set email = 'deleted+' || v_deleted::text, deleted_at = now()
    where id = v_deleted;
 
-  -- 1. 羽球：2 筆相同時段與程度的 REQUESTING（同校區），一筆帶 1 位朋友，另一筆 1 人
+  -- 1. 羽球：2 筆相同時段、程度與人數範圍（2–4 人）的 REQUESTING（同校區）
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, sport_level, status)
   values (v_owner1, v_badminton_id, 'NYCU', v_campus, v_time_start, v_time_end, 2, 4, 'EASY', 'REQUESTING')
   returning id into v_request1;
@@ -86,6 +88,11 @@ begin
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, sport_level, status)
   values (v_owner2, v_badminton_id, 'NYCU', v_campus, v_time_start, v_time_end, 2, 4, 'EASY', 'REQUESTING')
   returning id into v_request2;
+
+  -- 1b. 羽球：同活動、同時段、同程度，但不同人數範圍（6–8 人）的 REQUESTING，不得與 2–4 人合成 2–8 人
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, sport_level, status)
+  values (v_owner6, v_badminton_id, 'NYCU', v_campus, v_time_start, v_time_end, 6, 8, 'EASY', 'REQUESTING')
+  returning id into v_request6;
 
   -- 2. 咖啡：1 筆 REQUESTING（同校區）
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
@@ -108,6 +115,7 @@ begin
     (v_request1, v_invitee1, 'MEMBER', 'JOINED'),
     (v_request1, v_left_invitee, 'MEMBER', 'LEFT'),
     (v_request2, v_owner2, 'OWNER', 'JOINED'),
+    (v_request6, v_owner6, 'OWNER', 'JOINED'),
     (v_request3, v_owner3, 'OWNER', 'JOINED'),
     (v_request_expired, v_owner4, 'OWNER', 'JOINED'),
     (v_request5, v_owner5, 'OWNER', 'JOINED');
@@ -122,25 +130,39 @@ do $$ begin
   perform set_config('request.jwt.claim.sub', (select viewer_id::text from fixtures), true);
 end $$;
 
--- 1. 羽球需求卡：相同時段程度合併為 1 筆卡片，person_count 應為 3 (owner1 + invitee1 + owner2, 不含 left)，request_count 應為 2
+-- 1. 羽球需求卡：不同人數範圍（2–4 與 6–8）應分為 2 筆獨立需求卡，絕不合成 2–8 人
+select is(
+  (select count(*)::int from get_campus_demands('NYCU'::school, (select campus from fixtures))
+    where activity_type_id = (select badminton_id from fixtures)),
+  2,
+  '羽球不同人數範圍應拆為 2 張需求卡，不合成原本不存在的人數條件'
+);
+
 select is(
   (select person_count from get_campus_demands('NYCU'::school, (select campus from fixtures))
-    where activity_type_id = (select badminton_id from fixtures)),
+    where activity_type_id = (select badminton_id from fixtures) and min_participants = 2),
   3,
-  '羽球匿名需求卡之人頭數應為 3（已加入者，排除 LEFT）'
+  '羽球 2–4 人匿名需求卡之人頭數應為 3（已加入者，排除 LEFT）'
 );
 
 select is(
   (select request_count from get_campus_demands('NYCU'::school, (select campus from fixtures))
-    where activity_type_id = (select badminton_id from fixtures)),
+    where activity_type_id = (select badminton_id from fixtures) and min_participants = 2),
   2,
-  '羽球需求卡之組數應為 2'
+  '羽球 2–4 人需求卡之組數應為 2'
+);
+
+select is(
+  (select person_count from get_campus_demands('NYCU'::school, (select campus from fixtures))
+    where activity_type_id = (select badminton_id from fixtures) and min_participants = 6),
+  1,
+  '羽球 6–8 人匿名需求卡之人頭數應為 1'
 );
 
 -- 2. 驗證程度欄位正確傳出
 select is(
   (select sport_level from get_campus_demands('NYCU'::school, (select campus from fixtures))
-    where activity_type_id = (select badminton_id from fixtures)),
+    where activity_type_id = (select badminton_id from fixtures) and min_participants = 2),
   'EASY',
   '羽球需求卡之 sport_level 應為 EASY'
 );
@@ -169,15 +191,39 @@ select is(
   '博愛校區不應出現光復校區的羽球需求'
 );
 
--- 6. get_campus_pulse 也應排除已過期需求 (羽球應為 3 而非 4)
+-- 6. get_campus_pulse 也應排除已過期需求 (羽球應為 4 人，排除已過期 1 人)
 select is(
   (select person_count from get_campus_pulse('NYCU'::school, (select campus from fixtures))
     where activity_type_id = (select badminton_id from fixtures)),
-  3,
-  'get_campus_pulse 人頭數應排除已過期的 1 人，維持為 3'
+  4,
+  'get_campus_pulse 人頭數應排除已過期的 1 人，維持為 4'
 );
 
--- 7. 已刪除帳號被 ACCOUNT_DELETED 擋下
+-- 7. 匿名性保證：RPC 回傳欄位中絕不包含任何個資或請求識別碼 (owner_id, user_id, request_id, display_name, email)
+select ok(
+  not exists (
+    select 1
+      from information_schema.parameters
+     where specific_schema = 'public'
+       and specific_name like 'get_campus_demands%'
+       and parameter_mode in ('OUT', 'TABLE')
+       and parameter_name in ('owner_id', 'user_id', 'request_id', 'display_name', 'email', 'avatar_url')
+  ),
+  'get_campus_demands 輸出欄位絕不包含任何個資或請求識別碼（保證盲配匿名性）'
+);
+
+-- 8. 匿名性保證：剛好回傳 12 個匿名統計與條件欄位
+select is(
+  (select count(*)::int
+     from information_schema.parameters
+    where specific_schema = 'public'
+      and specific_name like 'get_campus_demands%'
+      and parameter_mode in ('OUT', 'TABLE')),
+  12,
+  'get_campus_demands 輸出剛好 12 個匿名統計與條件欄位'
+);
+
+-- 9. 已刪除帳號被 ACCOUNT_DELETED 擋下
 do $$ begin
   perform set_config('request.jwt.claim.sub', (select deleted_id::text from fixtures), true);
 end $$;
