@@ -186,6 +186,7 @@ Widget _buildHome({
   Activity? activeActivity,
   List<CampusDemandCard>? demands,
   GoRouter? router,
+  DateTime Function()? now,
 }) {
   final overrides = _overrides(
     activeRequest: activeRequest,
@@ -209,7 +210,7 @@ Widget _buildHome({
       theme: AppTheme.light,
       home: CreateRequestScreen(
         submissionGateway: gateway,
-        now: () => _fixedNow,
+        now: now ?? () => _fixedNow,
       ),
     ),
   );
@@ -374,4 +375,73 @@ void main() {
     // 驗證導航至等待室
     expect(find.text('進入等待室：req-new-123'), findsOneWidget);
   });
+
+  testWidgets('場景 6：需求卡最早時間已過但尚未過期，加入時最早時間推進至當前時間 now()', (tester) async {
+    final gateway = _TestSubmissionGateway();
+    // 需求區間：18:00–20:00，當前時間：18:30（最早時間已過 30 分鐘）
+    final currentNow = DateTime(2026, 9, 16, 18, 30);
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => CreateRequestScreen(
+            submissionGateway: gateway,
+            now: () => currentNow,
+          ),
+        ),
+        GoRoute(
+          path: '/waiting-room/:id',
+          builder: (context, state) =>
+              Scaffold(body: Text('進入等待室：${state.pathParameters['id']}')),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_buildHome(
+      gateway: gateway,
+      router: router,
+      now: () => currentNow,
+    ));
+    await tester.pumpAndSettle();
+
+    // 點擊需求卡彈出 Sheet
+    await tester.tap(find.byType(CampusDemandCardWidget));
+    await tester.pumpAndSettle();
+
+    // 點擊「我也想去」
+    await tester.tap(find.text('我也想去'));
+    await tester.pumpAndSettle();
+
+    // 驗證送出的 earliestStart 被推進到 currentNow (18:30)，而非原先的 18:00
+    expect(gateway.calls, ['create', 'submit']);
+    final created = gateway.creates.single;
+    expect(created['earliestStart'], currentNow.toUtc());
+    expect(created['latestStart'], DateTime(2026, 9, 16, 20, 0).toUtc());
+  });
+
+  testWidgets('場景 7：需求卡已過期時，一鍵加入被阻擋並提示錯誤', (tester) async {
+    final gateway = _TestSubmissionGateway();
+    // 需求區間：18:00–20:00，當前時間：20:30（已完全過期）
+    final expiredNow = DateTime(2026, 9, 16, 20, 30);
+
+    await tester.pumpWidget(_buildHome(
+      gateway: gateway,
+      now: () => expiredNow,
+    ));
+    await tester.pumpAndSettle();
+
+    // 點擊需求卡彈出 Sheet
+    await tester.tap(find.byType(CampusDemandCardWidget));
+    await tester.pumpAndSettle();
+
+    // 點擊「我也想去」
+    await tester.tap(find.text('我也想去'));
+    await tester.pumpAndSettle();
+
+    // 驗證未呼叫 gateway 且出現錯誤提示
+    expect(gateway.calls, isEmpty);
+    expect(find.textContaining('此需求的時間區間已過期，無法加入'), findsOneWidget);
+  });
 }
+

@@ -927,12 +927,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       return;
     }
 
+    final now = widget.now();
+    final effectiveEarliest = demand.earliestStart.isBefore(now) ? now : demand.earliestStart;
+    if (!effectiveEarliest.isBefore(demand.latestStart)) {
+      showAppSnackBar(context, '此需求的時間區間已過期，無法加入', kind: AppSnackKind.error);
+      return;
+    }
+
     final snapshot = _RequestSubmissionSnapshot(
       type: type,
       campus: demand.campus,
       minParticipants: demand.minParticipants,
       maxParticipants: demand.maxParticipants,
-      window: (demand.earliestStart, demand.latestStart),
+      window: (effectiveEarliest, demand.latestStart),
       allowDowngrade: true,
       sportLevel: demand.sportLevel,
       sportLevelRating: demand.sportLevelRating,
@@ -948,6 +955,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   ) {
     final type = types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
         types.where((t) => t.name == demand.activityTypeName).firstOrNull;
+
+    final now = widget.now();
+    final isExpired = !now.isBefore(demand.latestStart);
+    final effectiveEarliest = isExpired ? now : (demand.earliestStart.isBefore(now) ? now : demand.earliestStart);
+    final effectiveLatest = isExpired ? now.add(const Duration(hours: 2)) : demand.latestStart;
 
     setState(() {
       if (type != null) {
@@ -971,14 +983,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       _detailedMode = true;
       _nowSelected = false;
       _selectedBucketIndices.clear();
-      _customEarliest = demand.earliestStart;
-      _customLatest = demand.latestStart;
+      _customEarliest = effectiveEarliest;
+      _customLatest = effectiveLatest;
     });
 
     _scrollToSection(_formTopKey);
     showAppSnackBar(
       context,
-      '已為你預填「${demand.activityTypeName}」的條件，可自由微調後送出',
+      isExpired
+          ? '此需求的時間已過期，已為你填入預設時間與「${demand.activityTypeName}」條件'
+          : '已為你預填「${demand.activityTypeName}」的條件，可自由微調後送出',
       kind: AppSnackKind.neutral,
     );
   }
