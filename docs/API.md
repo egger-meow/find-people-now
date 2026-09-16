@@ -191,6 +191,7 @@
 | §12.1.6 檢舉機制，人工審核不做自動懲罰 (v1.18) | §11 `submit_report` + ERD 設計備註 44 |
 | 新手上手引導已讀時間戳 (v1.20，`docs/UI_PLAN.md` §11.1) | 1.3 `PATCH app_user` 的 `onboarding_seen_at` 欄位，不另開 RPC |
 | §2 NYCU 在校生年限軟性提醒，僅提醒不擋門 (v1.21) | 1.6 `check_enrollment_reminder` + ERD 設計備註 45 |
+| §7/§16 配對引擎健壯性與約束完整性 (v1.45) | `fn_run_matching_engine` 全體上下限、成員級雙向封鎖、非傳遞相容性檢查 + `fn_create_activity_from_requests` 支援單筆自足成團 + ERD 設計備註 54 |
 
 ---
 
