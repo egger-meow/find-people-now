@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth/auth_providers.dart';
 import '../generated/activity.dart';
@@ -112,13 +113,25 @@ final campusDemandsLastUpdatedProvider =
       CampusDemandsLastUpdatedNotifier.new,
     );
 
+typedef CampusDemandsFetcher = Future<List<CampusDemandCard>> Function({
+  required SupabaseClient client,
+  required SCHOOL school,
+  required String campus,
+});
+
+final campusDemandsFetcherProvider = Provider<CampusDemandsFetcher>(
+  (ref) => ({required client, required school, required campus}) =>
+      getCampusDemands(client, school: school, campus: campus),
+);
+
 /// 匿名活動需求卡（v1.43）——首頁核心決策介面的資料流：
 /// 採 30 秒輪詢機制，每次刷新成功即更新 [campusDemandsLastUpdatedProvider]。
 final campusDemandsProvider = StreamProvider.family<List<CampusDemandCard>, (SCHOOL, String)>((ref, key) {
   final (school, campus) = key;
   final client = ref.watch(supabaseClientProvider);
+  final fetcher = ref.watch(campusDemandsFetcherProvider);
   Future<List<CampusDemandCard>> fetch() async {
-    final results = await getCampusDemands(client, school: school, campus: campus);
+    final results = await fetcher(client: client, school: school, campus: campus);
     ref.read(campusDemandsLastUpdatedProvider.notifier).setTimestamp(DateTime.now());
     return results;
   }

@@ -1357,41 +1357,39 @@ rationale; this section only covers implementation-level findings.
 
 ## v1.44 update: `get_campus_demands` — homepage "Campus Demands" & anonymous activity demand cards
 
-New feature. Migration `20260916000000_get_campus_demands.sql` adds
-**`get_campus_demands(p_school, p_campus, p_time_filter text default 'all', p_now timestamptz default now())`**
+New feature. Migration `20260916000000_campus_demand_cards.sql` adds
+**`get_campus_demands(p_school school, p_campus text)`**
 (`SECURITY DEFINER`, returns aggregate anonymous demand card rows).
 
 1. **Evolution from `get_campus_pulse`**: While `get_campus_pulse` only provided total
    person counts per activity type without actionable detail, `get_campus_demands` aggregates
-   active `REQUESTING` requests along 9 key activity parameters: `(activity_type_id,
-   campus, earliest_start, latest_start, min_participants, max_participants, sport_level,
-   sport_level_rating, study_target)`.
-2. **Filtering & Freshness**: Excludes expired requests (`latest_start <= p_now`). Supports
-   four time filters:
-   - `all`: All active non-expired requests
-   - `now`: Currently starting (`earliest_start <= p_now AND latest_start >= p_now`)
-   - `today`: Starting before the end of the current local day
-   - `tomorrow`: Starting between tomorrow 00:00 and tomorrow 23:59:59
-3. **Headcount & Group Count**: Aggregates `count(distinct rm.id)` over `JOINED` members as
-   `person_count`, alongside `count(distinct r.id)` as `request_count`.
+   active `REQUESTING` requests along activity parameters and exact headcount bounds: `(activity_type_id,
+   at.name, campus, earliest_start, latest_start, sport_level, sport_level_rating, study_target,
+   min_participants, max_participants)`. Headcount bounds are part of the grouping to prevent synthetic ranges.
+2. **Filtering & Freshness**: Excludes expired requests (`mr.latest_start > now()`). Time filters
+   (`all`, `now`, `today`, `tomorrow`) are performed on the client side via interval overlap
+   (including cross-day demand interval support and explicit end date labels).
+3. **Headcount & Group Count**: Aggregates `count(distinct rm.user_id)` over `JOINED` members as
+   `person_count` (excluding `LEFT` members), alongside `count(distinct mr.id)` as `request_count`.
 4. **Anonymity & Blind Matching Guarantee**: Returns no user IDs, request IDs, or
    personal identifiers. Strictly adheres to the blind-matching principle (SPEC §11).
 5. **Client Implementation**:
    - DTO and RPC wrapper in `lib/rpc/campus_demand_rpc.dart` (`getCampusDemands`).
    - Providers in `lib/match/match_providers.dart` (`campusDemandsProvider`,
-     `selectedTimeFilterProvider`, `selectedCampusProvider`, `campusDemandsLastUpdatedProvider`).
+     `campusDemandsFetcherProvider`, `selectedTimeFilterProvider`, `selectedCampusProvider`, `campusDemandsLastUpdatedProvider`).
    - Polling cadence: 30 seconds periodic timer stream (avoiding Realtime table leaks).
    - UI: `CampusDemandsSection`, `CampusDemandCardWidget`, and `ActivityDemandDetailSheet` in
      `lib/match/widgets/`.
-   - Actions: Direct participation via "我也想去" (calls `create_request` + `submit_request`) and
+   - Actions: Direct participation via "我也想去" (advancing start time to `now` if already in progress and calling `create_request` + `submit_request`) and
      form customization via "以此條件微調" (pre-populates form and auto-scrolls).
    - Cooldown & Active State protection: Replaces blocking modal screens with non-intrusive
      `PinnedActiveStatusCard` while disabling bottom submission buttons with actionable reasons.
 6. **Testing**:
-   - pgTAP: `supabase/tests/database/41_campus_demands.test.sql` (auth validation, time filters,
-     expired filtering, headcount aggregation, grouping).
+   - pgTAP: `supabase/tests/database/28_campus_demand_cards.test.sql` (auth validation,
+     expired filtering, headcount aggregation, grouping without synthetic ranges, anonymity guarantees).
    - Dart tests: `test/campus_demand_rpc_test.dart`, `test/campus_demands_provider_test.dart`,
      `test/campus_demand_card_widget_test.dart`, `test/campus_demands_section_test.dart`,
+     `test/activity_demand_detail_sheet_test.dart`,
      `test/pinned_active_status_card_test.dart`, `test/create_request_screen_home_flow_test.dart`.
 
 ## Error codes documented in API.md but never raised
