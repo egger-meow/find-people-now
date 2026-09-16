@@ -12,6 +12,7 @@ import '../generated/request_member.dart';
 import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/auth_profile_rpc.dart';
+import '../rpc/campus_demand_rpc.dart';
 import '../rpc/match_request_rpc.dart' show decodeMatchRequest;
 
 /// Whether the signed-in user has an `app_user` row yet (`complete_profile`
@@ -57,6 +58,74 @@ final campusPulseProvider =
   late final StreamController<List<CampusPulseEntry>> controller;
   Timer? timer;
   controller = StreamController<List<CampusPulseEntry>>(
+    onListen: () {
+      fetch().then(controller.add).catchError(controller.addError);
+      timer = Timer.periodic(const Duration(seconds: 30), (_) {
+        fetch().then(controller.add).catchError(controller.addError);
+      });
+    },
+    onCancel: () => timer?.cancel(),
+  );
+  ref.onDispose(() {
+    timer?.cancel();
+    controller.close();
+  });
+  return controller.stream;
+});
+
+/// 使用者目前選定的校區（null 代表尚未手動變更，fallback 優先使用
+/// app_user.default_campus 或 campusOptions.first）。
+/// 供首頁需求卡、提醒、配對表單統一監聽與同步。
+class SelectedCampusNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setCampus(String? campus) => state = campus;
+}
+
+final selectedCampusProvider =
+    NotifierProvider<SelectedCampusNotifier, String?>(SelectedCampusNotifier.new);
+
+/// 首頁需求卡的時間篩選器（全部/現在/今天/明天）
+class SelectedTimeFilterNotifier extends Notifier<DemandTimeFilter> {
+  @override
+  DemandTimeFilter build() => DemandTimeFilter.all;
+
+  void setFilter(DemandTimeFilter filter) => state = filter;
+}
+
+final selectedTimeFilterProvider =
+    NotifierProvider<SelectedTimeFilterNotifier, DemandTimeFilter>(
+      SelectedTimeFilterNotifier.new,
+    );
+
+/// 需求卡上次成功獲取的時間戳（供 UI 呈現「剛剛更新」或更新時間標註）
+class CampusDemandsLastUpdatedNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void setTimestamp(DateTime? time) => state = time;
+}
+
+final campusDemandsLastUpdatedProvider =
+    NotifierProvider<CampusDemandsLastUpdatedNotifier, DateTime?>(
+      CampusDemandsLastUpdatedNotifier.new,
+    );
+
+/// 匿名活動需求卡（v1.43）——首頁核心決策介面的資料流：
+/// 採 30 秒輪詢機制，每次刷新成功即更新 [campusDemandsLastUpdatedProvider]。
+final campusDemandsProvider = StreamProvider.family<List<CampusDemandCard>, (SCHOOL, String)>((ref, key) {
+  final (school, campus) = key;
+  final client = ref.watch(supabaseClientProvider);
+  Future<List<CampusDemandCard>> fetch() async {
+    final results = await getCampusDemands(client, school: school, campus: campus);
+    ref.read(campusDemandsLastUpdatedProvider.notifier).setTimestamp(DateTime.now());
+    return results;
+  }
+
+  late final StreamController<List<CampusDemandCard>> controller;
+  Timer? timer;
+  controller = StreamController<List<CampusDemandCard>>(
     onListen: () {
       fetch().then(controller.add).catchError(controller.addError);
       timer = Timer.periodic(const Duration(seconds: 30), (_) {
