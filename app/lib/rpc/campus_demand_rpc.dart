@@ -70,6 +70,11 @@ class CampusDemandCard {
       earliestStart.month,
       earliestStart.day,
     );
+    final endDate = DateTime(
+      latestStart.year,
+      latestStart.month,
+      latestStart.day,
+    );
     final dayDiff = startDate.difference(today).inDays;
 
     String datePrefix;
@@ -79,6 +84,18 @@ class CampusDemandCard {
       datePrefix = '明天';
     } else {
       datePrefix = '${earliestStart.month}月${earliestStart.day}日';
+    }
+
+    final endDayDiff = endDate.difference(today).inDays;
+    String endDatePrefix;
+    if (endDayDiff == 0) {
+      endDatePrefix = '今天';
+    } else if (endDayDiff == 1) {
+      endDatePrefix = '明天';
+    } else if (endDayDiff == 2) {
+      endDatePrefix = '後天';
+    } else {
+      endDatePrefix = '${latestStart.month}月${latestStart.day}日';
     }
 
     final hour = earliestStart.hour;
@@ -95,13 +112,18 @@ class CampusDemandCard {
       bucketName = '晚上';
     }
 
+    final isCrossDay = !startDate.isAtSameMomentAs(endDate);
+    final endFormatted = isCrossDay
+        ? '$endDatePrefix ${_formatTime(latestStart)}'
+        : _formatTime(latestStart);
+
     // Check if it's "now" (starts within 30 min and already or about to start)
     final diffMinutes = earliestStart.difference(now).inMinutes;
     if (diffMinutes >= -15 && diffMinutes <= 15 && latestStart.difference(earliestStart).inMinutes <= 45) {
-      return '現在 ${_formatTime(earliestStart)}–${_formatTime(latestStart)} 可開始';
+      return '現在 ${_formatTime(earliestStart)}–$endFormatted 可開始';
     }
 
-    return '$datePrefix$bucketName ${_formatTime(earliestStart)}–${_formatTime(latestStart)} 可開始';
+    return '$datePrefix$bucketName ${_formatTime(earliestStart)}–$endFormatted 可開始';
   }
 
   String get honestSignalText {
@@ -118,12 +140,17 @@ class CampusDemandCard {
 
   bool matchesFilter(DemandTimeFilter filter, {DateTime? relativeTo}) {
     final now = relativeTo ?? DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
-    final startDate = DateTime(
-      earliestStart.year,
-      earliestStart.month,
-      earliestStart.day,
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+    final tomorrowStart = todayStart.add(const Duration(days: 1));
+    final tomorrowEnd = DateTime(
+      tomorrowStart.year,
+      tomorrowStart.month,
+      tomorrowStart.day,
+      23,
+      59,
+      59,
+      999,
     );
 
     switch (filter) {
@@ -133,9 +160,12 @@ class CampusDemandCard {
         return earliestStart.isBefore(now.add(const Duration(minutes: 30))) &&
             latestStart.isAfter(now);
       case DemandTimeFilter.today:
-        return startDate.isAtSameMomentAs(today);
+        return !earliestStart.isAfter(todayEnd) &&
+            !latestStart.isBefore(todayStart) &&
+            latestStart.isAfter(now);
       case DemandTimeFilter.tomorrow:
-        return startDate.isAtSameMomentAs(tomorrow);
+        return !earliestStart.isAfter(tomorrowEnd) &&
+            !latestStart.isBefore(tomorrowStart);
     }
   }
 }

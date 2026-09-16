@@ -102,5 +102,55 @@ void main() {
       expect(tomorrowCard.matchesFilter(DemandTimeFilter.today, relativeTo: now), isFalse);
       expect(tomorrowCard.matchesFilter(DemandTimeFilter.tomorrow, relativeTo: now), isTrue);
     });
+
+    test('formats cross-day time slot label with explicit next day prefix', () {
+      final crossDayCard = CampusDemandCard(
+        activityTypeId: '1',
+        activityTypeName: '羽球',
+        campus: '光復校區',
+        earliestStart: DateTime(2026, 9, 16, 23, 0),
+        latestStart: DateTime(2026, 9, 17, 1, 0),
+        sportLevel: null,
+        sportLevelRating: null,
+        studyTarget: null,
+        minParticipants: 2,
+        maxParticipants: 4,
+        personCount: 1,
+        requestCount: 1,
+      );
+
+      final label = crossDayCard.timeSlotLabel(relativeTo: DateTime(2026, 9, 16, 20, 0));
+      expect(label, equals('今天晚上 23:00–明天 01:00 可開始'));
+    });
+
+    test('cross-day demand matches both today and tomorrow filters when overlapping', () {
+      final crossDayCard = CampusDemandCard(
+        activityTypeId: '1',
+        activityTypeName: '羽球',
+        campus: '光復校區',
+        earliestStart: DateTime(2026, 9, 16, 23, 0),
+        latestStart: DateTime(2026, 9, 17, 1, 0),
+        sportLevel: null,
+        sportLevelRating: null,
+        studyTarget: null,
+        minParticipants: 2,
+        maxParticipants: 4,
+        personCount: 1,
+        requestCount: 1,
+      );
+
+      // 1. 今天 22:00（跨日需求尚未開始）：在「今天」與「明天」篩選皆應出現
+      final beforeMidnight = DateTime(2026, 9, 16, 22, 0);
+      expect(crossDayCard.matchesFilter(DemandTimeFilter.today, relativeTo: beforeMidnight), isTrue);
+      expect(crossDayCard.matchesFilter(DemandTimeFilter.tomorrow, relativeTo: beforeMidnight), isTrue);
+
+      // 2. 過午夜 00:30（處於跨日區間中）：在當天（9/17）「今天」篩選仍有效可見
+      final afterMidnight = DateTime(2026, 9, 17, 0, 30);
+      expect(crossDayCard.matchesFilter(DemandTimeFilter.today, relativeTo: afterMidnight), isTrue);
+
+      // 3. 01:30（已過 latestStart 01:00）：已過期，不再出現在「今天」
+      final afterEnd = DateTime(2026, 9, 17, 1, 30);
+      expect(crossDayCard.matchesFilter(DemandTimeFilter.today, relativeTo: afterEnd), isFalse);
+    });
   });
 }
