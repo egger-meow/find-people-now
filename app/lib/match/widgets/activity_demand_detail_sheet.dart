@@ -23,7 +23,7 @@ Future<void> showActivityDemandDetailSheet(
 }) {
   return showAppSheet(
     context,
-    builder: (sheetContext) => _ActivityDemandDetailSheetContent(
+    builder: (sheetContext) => ActivityDemandDetailSheet(
       demand: demand,
       canParticipate: canParticipate,
       disabledReason: disabledReason,
@@ -34,8 +34,9 @@ Future<void> showActivityDemandDetailSheet(
   );
 }
 
-class _ActivityDemandDetailSheetContent extends StatelessWidget {
-  const _ActivityDemandDetailSheetContent({
+class ActivityDemandDetailSheet extends StatelessWidget {
+  const ActivityDemandDetailSheet({
+    super.key,
     required this.demand,
     required this.canParticipate,
     this.disabledReason,
@@ -293,8 +294,12 @@ class _DetailRow extends StatelessWidget {
     final textTheme = theme.textTheme;
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+        Padding(
+          padding: const EdgeInsets.only(top: 2.0),
+          child: Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+        ),
         const SizedBox(width: AppSpacing.xs),
         Text(
           label,
@@ -302,11 +307,14 @@ class _DetailRow extends StatelessWidget {
             color: scheme.onSurfaceVariant,
           ),
         ),
-        const Spacer(),
-        Text(
-          value,
-          style: textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w600,
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
