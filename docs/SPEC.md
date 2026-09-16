@@ -318,7 +318,14 @@
 >    - 籃球/羽球/桌球：等階序數相同或相鄰 1 級（distance ≤ 1）視為相容
 >    - 網球：NTRP 差值 ≤ 0.5 級（或 wildcard）視為相容
 >    - 桌球選填積分（`sport_level_rating`）為輔助資訊（可供配對後展示、未來排序參考），**不作為硬性否決閘門**；只要粗粒度實力等級相容（或未指定），即判定相容，未知/未填積分絕不降低相容性。
-> 4. 🟢 **維持既有簡潔人數模型**：不引入 active/inactive players、上場/場下、先發/替補、輪替容量等任何複雜抽象，維持純粹的 `min_participants` 與 `max_participants`。
+> **v1.44 變更紀錄**（首頁改版為匿名活動需求卡決策介面、時間篩選、校區同步與置頂進行中狀態，第 3、13 節）：
+> 1. 🟢 **首頁決策核心重組**：推翻原本僅展示純文字人氣計數且不可互動的 `_CampusPulseBanner`，全面改版為以**匿名活動需求卡**（`CampusDemandCard`）為核心視覺決策介面，引導使用者「先看見大家想做什麼、再決定加入或自己揪」。
+> 2. 🟢 **新增 `rpc: get_campus_demands(p_school, p_campus, p_time_filter, p_now)`**：`SECURITY DEFINER`，只查詢 `status = 'REQUESTING'` 且 `latest_start > p_now` 的有效需求，依 9 維條件分組聚合，回傳 `person_count`（實際等待中人數）與 `request_count`（組數），並支援 `all` / `now` / `today` / `tomorrow` 時間維度篩選。完全匿名，恪守盲配界限。
+> 3. 🟢 **活動需求詳情與雙重行動路徑**：點擊卡片彈出 `ActivityDemandDetailSheet`，提供：
+>    - **我也想去**：直接以該卡片之相容條件呼叫 `create_request` 與 `submit_request`，一鍵加入配對池進入等待室。
+>    - **以此條件微調**：自動將該卡片的類型、校區、時間範圍、程度、人數帶入下方發起表單，並平滑滾動至表單頂部，降低輸入摩擦。
+> 4. 🟢 **單一校區狀態同步（Single Source of Truth）**：以 `selectedCampusProvider` 統一首頁需求卡、提醒訂閱與配對發起表單之校區，校區切換即時連動全頁資料。
+> 5. 🟢 **進行中狀態解耦與置頂通知卡**：移除舊版整頁阻擋卡（`_ActiveRequestBlock` / `_ActiveActivityBlock`），改以頁面頂端的 `PinnedActiveStatusCard` 引導使用者前往等待室或活動房間，讓使用者隨時可瀏覽校園動態；下方表單送出按鈕則進行防呆停用與明確原因提示。
 
 ---
 
