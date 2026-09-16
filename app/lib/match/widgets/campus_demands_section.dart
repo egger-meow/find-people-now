@@ -106,9 +106,9 @@ class CampusDemandsSection extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.local_fire_department_rounded,
+                  Icons.explore_outlined,
                   size: 22,
-                  color: AppColors.warmYellow,
+                  color: scheme.primary,
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
@@ -119,6 +119,7 @@ class CampusDemandsSection extends ConsumerWidget {
                 ),
               ],
             ),
+
             if (availableCampuses.length > 1)
               InkWell(
                 onTap: () => _showCampusPicker(context),

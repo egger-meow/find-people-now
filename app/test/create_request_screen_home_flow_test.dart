@@ -266,16 +266,16 @@ void main() {
     expect(find.text('你已有進行中的配對，請先前往等待室或取消後再發起新配對'), findsOneWidget);
     expect(find.text('已在配對等待室中'), findsOneWidget);
 
-    // 點擊需求卡開啟詳情 Sheet，確認「我也想去」停用
+    // 點擊需求卡開啟詳情 Sheet，確認「以相容條件加入配對」停用
     await tester.tap(find.byType(CampusDemandCardWidget));
     await tester.pumpAndSettle();
 
     expect(find.text('匿名活動需求確認'), findsOneWidget);
     expect(find.text('你已在配對等待室中，無法同時加入其他活動'), findsOneWidget);
 
-    // 驗證「我也想去」按鈕不可點擊
+    // 驗證「以相容條件加入配對」按鈕不可點擊
     final participateButton = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '我也想去'),
+      find.widgetWithText(FilledButton, '以相容條件加入配對'),
     );
     expect(participateButton.onPressed, isNull);
   });
@@ -306,7 +306,7 @@ void main() {
     expect(find.text('你目前有進行中的活動，請先前往活動或結束後再發起新配對'), findsOneWidget);
   });
 
-  testWidgets('場景 4：點擊需求卡「以此條件微調」，成功預填表單並滾動定位', (tester) async {
+  testWidgets('場景 4：點擊需求卡「調整條件後發起」，成功預填表單並滾動定位', (tester) async {
     final gateway = _TestSubmissionGateway();
     await tester.pumpWidget(_buildHome(gateway: gateway));
     await tester.pumpAndSettle();
@@ -317,8 +317,8 @@ void main() {
 
     expect(find.text('匿名活動需求確認'), findsOneWidget);
 
-    // 點擊「以此條件微調」
-    await tester.tap(find.textContaining('以此條件微調'));
+    // 點擊「調整條件後發起」
+    await tester.tap(find.textContaining('調整條件後發起'));
     await tester.pumpAndSettle();
 
     // Sheet 關閉
@@ -332,7 +332,7 @@ void main() {
     expect(find.text('8–10 級'), findsWidgets);
   });
 
-  testWidgets('場景 5：點擊需求卡「我也想去」，直接呼叫 gateway.create 與 submit 建立配對並導航', (tester) async {
+  testWidgets('場景 5：點擊需求卡「以相容條件加入配對」，直接呼叫 gateway.create 與 submit 建立配對並導航', (tester) async {
     final gateway = _TestSubmissionGateway();
     final router = GoRouter(
       initialLocation: '/',
@@ -359,9 +359,10 @@ void main() {
     await tester.tap(find.byType(CampusDemandCardWidget));
     await tester.pumpAndSettle();
 
-    // 點擊「我也想去」
-    await tester.tap(find.text('我也想去'));
+    // 點擊「以相容條件加入配對」
+    await tester.tap(find.text('以相容條件加入配對'));
     await tester.pumpAndSettle();
+
 
     // 驗證 gateway 呼叫
     expect(gateway.calls, ['create', 'submit']);
@@ -409,8 +410,8 @@ void main() {
     await tester.tap(find.byType(CampusDemandCardWidget));
     await tester.pumpAndSettle();
 
-    // 點擊「我也想去」
-    await tester.tap(find.text('我也想去'));
+    // 點擊「以相容條件加入配對」
+    await tester.tap(find.text('以相容條件加入配對'));
     await tester.pumpAndSettle();
 
     // 驗證送出的 earliestStart 被推進到 currentNow (18:30)，而非原先的 18:00
@@ -435,9 +436,10 @@ void main() {
     await tester.tap(find.byType(CampusDemandCardWidget));
     await tester.pumpAndSettle();
 
-    // 點擊「我也想去」
-    await tester.tap(find.text('我也想去'));
+    // 點擊「以相容條件加入配對」
+    await tester.tap(find.text('以相容條件加入配對'));
     await tester.pumpAndSettle();
+
 
     // 驗證未呼叫 gateway 且出現錯誤提示
     expect(gateway.calls, isEmpty);

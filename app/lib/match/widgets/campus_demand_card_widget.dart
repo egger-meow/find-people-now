@@ -130,13 +130,13 @@ class CampusDemandCardWidget extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
 
-            // 底部列：誠實訊號 + 看看條件按鈕
+            // 底部列：客觀誠實訊號 + 查看詳情按鈕（明確回答「多少人在等」與「我如何參與」）
             Row(
               children: [
                 Icon(
-                  Icons.local_fire_department_rounded,
+                  Icons.people_outline_rounded,
                   size: 18,
-                  color: AppColors.warmYellow,
+                  color: scheme.primary,
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
@@ -166,7 +166,7 @@ class CampusDemandCardWidget extends StatelessWidget {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('看看條件'),
+                      Text('查看詳情'),
                       SizedBox(width: 2),
                       Icon(Icons.chevron_right_rounded, size: 16),
                     ],
@@ -174,6 +174,7 @@ class CampusDemandCardWidget extends StatelessWidget {
                 ),
               ],
             ),
+
           ],
         ),
       ),

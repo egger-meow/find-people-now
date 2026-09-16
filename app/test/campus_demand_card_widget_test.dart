@@ -41,9 +41,9 @@ void main() {
     expect(find.textContaining('18:00'), findsOneWidget);
     expect(find.text('光復校區'), findsOneWidget);
     expect(find.textContaining('2 人在找球友'), findsOneWidget);
-    expect(find.text('看看條件'), findsOneWidget);
+    expect(find.text('查看詳情'), findsOneWidget);
 
-    await tester.tap(find.text('看看條件'));
+    await tester.tap(find.text('查看詳情'));
     expect(tapped, isTrue);
   });
 
@@ -76,10 +76,10 @@ void main() {
 
     expect(find.text('羽球'), findsWidgets);
     expect(find.text('光復校區'), findsWidgets);
-    expect(find.textContaining('盲配安全承諾'), findsOneWidget);
-    expect(find.text('我也想去'), findsOneWidget);
+    expect(find.textContaining('成團前全員匿名'), findsOneWidget);
+    expect(find.text('以相容條件加入配對'), findsOneWidget);
 
-    await tester.tap(find.text('我也想去'));
+    await tester.tap(find.text('以相容條件加入配對'));
     expect(participated, isTrue);
   });
 
@@ -109,7 +109,7 @@ void main() {
     await tester.tap(find.text('Open Sheet'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('以此條件微調...'));
+    await tester.tap(find.text('調整條件後發起...'));
     expect(customized, isTrue);
   });
 
@@ -141,8 +141,9 @@ void main() {
 
     expect(find.textContaining('你已有進行中的配對，暫無法加入'), findsOneWidget);
     final participateButton = tester.widget<AppButton>(
-      find.widgetWithText(AppButton, '我也想去'),
+      find.widgetWithText(AppButton, '以相容條件加入配對'),
     );
     expect(participateButton.onPressed, isNull);
   });
 }
+

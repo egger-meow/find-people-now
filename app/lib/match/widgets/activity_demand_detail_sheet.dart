@@ -167,62 +167,58 @@ class ActivityDemandDetailSheet extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
 
-          // 誠實狀態提示
+          // 整合式配對說明與盲配承諾（避免重複框層疊，消除「加入指定團體」之誤解）
           Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
+            padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(AppRadius.md),
             ),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 16,
-                  color: scheme.primary,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    '${demand.honestSignalText}。點擊「我也想去」將以此條件為你送出配對，雙方條件皆相容時由系統自動撮合成團。',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 12,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 16,
+                      color: scheme.primary,
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-
-          // 盲配安全承諾
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.shield_outlined,
-                  size: 16,
-                  color: AppColors.seedGreen,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    '盲配安全承諾：成團前雙方完全匿名，不公開個人大頭照、聯絡方式或學歷背景，純依活動條件撮合。',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 12,
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        '${demand.honestSignalText}。點擊「以相容條件加入配對」將以相同條件為你送出配對需求，由系統在背景撮合相容夥伴，並非直接加入特定私人小組。',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs + 2),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.shield_outlined,
+                      size: 16,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        '成團前全員匿名，不公開大頭照、聯絡方式或個人背景，僅依活動條件撮合。',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -243,12 +239,12 @@ class ActivityDemandDetailSheet extends StatelessWidget {
             ),
           ],
 
-          // 操作按鈕：我也想去 + 以此條件微調
+          // 操作按鈕：以相容條件加入配對 + 調整條件後發起
           SizedBox(
             width: double.infinity,
             child: AppButton(
-              label: '我也想去',
-              icon: Icons.check_circle_outline_rounded,
+              label: '以相容條件加入配對',
+              icon: Icons.how_to_reg_outlined,
               onPressed: canParticipate
                   ? () {
                       AppHaptics.tap();
@@ -267,9 +263,10 @@ class ActivityDemandDetailSheet extends StatelessWidget {
                 Navigator.of(context).pop();
                 onCustomize();
               },
-              child: const Text('以此條件微調...'),
+              child: const Text('調整條件後發起...'),
             ),
           ),
+
         ],
       ),
     );

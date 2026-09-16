@@ -11,28 +11,35 @@ abstract final class AppColors {
   static const skyBlue = Color(0xFF4FB8E8);
   static const warmYellow = Color(0xFFFFC94D);
 
-  /// 反饋 v2：黑底配螢光綠（[neonGreen]，已移除）被回報「像 terminal /
-  /// crypto trading bot」，跟「校園找人」的產品語言不符。改成暖灰底＋米白字
-  /// ＋收斂過的綠色點綴——保留品牌綠的識別度，但不再整頁螢光。
-  ///
-  /// 暗色 surface 系列刻意手動指定、不用 `ColorScheme.fromSeed` 算出來的值：
-  /// fromSeed 的 surface tonal palette 跟著 seed 色相走，用綠色 seed 算出來的
-  /// 暗色背景一定偏綠黑（這正是上一版「黑底也偏綠」的成因）。這裡改用中性灰
-  /// seed 算主要 tonal 結構（outline/error 等未覆寫欄位），再手動蓋上
-  /// surface／primary 家族，兩邊互不干擾。
-  static const darkSurface = Color(0xFF121212);
+  /// 淺色模式：暖米白背景、森林綠主色、自然大地色調
+  static const lightSurface = Color(0xFFFAF8F5);
+  static const forestGreen = Color(0xFF1E5E3A);
+  static const forestGreenContainer = Color(0xFFE2EFE5);
+  static const forestGreenOnContainer = Color(0xFF113822);
+  static const lightSurfaceCard = Color(0xFFF2EFE9);
+  static const lightOutline = Color(0xFFDDD8CE);
+
+  /// 暗色模式：暖炭灰底（告別 #121212 純黑）＋米白字＋柔和鼠尾草綠（告別 #7CFF6B 螢光綠）
+  /// 營造傍晚校園的放鬆感，去除刺眼螢光與操作工具的緊繃感。
+  static const darkSurface = Color(0xFF1C1D1B);
   static const darkOnSurface = Color(0xFFF2EFEA);
   static const darkOnSurfaceVariant = Color(0xFFC9C4BC);
   static const darkOutline = Color(0xFF8A857D);
-  static const darkOutlineVariant = Color(0xFF3A3834);
+  static const darkOutlineVariant = Color(0xFF3E423D);
 
-  /// 收斂過的綠（沿用反饋建議的 #7CFF6B）——比原本螢光綠 (#39FF14) 深、飽和
-  /// 度降一階，當 accent 用還是一眼可辨，但不會整片刺眼。
-  static const accentGreen = Color(0xFF7CFF6B);
-  static const accentGreenOn = Color(0xFF0C2B0C);
-  static const accentGreenContainer = Color(0xFF1E3B1D);
-  static const accentGreenOnContainer = Color(0xFFB7F0B4);
+  /// 柔和鼠尾草綠（取代刺眼螢光綠 #7CFF6B）
+  static const sageGreen = Color(0xFF92BFA0);
+  static const sageGreenOn = Color(0xFF133820);
+  static const sageGreenContainer = Color(0xFF263B2F);
+  static const sageGreenOnContainer = Color(0xFFD7E8DC);
+
+  // 向下相容別名
+  static const accentGreen = sageGreen;
+  static const accentGreenOn = sageGreenOn;
+  static const accentGreenContainer = sageGreenContainer;
+  static const accentGreenOnContainer = sageGreenOnContainer;
 }
+
 
 abstract final class AppRadius {
   static const sm = 12.0;
@@ -90,20 +97,21 @@ class AppSurfaceColors extends ThemeExtension<AppSurfaceColors> {
   });
 
   static const light = AppSurfaceColors(
-    glass: Color(0xE6FFFCF7),
-    glassBorder: Color(0x33726F68),
-    hairline: Color(0x1F56534E),
-    ambientStart: Color(0xFFE5F6EF),
-    ambientEnd: Color(0xFFEAF5FA),
+    glass: Color(0xF2FAF8F5),
+    glassBorder: Color(0x1F726F68),
+    hairline: Color(0x14000000),
+    ambientStart: Color(0xFFE8F3EB),
+    ambientEnd: Color(0xFFEFF5F2),
   );
 
   static const dark = AppSurfaceColors(
-    glass: Color(0xE61A1B1A),
-    glassBorder: Color(0x4DF2EFEA),
-    hairline: Color(0x33F2EFEA),
-    ambientStart: Color(0xFF18382E),
-    ambientEnd: Color(0xFF172F3A),
+    glass: Color(0xF21C1D1B),
+    glassBorder: Color(0x2EFFFFFF),
+    hairline: Color(0x1FFFFFFF),
+    ambientStart: Color(0xFF1B2A22),
+    ambientEnd: Color(0xFF1D2825),
   );
+
 
   final Color glass;
   final Color glassBorder;
@@ -204,51 +212,48 @@ abstract final class AppTheme {
   }
 
   static ThemeData _build(Brightness brightness) {
-    // 暗色模式的 tonal 結構改用中性灰 seed 算（outline/error 等沒手動覆寫的
-    // 欄位才不會沾到綠色調）；亮色模式維持原本品牌綠 seed，沒人反應那邊有
-    // 問題，不動它。
     var scheme = ColorScheme.fromSeed(
       seedColor: brightness == Brightness.dark
           ? Colors.grey
-          : AppColors.seedGreen,
+          : AppColors.forestGreen,
       brightness: brightness,
       secondary: AppColors.skyBlue,
       tertiary: AppColors.warmYellow,
     );
-    if (brightness == Brightness.dark) {
+    if (brightness == Brightness.light) {
+      scheme = scheme.copyWith(
+        surface: AppColors.lightSurface,
+        surfaceContainerLowest: Colors.white,
+        surfaceContainerLow: const Color(0xFFF7F5F0),
+        surfaceContainer: const Color(0xFFF4F0EA),
+        surfaceContainerHigh: AppColors.lightSurfaceCard,
+        surfaceContainerHighest: const Color(0xFFEDE9E2),
+        primary: AppColors.forestGreen,
+        onPrimary: Colors.white,
+        primaryContainer: AppColors.forestGreenContainer,
+        onPrimaryContainer: AppColors.forestGreenOnContainer,
+        outline: AppColors.lightOutline,
+        outlineVariant: const Color(0xFFE5E0D6),
+      );
+    } else {
       scheme = scheme.copyWith(
         surface: AppColors.darkSurface,
-        surfaceContainerLowest: Color.lerp(
-          AppColors.darkSurface,
-          Colors.black,
-          0.35,
-        ),
-        surfaceContainerLow: Color.lerp(
-          AppColors.darkSurface,
-          Colors.white,
-          0.03,
-        ),
-        surfaceContainer: Color.lerp(AppColors.darkSurface, Colors.white, 0.05),
-        surfaceContainerHigh: Color.lerp(
-          AppColors.darkSurface,
-          Colors.white,
-          0.08,
-        ),
-        surfaceContainerHighest: Color.lerp(
-          AppColors.darkSurface,
-          Colors.white,
-          0.12,
-        ),
+        surfaceContainerLowest: const Color(0xFF141513),
+        surfaceContainerLow: const Color(0xFF181917),
+        surfaceContainer: const Color(0xFF1E201E),
+        surfaceContainerHigh: const Color(0xFF242623),
+        surfaceContainerHighest: const Color(0xFF2C2E2A),
         onSurface: AppColors.darkOnSurface,
         onSurfaceVariant: AppColors.darkOnSurfaceVariant,
         outline: AppColors.darkOutline,
         outlineVariant: AppColors.darkOutlineVariant,
-        primary: AppColors.accentGreen,
-        onPrimary: AppColors.accentGreenOn,
-        primaryContainer: AppColors.accentGreenContainer,
-        onPrimaryContainer: AppColors.accentGreenOnContainer,
+        primary: AppColors.sageGreen,
+        onPrimary: AppColors.sageGreenOn,
+        primaryContainer: AppColors.sageGreenContainer,
+        onPrimaryContainer: AppColors.sageGreenOnContainer,
       );
     }
+
 
     return ThemeData(
       useMaterial3: true,

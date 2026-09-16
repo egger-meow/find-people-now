@@ -131,6 +131,64 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: AppSpacing.md),
+                    // 狀態說明、下一步、無負擔退出與通知未驗證守則提醒
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.info_outline_rounded,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              Expanded(
+                                child: Text(
+                                  '配對進行中：\n'
+                                  '• 目前狀態：系統正在比對時段與條件相容的同學。\n'
+                                  '• 下一步驟：撮合成功後將進入雙向意願確認；雙方同意才正式成團。\n'
+                                  '• 退出方式：可隨時取消或離開，無任何冷卻限制與信用扣分。',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.notifications_active_outlined,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              Expanded(
+                                child: Text(
+                                  '提醒：背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: AppSpacing.lg),
                     AppSection(
                       title: '配對條件',
@@ -141,7 +199,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                     AppSection(
                       title: '房間成員',
                       description:
-                          '目前 ${members.length} / ${request.minParticipants} 人，達到門檻就能成團。',
+                          '目前房間內有 ${members.length} 人。系統將依據校區、時段與各方條件綜合撮合，非單純達到人數即可保證成團。',
                       child: Wrap(
                         spacing: AppSpacing.sm,
                         runSpacing: AppSpacing.sm,
@@ -156,6 +214,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
+
                     if (_error != null) ...[
                       Text(
                         _error!,
@@ -388,7 +447,9 @@ class WaitingRoomActionSections extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         AppSection(
           title: '管理配對',
-          description: isOwner ? '取消後房間會關閉，所有成員都會收到通知。' : '退出後你會離開這個配對房間。',
+          description: isOwner
+              ? '取消配對後房間將關閉；此操作無冷卻限制且不影響信譽評分。'
+              : '離開後將退出這個房間；無冷卻限制且不影響信譽評分。',
           child: SizedBox(
             width: double.infinity,
             child: OutlinedButton(
@@ -397,6 +458,7 @@ class WaitingRoomActionSections extends StatelessWidget {
             ),
           ),
         ),
+
       ],
     );
   }

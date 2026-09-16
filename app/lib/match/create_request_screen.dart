@@ -456,30 +456,39 @@ class _AlertSubscriptionSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final subsAsync = ref.watch(myActiveAlertSubscriptionsProvider);
     final subs = subsAsync.value ?? const [];
-    final typeNameById = {for (final type in types) type.id: type.name};
+    if (subs.isEmpty) return const SizedBox.shrink();
 
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.notifications_active_outlined, size: 18),
-              const SizedBox(width: AppSpacing.xs),
-              const Expanded(child: Text('沒等到想要的活動？設定提醒，出現就通知你')),
-              TextButton(
-                onPressed: () => _showSubscribeAlertDialog(
-                  context: context,
-                  ref: ref,
-                  school: school,
-                  campus: campus,
-                  types: types,
+    final typeNameById = {for (final type in types) type.id: type.name};
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.notifications_active_outlined,
+                  size: 16,
+                  color: scheme.primary,
                 ),
-                child: const Text('設定'),
-              ),
-            ],
-          ),
-          if (subs.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  '已啟用的時效提醒：',
+                  style: textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: AppSpacing.xs),
             Wrap(
               spacing: AppSpacing.xs,
@@ -493,11 +502,12 @@ class _AlertSubscriptionSection extends ConsumerWidget {
               ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }
 }
+
 
 /// 讀書「同伴目標」熱門科目下拉（v1.35）——目前是合理猜測的通識/必修科目
 /// 佔位清單，之後再依實際選課資料調整。純粹是輔助輸入，選了就是把文字帶進
@@ -1327,10 +1337,24 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                   selected: _selectedType?.id == type.id,
                                   onTap: () {
                                     final hasParams = _typeHasParameters(type);
+                                    final reliability =
+                                        ref.read(myReliabilityProvider).value;
+                                    final isNew =
+                                        reliability?.isNewUser ?? false;
+                                    var defaultMin =
+                                        type.defaultMinParticipants ?? 3;
+                                    if (isNew && defaultMin <= 2) {
+                                      defaultMin = 3;
+                                    }
+                                    var defaultMax =
+                                        type.defaultMaxParticipants ?? defaultMin;
+                                    if (defaultMax < defaultMin) {
+                                      defaultMax = defaultMin;
+                                    }
                                     setState(() {
                                       _selectedType = type;
-                                      _selectedMinHeadcount = null;
-                                      _selectedMaxHeadcount = null;
+                                      _selectedMinHeadcount = defaultMin;
+                                      _selectedMaxHeadcount = defaultMax;
                                       _selectedSportLevel = null;
                                       _ratingController.clear();
                                       _studyTargetController.clear();
@@ -1738,8 +1762,20 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
+                                      if (_selectedMinHeadcount != null &&
+                                          _selectedMaxHeadcount != null) ...[
+                                        Text(
+                                          '已套用預設規模：$_selectedMinHeadcount 至 $_selectedMaxHeadcount 人（可依需求調整）',
+                                          style: textTheme.bodySmall?.copyWith(
+                                            color: scheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.sm),
+                                      ],
                                       Text('至少', style: textTheme.bodySmall),
                                       const SizedBox(height: AppSpacing.xs),
+
                                       Wrap(
                                         spacing: AppSpacing.sm,
                                         children: [
