@@ -1,0 +1,58 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'web_push_service_stub.dart'
+    if (dart.library.js_interop) 'web_push_service_web.dart';
+
+export 'web_push_service_stub.dart'
+    if (dart.library.js_interop) 'web_push_service_web.dart'
+    show createWebPushService;
+
+enum PushPermissionStatus {
+  defaultStatus,
+  granted,
+  denied,
+  unsupported,
+}
+
+class PushSubscriptionPayload {
+  final String endpoint;
+  final String p256dh;
+  final String auth;
+  final String? userAgent;
+
+  const PushSubscriptionPayload({
+    required this.endpoint,
+    required this.p256dh,
+    required this.auth,
+    this.userAgent,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'endpoint': endpoint,
+    'p256dh': p256dh,
+    'auth': auth,
+    if (userAgent != null) 'user_agent': userAgent,
+  };
+}
+
+abstract class WebPushService {
+  bool get isSupported;
+  Future<PushPermissionStatus> checkPermission();
+  Future<PushPermissionStatus> requestPermission();
+  Future<PushSubscriptionPayload?> subscribe({String? vapidPublicKey});
+  Future<bool> unsubscribe();
+  Future<PushSubscriptionPayload?> getCurrentSubscription();
+  Future<void> syncWithServer(SupabaseClient client, {String? vapidPublicKey});
+  Future<void> onSignOut(SupabaseClient client);
+}
+
+final webPushServiceProvider = Provider<WebPushService>((ref) {
+  return createWebPushService();
+});
+
+final pushPermissionStatusProvider = FutureProvider<PushPermissionStatus>((ref) async {
+  final service = ref.watch(webPushServiceProvider);
+  if (!service.isSupported) return PushPermissionStatus.unsupported;
+  return service.checkPermission();
+});

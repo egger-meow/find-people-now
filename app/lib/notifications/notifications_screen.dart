@@ -203,6 +203,10 @@ class _SectionLabel extends StatelessWidget {
       '你設定的提醒出現了！',
       '${s('campus')} 現在有人在找人一起，趕快去看看',
     ),
+    NOTIFICATION_EVENT_TYPE.PENDING_CONFIRMATION => (
+      '找到相容的夥伴了！',
+      '雙方條件已吻合，請在限時內確認是否一起出發',
+    ),
   };
 }
 
@@ -221,6 +225,13 @@ class _NotificationTile extends ConsumerWidget {
     if (activityId != null && activityId.isNotEmpty) {
       context.push('/activity/$activityId');
       return;
+    }
+    if (notification.eventType == NOTIFICATION_EVENT_TYPE.PENDING_CONFIRMATION) {
+      final requestId = notification.payload['request_id']?.toString();
+      if (requestId != null && requestId.isNotEmpty) {
+        context.push('/waiting-room/$requestId');
+        return;
+      }
     }
     if (notification.eventType == NOTIFICATION_EVENT_TYPE.ALERT_TRIGGERED) {
       // 沒有 activity_id/request_id 可導：這則通知本來就不指向任何一筆特定

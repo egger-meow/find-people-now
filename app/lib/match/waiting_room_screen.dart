@@ -12,6 +12,7 @@ import '../errors/user_error_message.dart';
 import '../generated/match_request.dart';
 import '../generated/supadart_header.dart'
     show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
+import '../notifications/web_push_service.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
@@ -90,7 +91,32 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
           error: (error, stack) => const AppErrorState(),
           data: (request) {
             if (request == null) {
-              return const Center(child: Text('找不到這個配對，可能已經被取消了'));
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 44,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        '找不到這個配對，可能已經結束或已取消',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppButton(
+                        label: '返回首頁',
+                        onPressed: () => context.go('/match'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
             }
             if (isTerminalForWaitingRoom(request.status)) {
               return _TransitionedState(status: request.status);
@@ -165,26 +191,40 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                             ],
                           ),
                           const SizedBox(height: AppSpacing.sm),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.notifications_active_outlined,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: Text(
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final pushStatus = ref.watch(pushPermissionStatusProvider).value ?? PushPermissionStatus.unsupported;
+                              final String pushHint = switch (pushStatus) {
+                                PushPermissionStatus.denied =>
+                                  '提醒：瀏覽器通知權限已被關閉；背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
+                                PushPermissionStatus.granted =>
+                                  '提醒：已允許通知；背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
+                                _ =>
                                   '提醒：背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              };
+
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.notifications_active_outlined,
+                                    size: 16,
                                     color: Theme.of(context).colorScheme.primary,
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.45,
                                   ),
-                                ),
-                              ),
-                            ],
+                                  const SizedBox(width: AppSpacing.xs),
+                                  Expanded(
+                                    child: Text(
+                                      pushHint,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ],
                       ),

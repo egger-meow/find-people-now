@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
@@ -260,7 +261,32 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
           error: (error, stack) => const AppErrorState(),
           data: (activity) {
             if (activity == null) {
-              return const Center(child: Text('找不到這個活動'));
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.event_busy_rounded,
+                        size: 44,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        '找不到這個活動，可能已經結束或已取消',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppButton(
+                        label: '返回我的活動',
+                        onPressed: () => context.go('/my-activities'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
             }
             final locationOptionsAsync = ref.watch(
               activityLocationOptionsStreamProvider(activity.id),
