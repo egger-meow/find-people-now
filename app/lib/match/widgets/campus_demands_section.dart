@@ -189,12 +189,17 @@ class CampusDemandsSection extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: AppSpacing.xs),
                   child: ChoiceChip(
-                    label: Text(filter.label),
-                    selected: activeFilter == filter,
-                    visualDensity: const VisualDensity(
-                      horizontal: -2,
-                      vertical: -2,
+                    label: Text(
+                      filter.label,
+                      softWrap: false,
+                      maxLines: 1,
                     ),
+                    selected: activeFilter == filter,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
+                    ),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     onSelected: (selected) {
                       if (selected) {
                         AppHaptics.selection();
