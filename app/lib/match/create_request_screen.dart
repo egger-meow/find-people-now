@@ -1655,7 +1655,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       key: _campusSectionKey,
                       child: AppSection(
                         title: '校區',
-                        description: '去哪個校區？',
+                        description: '人在哪個校區？',
                         child: campusAsync.when(
                           loading: () => const LoadingIndicator(),
                           error: (error, stack) => const AppErrorState(),
