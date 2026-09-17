@@ -340,7 +340,7 @@ class _MoreInfoSectionState extends State<_MoreInfoSection> {
           if (_expanded) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
-              '性別：${widget.user.gender ?? '未填（僅供展示，不影響配對）'}',
+              '性別：${widget.user.gender ?? '未填'}',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.xs),

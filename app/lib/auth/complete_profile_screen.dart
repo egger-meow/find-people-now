@@ -15,6 +15,7 @@ import '../widgets/app_button.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/department_field.dart';
+import '../widgets/gender_field.dart';
 import 'auth_providers.dart';
 
 /// 完善個人資料 gate——OTP 登入完成後、能進配對頁前的必經畫面
@@ -38,11 +39,11 @@ class CompleteProfileScreen extends ConsumerStatefulWidget {
 class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   final _displayNameController = TextEditingController();
   final _departmentController = TextEditingController();
-  final _genderController = TextEditingController();
   final _bioController = TextEditingController();
   final _contactIgController = TextEditingController();
   final _contactLineController = TextEditingController();
   final _contactDiscordController = TextEditingController();
+  String? _gender;
   DEGREE_LEVEL _degreeLevel = DEGREE_LEVEL.UNDERGRAD;
   String _avatarUrl = '';
   bool _loading = false;
@@ -58,7 +59,6 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   void dispose() {
     _displayNameController.dispose();
     _departmentController.dispose();
-    _genderController.dispose();
     _bioController.dispose();
     _contactIgController.dispose();
     _contactLineController.dispose();
@@ -143,9 +143,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         department: _departmentController.text.trim().isEmpty
             ? null
             : _departmentController.text.trim(),
-        gender: _genderController.text.trim().isEmpty
-            ? null
-            : _genderController.text.trim(),
+        gender: _gender,
         bio: _bioController.text.trim(),
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
@@ -331,9 +329,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                 },
               ),
             const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              controller: _genderController,
-              label: '性別（選填，僅供展示，不影響配對）',
+            GenderField(
+              selectedGender: _gender,
+              onChanged: (value) => setState(() => _gender = value),
             ),
             const SizedBox(height: AppSpacing.md),
             AppTextField(

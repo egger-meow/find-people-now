@@ -93,7 +93,7 @@ class CampusDemandsSection extends ConsumerWidget {
     final lastUpdated = ref.watch(campusDemandsLastUpdatedProvider);
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // 區塊頂部：標題 + 校區切換按鈕
         Wrap(
@@ -271,6 +271,7 @@ class CampusDemandsSection extends ConsumerWidget {
 
             if (filtered.isEmpty) {
               return AppCard(
+                width: double.infinity,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                   child: Column(

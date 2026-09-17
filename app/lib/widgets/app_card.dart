@@ -19,6 +19,7 @@ class AppCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(AppSpacing.md),
     this.onTap,
     this.semanticLabel,
+    this.width,
   });
 
   final Widget child;
@@ -29,11 +30,13 @@ class AppCard extends StatelessWidget {
   /// 預設會一段一段唸、聽起來很零碎。有給這個值時就整張卡片合併成一個可點
   /// 的語意節點，唸出一句完整的描述。
   final String? semanticLabel;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final content = Container(
+      width: width,
       padding: padding,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,

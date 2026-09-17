@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/department_options.dart';
+import '../data/gender_options.dart';
 import '../errors/user_error_message.dart';
 import '../widgets/app_error_state.dart';
 import '../generated/supadart_header.dart' show DEGREE_LEVEL;
@@ -14,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/department_field.dart';
+import '../widgets/gender_field.dart';
 import '../widgets/loading_indicator.dart';
 import 'avatar_upload.dart';
 
@@ -35,11 +37,11 @@ class EditProfileScreen extends ConsumerStatefulWidget {
 class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   final _displayNameController = TextEditingController();
   final _departmentController = TextEditingController();
-  final _genderController = TextEditingController();
   final _bioController = TextEditingController();
   final _contactIgController = TextEditingController();
   final _contactLineController = TextEditingController();
   final _contactDiscordController = TextEditingController();
+  String? _gender;
   DEGREE_LEVEL _degreeLevel = DEGREE_LEVEL.UNDERGRAD;
   String _avatarUrl = '';
   bool _initialized = false;
@@ -51,7 +53,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void dispose() {
     _displayNameController.dispose();
     _departmentController.dispose();
-    _genderController.dispose();
     _bioController.dispose();
     _contactIgController.dispose();
     _contactLineController.dispose();
@@ -124,9 +125,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         department: _departmentController.text.trim().isEmpty
             ? null
             : _departmentController.text.trim(),
-        gender: _genderController.text.trim().isEmpty
-            ? null
-            : _genderController.text.trim(),
+        gender: _gender,
         bio: _bioController.text.trim(),
         contactIg: contactIg.isEmpty ? null : contactIg,
         contactLine: contactLine.isEmpty ? null : contactLine,
@@ -158,7 +157,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               _initialized = true;
               _displayNameController.text = user.displayName;
               _departmentController.text = user.department ?? '';
-              _genderController.text = user.gender ?? '';
+              _gender = GenderOptions.normalize(user.gender);
               _bioController.text = user.bio;
               _contactIgController.text = user.contactIg ?? '';
               _contactLineController.text = user.contactLine ?? '';
@@ -254,9 +253,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   degreeLevel: _degreeLevel,
                 ),
                 const SizedBox(height: AppSpacing.md),
-                AppTextField(
-                  controller: _genderController,
-                  label: '性別（選填，僅供展示，不影響配對）',
+                GenderField(
+                  selectedGender: _gender,
+                  onChanged: (value) => setState(() => _gender = value),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(
