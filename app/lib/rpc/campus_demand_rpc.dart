@@ -23,7 +23,7 @@ class CampusDemandCard {
   final int? sportLevelRating;
   final String? studyTarget;
   final int minParticipants;
-  final int maxParticipants;
+  final int? maxParticipants;
   final int personCount;
   final int requestCount;
 
@@ -37,7 +37,7 @@ class CampusDemandCard {
     this.sportLevelRating,
     this.studyTarget,
     required this.minParticipants,
-    required this.maxParticipants,
+    this.maxParticipants,
     required this.personCount,
     required this.requestCount,
   });
@@ -53,7 +53,7 @@ class CampusDemandCard {
       sportLevelRating: json['sport_level_rating'] as int?,
       studyTarget: json['study_target'] as String?,
       minParticipants: json['min_participants'] as int,
-      maxParticipants: json['max_participants'] as int,
+      maxParticipants: (json['max_participants'] as num?)?.toInt(),
       personCount: json['person_count'] as int,
       requestCount: json['request_count'] as int,
     );
@@ -136,7 +136,10 @@ class CampusDemandCard {
     return '這個時段有 $personCount 人在找$role';
   }
 
-  String get headcountRangeLabel => '最少 $minParticipants 人，最多 $maxParticipants 人';
+  String get headcountRangeLabel =>
+      maxParticipants != null
+          ? '最少 $minParticipants 人，最多 $maxParticipants 人'
+          : '最少 $minParticipants 人';
 
   bool matchesFilter(DemandTimeFilter filter, {DateTime? relativeTo}) {
     final now = relativeTo ?? DateTime.now();

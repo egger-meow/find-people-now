@@ -108,7 +108,7 @@ class _MockSubmissionGateway
     required DateTime earliestStart,
     required DateTime latestStart,
     required int minParticipants,
-    required int maxParticipants,
+    int? maxParticipants,
     required bool allowDowngrade,
     required String? sportLevel,
     int? sportLevelRating,

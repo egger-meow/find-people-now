@@ -162,7 +162,9 @@ class ActivityDemandDetailSheet extends StatelessWidget {
                 _DetailRow(
                   icon: Icons.group_outlined,
                   label: '人數規模',
-                  value: '${demand.minParticipants} 至 ${demand.maxParticipants} 人',
+                  value: demand.maxParticipants != null
+                      ? '${demand.minParticipants} 至 ${demand.maxParticipants} 人'
+                      : '${demand.minParticipants} 人以上',
                 ),
               ],
             ),
@@ -211,7 +213,7 @@ class ActivityDemandDetailSheet extends StatelessWidget {
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
-                        '成團前全員匿名，不公開大頭照、聯絡方式或個人背景，僅依活動條件撮合。',
+                        '撮合完全依條件進行；若為兩人配對，確認階段僅提供基本安全資訊核對，成團前絕不公開任何外部聯絡方式。',
                         style: textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                           height: 1.45,

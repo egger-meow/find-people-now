@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:find_people_now/activities/activity_detail_providers.dart';
 import 'package:find_people_now/activities/activity_detail_screen.dart';
@@ -279,6 +282,57 @@ void main() {
       expect(json.containsKey('email'), isFalse);
       expect(json.containsKey('display_name'), isFalse);
       expect(json.containsKey('contact_ig'), isFalse);
+    });
+
+    testWidgets('pushSyncCoordinatorProvider 監聽 auth 狀態變化觸發同步與登出清理', (tester) async {
+      final mockService = MockWebPushService(permission: PushPermissionStatus.granted);
+      final controller = StreamController<AuthState>.broadcast();
+      final dummyClient = SupabaseClient(
+        'https://mock.supabase.co',
+        'mock-anon-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseClientProvider.overrideWithValue(dummyClient),
+            webPushServiceProvider.overrideWithValue(mockService),
+            authStateProvider.overrideWith((ref) => controller.stream),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              ref.watch(pushSyncCoordinatorProvider);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+
+      expect(mockService.syncCalled, isFalse);
+      expect(mockService.signOutCalled, isFalse);
+
+      final dummySession = Session(
+        accessToken: 'token',
+        tokenType: 'bearer',
+        user: const User(
+          id: 'u1',
+          appMetadata: {},
+          userMetadata: {},
+          aud: 'authenticated',
+          createdAt: '2026-09-17T00:00:00.000Z',
+        ),
+      );
+
+      controller.add(AuthState(AuthChangeEvent.signedIn, dummySession));
+      await tester.pump();
+      expect(mockService.syncCalled, isTrue);
+
+      controller.add(const AuthState(AuthChangeEvent.signedOut, null));
+      await tester.pump();
+      expect(mockService.signOutCalled, isTrue);
+
+      await controller.close();
     });
   });
 }

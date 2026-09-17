@@ -76,31 +76,44 @@ begin
   update fixtures set user_a = v_a, user_b = v_b, user_c = v_c, act_type = v_t, loc_id = v_loc;
 
   -- 需求 1 & 2：成團（User A, User B），建立時間 20 分鐘前
-  insert into match_request (id, owner_id, school, campus, activity_type_id, campus_location_id, earliest_start, latest_start, required_total, status, created_at)
+  insert into match_request (id, owner_id, school, campus, activity_type_id, earliest_start, latest_start, min_participants, max_participants, status, created_at)
   values
-    (v_req1, v_a, 'NYCU', '光復', v_t, v_loc, v_now + interval '1 hour', v_now + interval '2 hours', 2, 'MATCHED', v_now - interval '20 minutes'),
-    (v_req2, v_b, 'NYCU', '光復', v_t, v_loc, v_now + interval '1 hour', v_now + interval '2 hours', 2, 'MATCHED', v_now - interval '20 minutes');
+    (v_req1, v_a, 'NYCU', 'Pilot-Campus', v_t, v_now + interval '1 hour', v_now + interval '2 hours', 2, 4, 'MATCHED', v_now - interval '20 minutes'),
+    (v_req2, v_b, 'NYCU', 'Pilot-Campus', v_t, v_now + interval '1 hour', v_now + interval '2 hours', 2, 4, 'MATCHED', v_now - interval '20 minutes');
+
+  insert into request_member (request_id, user_id, role, status) values
+    (v_req1, v_a, 'OWNER', 'JOINED'),
+    (v_req2, v_b, 'OWNER', 'JOINED');
 
   -- 需求 3：逾時（User C）
-  insert into match_request (id, owner_id, school, campus, activity_type_id, campus_location_id, earliest_start, latest_start, required_total, status, created_at)
+  insert into match_request (id, owner_id, school, campus, activity_type_id, earliest_start, latest_start, min_participants, max_participants, status, created_at)
   values
-    (v_req3, v_c, 'NYCU', '光復', v_t, v_loc, v_now - interval '2 hours', v_now - interval '1 hour', 2, 'EXPIRED', v_now - interval '3 hours');
+    (v_req3, v_c, 'NYCU', 'Pilot-Campus', v_t, v_now - interval '2 hours', v_now - interval '1 hour', 2, 4, 'EXPIRED', v_now - interval '3 hours');
+
+  insert into request_member (request_id, user_id, role, status) values
+    (v_req3, v_c, 'OWNER', 'JOINED');
 
   -- 需求 4：取消（User A 再次發起但取消）
-  insert into match_request (id, owner_id, school, campus, activity_type_id, campus_location_id, earliest_start, latest_start, required_total, status, created_at)
+  insert into match_request (id, owner_id, school, campus, activity_type_id, earliest_start, latest_start, min_participants, max_participants, status, created_at)
   values
-    (v_req4, v_a, 'NYCU', '光復', v_t, v_loc, v_now + interval '1 hour', v_now + interval '2 hours', 2, 'CANCELLED', v_now - interval '10 minutes');
+    (v_req4, v_a, 'NYCU', 'Pilot-Campus', v_t, v_now + interval '1 hour', v_now + interval '2 hours', 2, 4, 'CANCELLED', v_now - interval '10 minutes');
+
+  insert into request_member (request_id, user_id, role, status) values
+    (v_req4, v_a, 'OWNER', 'JOINED');
 
   -- 需求 5：User C 再次發起（使 User C 也成為再次參與者）
-  insert into match_request (id, owner_id, school, campus, activity_type_id, campus_location_id, earliest_start, latest_start, required_total, status, created_at)
+  insert into match_request (id, owner_id, school, campus, activity_type_id, earliest_start, latest_start, min_participants, max_participants, status, created_at)
   values
-    (v_req5, v_c, 'NYCU', '光復', v_t, v_loc, v_now + interval '2 hours', v_now + interval '3 hours', 2, 'MATCHED', v_now - interval '5 minutes');
+    (v_req5, v_c, 'NYCU', 'Pilot-Campus', v_t, v_now + interval '2 hours', v_now + interval '3 hours', 2, 4, 'MATCHED', v_now - interval '5 minutes');
+
+  insert into request_member (request_id, user_id, role, status) values
+    (v_req5, v_c, 'OWNER', 'JOINED');
 
   -- 活動 1：已完成，成立於 10 分鐘前（等待時間 20 - 10 = 10 分鐘）
   -- User A 現場打卡 (arrived_at) -> 證實出席
   -- User B 未打卡但有 ATTENDED 結算事件 -> 證實出席
-  insert into activity (id, school, campus, activity_type_id, campus_location_id, start_time, estimated_end_time, status, created_at)
-  values (v_act1, 'NYCU', '光復', v_t, v_loc, v_now - interval '30 minutes', v_now + interval '30 minutes', 'COMPLETED', v_now - interval '10 minutes');
+  insert into activity (id, school, campus, activity_type_id, activity_location_id, start_time, estimated_end_time, status, created_at)
+  values (v_act1, 'NYCU', 'Pilot-Campus', v_t, null, v_now - interval '30 minutes', v_now + interval '30 minutes', 'COMPLETED', v_now - interval '10 minutes');
 
   insert into activity_member (activity_id, user_id, source_request_id, status, arrived_at)
   values
@@ -112,8 +125,8 @@ begin
 
   -- 活動 2：A4 超時結案（COMPLETED），但無任何人打卡、無結算回報紀錄
   -- 成員 User C（原 req5）
-  insert into activity (id, school, campus, activity_type_id, campus_location_id, start_time, estimated_end_time, status, created_at)
-  values (v_act2, 'NYCU', '光復', v_t, v_loc, v_now - interval '25 hours', v_now - interval '24 hours', 'COMPLETED', v_now - interval '5 minutes');
+  insert into activity (id, school, campus, activity_type_id, activity_location_id, start_time, estimated_end_time, status, created_at)
+  values (v_act2, 'NYCU', 'Pilot-Campus', v_t, null, v_now - interval '25 hours', v_now - interval '24 hours', 'COMPLETED', v_now - interval '5 minutes');
 
   insert into activity_member (activity_id, user_id, source_request_id, status, arrived_at)
   values (v_act2, v_c, v_req5, 'JOINED', null);
@@ -133,7 +146,7 @@ $setup$;
 create temp table metric_result as
 select get_pilot_operational_metrics(
   'NYCU',
-  '光復',
+  'Pilot-Campus',
   now() - interval '24 hours',
   now() + interval '1 hour'
 ) as res;
@@ -166,9 +179,9 @@ select is(
 
 -- 再次參與度驗證
 select is(
-  ((select res from metric_result) -> 'retention' ->> 'repeat_participants')::int,
+  ((select res from metric_result) -> 'retention' ->> 'repeat_request_users')::int,
   2,
-  '重複參與人數應為 2（User A 有 2 需求，User C 有 2 需求）'
+  '重複發起需求人數應為 2（User A 有 2 需求，User C 有 2 需求）'
 );
 
 select * from finish();

@@ -30,7 +30,7 @@
 | :--- | :---: | :--- | :--- |
 | **1. 多少需求成團、等待多久？** | **可回答**（成團部分）<br>**部分未知**（取消部分） | - 成團數：`match_request.status = 'MATCHED'`<br>- 成團等待時長：`activity.created_at - match_request.created_at`<br>- 逾時等待時長：`match_request.latest_start - match_request.created_at` | - **主動取消之等待時長**：資料庫無 `cancelled_at` 欄位，無法計算取消前等待多久，**標示為 UNKNOWN**。 |
 | **2. 成團後是否實際出席？** | **嚴格界線**<br>（有打卡/回報可回答，其餘未知） | - 實徵出席證據 A：`activity_member.arrived_at IS NOT NULL`（成員在現場點擊「我到了」）<br>- 實徵出席證據 B：`user_reliability_event.event_type = 'ATTENDED'`（透過結算回報法定人數確認） | - **關鍵守則**：超時 fallback 結案（A4：24 小時後自動轉 COMPLETED，無人回報或未達法定人數）之活動，**絕對不可將成團當成出席，必須嚴格標記為未驗證／未知出席 (unverified_completion_members, UNKNOWN)**。 |
-| **3. 是否再次參與？** | **可回答** | - 查詢統計區間內活躍的使用者，其歷史累積發起需求或加入活動之總次數是否 $\ge 2$。 | - 僅輸出彙整計數（不重複參與人數、重複參與人數、再次參與率），**絕不揭露任何個別使用者 ID**。 |
+| **3. 是否再次參與？** | **可回答** | - 查詢統計區間內活躍的使用者，分別計算「實際活動參與留存」（歷史累積加入活動 $\ge 2$ 次）與「需求發起留存」（歷史累積發起需求 $\ge 2$ 次）。 | - 僅輸出彙整計數（區分活動參與留存：`unique_activity_participants`, `repeat_activity_participants`, `repeat_activity_participation_rate`，與需求留存：`unique_request_users`, `repeat_request_users`, `repeat_request_rate`），**絕不揭露任何個別使用者 ID**。 |
 | **4. 取消、失敗與人工處理原因？** | **部分可回答** | - **需要人工處理之原因**：`report` 表完整記錄類別（`SPAM`, `HARASSMENT`, `OTHER`）與狀態（`PENDING`/`REVIEWED`）；`feedback` 表記錄自由文字與關聯活動。 | - **取消原因**：`cancel_request` 未收集主觀理由，**標示為 UNKNOWN**。<br>- **通知失敗原因**：Push 遇到 404/410 會自動清理訂閱，但使用者在作業系統層關閉通知或離線無法被被動記錄，**標示為 PARTIALLY_UNKNOWN**。 |
 | **5. 每週維護花多少時間？** | **無法回答**<br>（標示未知） | - 系統與資料庫無工時表。 | - **標示為 UNKNOWN**。需由維護者於每週檢視時以輕量「每週維護工時記錄卡」手動記錄。 |
 
@@ -81,9 +81,12 @@ select get_pilot_operational_metrics(
     "unverified_note": "A4 timeout completion without arrival check-in or settlement is marked as UNKNOWN"
   },
   "retention": {
-    "unique_participants": 11,
-    "repeat_participants": 4,
-    "repeat_participation_rate": 0.364
+    "unique_activity_participants": 11,
+    "repeat_activity_participants": 4,
+    "repeat_activity_participation_rate": 0.364,
+    "unique_request_users": 14,
+    "repeat_request_users": 6,
+    "repeat_request_rate": 0.429
   },
   "issues_and_workload": {
     "total_reports": 1,

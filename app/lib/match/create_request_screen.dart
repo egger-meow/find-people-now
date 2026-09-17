@@ -56,7 +56,7 @@ abstract interface class MatchRequestSubmissionSession {
     required DateTime earliestStart,
     required DateTime latestStart,
     required int minParticipants,
-    required int maxParticipants,
+    int? maxParticipants,
     required bool allowDowngrade,
     required String? sportLevel,
     int? sportLevelRating,
@@ -89,7 +89,7 @@ class _RpcMatchRequestSubmissionSession
     required DateTime earliestStart,
     required DateTime latestStart,
     required int minParticipants,
-    required int maxParticipants,
+    int? maxParticipants,
     required bool allowDowngrade,
     required String? sportLevel,
     int? sportLevelRating,
@@ -547,7 +547,7 @@ class _RequestSubmissionSnapshot {
     required this.type,
     required this.campus,
     required this.minParticipants,
-    required this.maxParticipants,
+    this.maxParticipants,
     required this.window,
     required this.allowDowngrade,
     required this.sportLevel,
@@ -558,7 +558,7 @@ class _RequestSubmissionSnapshot {
   final ActivityType type;
   final String campus;
   final int minParticipants;
-  final int maxParticipants;
+  final int? maxParticipants;
   final (DateTime, DateTime) window;
   final bool allowDowngrade;
   final String? sportLevel;

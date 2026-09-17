@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'errors/user_error_message.dart';
+import 'notifications/web_push_service.dart';
 import 'router/app_router.dart';
 import 'supabase_bootstrap.dart';
 import 'theme/app_theme.dart';
@@ -71,6 +72,7 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(pushSyncCoordinatorProvider);
     final router = ref.watch(goRouterProvider);
     final themeMode = ref.watch(themeModeProvider);
 

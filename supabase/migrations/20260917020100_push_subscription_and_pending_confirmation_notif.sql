@@ -126,7 +126,8 @@ $$;
 grant select, delete on user_push_subscription to authenticated;
 grant execute on function save_push_subscription(text, text, text, text) to authenticated;
 grant execute on function remove_push_subscription(text) to authenticated;
-grant execute on function cleanup_stale_push_subscriptions(text[]) to authenticated, service_role;
+revoke execute on function cleanup_stale_push_subscriptions(text[]) from public, anon, authenticated;
+grant execute on function cleanup_stale_push_subscriptions(text[]) to service_role;
 
 -- -----------------------------------------------------------------------------
 -- 6. commit_match 補齊 PENDING_CONFIRMATION 通知

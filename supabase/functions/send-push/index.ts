@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import webpush from 'npm:web-push@3.6.7'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,21 +37,40 @@ Deno.serve(async (req: Request) => {
   }
 
   const authHeader = req.headers.get('Authorization')
-  if (!authHeader) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY')
   const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY')
+  const vapidSubject = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@findpeoplenow.internal'
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
+
+  // 驗證呼叫者權限：
+  // 1. service_role key 擁有全域發送權限（後端 webhook / cron / matching engine）
+  // 2. 一般使用者 JWT 僅允許向自己的帳號 (targetUserId === caller.id) 發送推播，嚴禁跨帳號代發
+  const isServiceRole = token === serviceRoleKey
+  let callerUserId: string | null = null
+
+  if (!isServiceRole) {
+    const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token)
+    if (authError || !authData?.user) {
+      return new Response(JSON.stringify({ error: 'UNAUTHORIZED', detail: 'INVALID_OR_EXPIRED_TOKEN' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    callerUserId = authData.user.id
+  }
 
   let body: PushRequest
   try {
@@ -66,6 +86,19 @@ Deno.serve(async (req: Request) => {
   let eventType = body.event_type
   let payload = body.payload || {}
 
+  // 若為一般使用者呼叫，嚴格限制只能向自己發送推播（防止跨使用者推播冒用）
+  if (!isServiceRole) {
+    if (targetUserId && targetUserId !== callerUserId) {
+      return new Response(JSON.stringify({ error: 'FORBIDDEN', detail: 'CROSS_USER_PUSH_FORBIDDEN' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (!targetUserId) {
+      targetUserId = callerUserId!
+    }
+  }
+
   // 若傳入 notification_id，自資料庫反查通知內容
   if (body.notification_id) {
     const { data: notif, error: notifError } = await supabaseAdmin
@@ -80,6 +113,15 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    // 一般使用者只能發送屬於自己的 notification
+    if (!isServiceRole && notif.user_id !== callerUserId) {
+      return new Response(JSON.stringify({ error: 'FORBIDDEN', detail: 'CANNOT_SEND_OTHERS_NOTIFICATION' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     targetUserId = notif.user_id
     eventType = notif.event_type
     payload = notif.payload as Record<string, unknown>
@@ -195,26 +237,30 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  // 若有 VAPID 金鑰，發送 Web Push
+  // 若有 VAPID 金鑰，依 Web Push 標準 (RFC 8291 / RFC 8292) 加密與簽名發送
+  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
+
   for (const sub of subscriptions) {
     try {
-      const response = await fetch(sub.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'TTL': '86400',
+      const pushSubscription = {
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.p256dh,
+          auth: sub.auth,
         },
-        body: pushMessagePayload,
+      }
+      await webpush.sendNotification(pushSubscription, pushMessagePayload, {
+        TTL: 86400,
       })
-
-      if (response.status === 201 || response.status === 200) {
-        sentSuccessCount++
-      } else if (response.status === 404 || response.status === 410) {
+      sentSuccessCount++
+    } catch (err: any) {
+      const statusCode = err?.statusCode || err?.status
+      if (statusCode === 404 || statusCode === 410) {
         // 端點已失效（使用者取消訂閱或解除安裝 SW）：標記清理
         staleEndpoints.push(sub.endpoint)
+      } else {
+        console.error(`Push dispatch failed for endpoint ${sub.endpoint}:`, err?.message || err)
       }
-    } catch (_) {
-      // 網路連線例外，不阻斷其餘端點
     }
   }
 
@@ -225,13 +271,14 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  const isDispatchSuccess = subscriptions.length === 0 || sentSuccessCount > 0
   return new Response(JSON.stringify({
-    success: true,
+    success: isDispatchSuccess,
     sentCount: sentSuccessCount,
     cleanedStaleCount: staleEndpoints.length,
     totalSubscriptions: subscriptions.length,
   }), {
-    status: 200,
+    status: isDispatchSuccess ? 200 : 502,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 })

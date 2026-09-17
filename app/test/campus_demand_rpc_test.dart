@@ -152,5 +152,43 @@ void main() {
       final afterEnd = DateTime(2026, 9, 17, 1, 30);
       expect(crossDayCard.matchesFilter(DemandTimeFilter.today, relativeTo: afterEnd), isFalse);
     });
+
+    test('correctly handles nullable max_participants for open-ended groups', () {
+      final openEndedJson = {
+        'activity_type_id': '00000000-0000-0000-0000-000000000002',
+        'activity_type_name': '慢跑',
+        'campus': '光復校區',
+        'earliest_start': '2026-09-16T18:00:00.000Z',
+        'latest_start': '2026-09-16T20:00:00.000Z',
+        'sport_level': null,
+        'sport_level_rating': null,
+        'study_target': null,
+        'min_participants': 2,
+        'max_participants': null,
+        'person_count': 2,
+        'request_count': 1,
+      };
+
+      final card = CampusDemandCard.fromJson(openEndedJson);
+      expect(card.minParticipants, 2);
+      expect(card.maxParticipants, isNull);
+      expect(card.headcountRangeLabel, '最少 2 人');
+
+      final boundedCard = CampusDemandCard(
+        activityTypeId: '1',
+        activityTypeName: '羽球',
+        campus: '光復校區',
+        earliestStart: DateTime(2026, 9, 16, 18, 0),
+        latestStart: DateTime(2026, 9, 16, 20, 0),
+        sportLevel: null,
+        sportLevelRating: null,
+        studyTarget: null,
+        minParticipants: 2,
+        maxParticipants: 4,
+        personCount: 2,
+        requestCount: 1,
+      );
+      expect(boundedCard.headcountRangeLabel, '最少 2 人，最多 4 人');
+    });
   });
 }

@@ -86,7 +86,7 @@ class _CreateInvocation {
   final DateTime earliestStart;
   final DateTime latestStart;
   final int minParticipants;
-  final int maxParticipants;
+  final int? maxParticipants;
   final bool allowDowngrade;
   final String? sportLevel;
   final int? sportLevelRating;
@@ -135,7 +135,7 @@ class _FakeSubmissionGateway
     required DateTime earliestStart,
     required DateTime latestStart,
     required int minParticipants,
-    required int maxParticipants,
+    int? maxParticipants,
     required bool allowDowngrade,
     required String? sportLevel,
     int? sportLevelRating,

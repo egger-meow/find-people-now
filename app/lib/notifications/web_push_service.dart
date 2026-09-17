@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../auth/auth_providers.dart';
 import 'web_push_service_stub.dart'
     if (dart.library.js_interop) 'web_push_service_web.dart';
 
@@ -55,4 +56,22 @@ final pushPermissionStatusProvider = FutureProvider<PushPermissionStatus>((ref) 
   final service = ref.watch(webPushServiceProvider);
   if (!service.isSupported) return PushPermissionStatus.unsupported;
   return service.checkPermission();
+});
+
+final pushSyncCoordinatorProvider = Provider<void>((ref) {
+  final service = ref.watch(webPushServiceProvider);
+  final client = ref.watch(supabaseClientProvider);
+  ref.listen<AsyncValue<AuthState>>(authStateProvider, (previous, next) {
+    final state = next.value;
+    if (state == null) return;
+    if (state.event == AuthChangeEvent.signedIn ||
+        state.event == AuthChangeEvent.tokenRefreshed ||
+        state.event == AuthChangeEvent.initialSession) {
+      if (state.session != null) {
+        service.syncWithServer(client);
+      }
+    } else if (state.event == AuthChangeEvent.signedOut) {
+      service.onSignOut(client);
+    }
+  });
 });

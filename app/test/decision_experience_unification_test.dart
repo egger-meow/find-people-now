@@ -85,9 +85,9 @@ void main() {
     expect(find.text('我也想去'), findsNothing);
     expect(find.text('調整條件後發起...'), findsOneWidget);
 
-    // 整合式說明文字：說明非直接加入私人小組，且成團前完全匿名
+    // 整合式說明文字：說明非直接加入私人小組，且依條件進行撮合
     expect(find.textContaining('並非直接加入特定私人小組'), findsOneWidget);
-    expect(find.textContaining('成團前全員匿名'), findsOneWidget);
+    expect(find.textContaining('撮合完全依條件進行'), findsOneWidget);
   });
 
   testWidgets('等待室清楚標註狀態、下一步、退出說明與推播未驗證警語', (tester) async {
@@ -157,7 +157,7 @@ void main() {
 
     // 1. 目前狀態與下一步
     expect(find.textContaining('目前狀態：系統正在比對時段與條件相容的同學'), findsOneWidget);
-    expect(find.textContaining('下一步驟：撮合成功後將進入雙向意願確認'), findsOneWidget);
+    expect(find.textContaining('下一步驟：兩人配對時將進入限時雙向確認'), findsOneWidget);
     // 2. 退出方式：隨時可退出，無冷卻無扣分
     expect(find.textContaining('退出方式：可隨時取消或離開，無任何冷卻限制與信用扣分'), findsOneWidget);
     // 3. 嚴格守則：通知未驗證前不得承諾離開後會收到通知

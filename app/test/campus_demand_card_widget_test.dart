@@ -76,7 +76,7 @@ void main() {
 
     expect(find.text('羽球'), findsWidgets);
     expect(find.text('光復校區'), findsWidgets);
-    expect(find.textContaining('成團前全員匿名'), findsOneWidget);
+    expect(find.textContaining('撮合完全依條件進行'), findsOneWidget);
     expect(find.text('以相容條件加入配對'), findsOneWidget);
 
     await tester.tap(find.text('以相容條件加入配對'));

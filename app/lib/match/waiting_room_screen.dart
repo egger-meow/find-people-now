@@ -181,7 +181,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                                 child: Text(
                                   '配對進行中：\n'
                                   '• 目前狀態：系統正在比對時段與條件相容的同學。\n'
-                                  '• 下一步驟：撮合成功後將進入雙向意願確認；雙方同意才正式成團。\n'
+                                  '• 下一步驟：兩人配對時將進入限時雙向確認，雙方同意才成團；多人團體達標時將直接成立活動。\n'
                                   '• 退出方式：可隨時取消或離開，無任何冷卻限制與信用扣分。',
                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     height: 1.5,
@@ -203,25 +203,50 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                                   '提醒：背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
                               };
 
-                              return Row(
+                              return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(
-                                    Icons.notifications_active_outlined,
-                                    size: 16,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: AppSpacing.xs),
-                                  Expanded(
-                                    child: Text(
-                                      pushHint,
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.notifications_active_outlined,
+                                        size: 16,
                                         color: Theme.of(context).colorScheme.primary,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.45,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Expanded(
+                                        child: Text(
+                                          pushHint,
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.45,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (pushStatus == PushPermissionStatus.defaultStatus) ...[
+                                    const SizedBox(height: AppSpacing.xs),
+                                    TextButton.icon(
+                                      onPressed: () async {
+                                        final service = ref.read(webPushServiceProvider);
+                                        final newStatus = await service.requestPermission();
+                                        ref.invalidate(pushPermissionStatusProvider);
+                                        if (newStatus == PushPermissionStatus.granted) {
+                                          final client = ref.read(supabaseClientProvider);
+                                          await service.syncWithServer(client);
+                                        }
+                                      },
+                                      icon: const Icon(Icons.notifications_outlined, size: 16),
+                                      label: const Text('開啟配對即時推播通知'),
+                                      style: TextButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        visualDensity: VisualDensity.compact,
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               );
                             },

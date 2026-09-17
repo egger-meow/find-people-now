@@ -168,18 +168,18 @@ begin
     (v_s1_u2, 's1_u2@nycu.edu.tw', 'NYCU', 'S1 U2', 'https://avatar.s1u2', 'UNDERGRAD', 's1_u2_ig'),
     (v_s1_u3, 's1_u3@nycu.edu.tw', 'NYCU', 'S1 U3', 'https://avatar.s1u3', 'UNDERGRAD', 's1_u3_ig');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_s1_u1, v_tennis_id, 'NYCU', v_s1_campus, v_now, v_now + interval '2 hours', 2, 5, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, created_at)
+  values (v_s1_u1, v_tennis_id, 'NYCU', v_s1_campus, v_now, v_now + interval '2 hours', 2, 5, 'REQUESTING', v_now - interval '30 seconds')
   returning * into v_s1_ra;
   insert into request_member (request_id, user_id, role, status) values (v_s1_ra.id, v_s1_u1, 'OWNER', 'JOINED');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_s1_u2, v_tennis_id, 'NYCU', v_s1_campus, v_now, v_now + interval '2 hours', 2, 2, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, created_at)
+  values (v_s1_u2, v_tennis_id, 'NYCU', v_s1_campus, v_now, v_now + interval '2 hours', 2, 2, 'REQUESTING', v_now - interval '20 seconds')
   returning * into v_s1_rb;
   insert into request_member (request_id, user_id, role, status) values (v_s1_rb.id, v_s1_u2, 'OWNER', 'JOINED');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_s1_u3, v_tennis_id, 'NYCU', v_s1_campus, v_now, v_now + interval '2 hours', 2, 5, 'REQUESTING')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, created_at)
+  values (v_s1_u3, v_tennis_id, 'NYCU', v_s1_campus, v_now, v_now + interval '2 hours', 2, 5, 'REQUESTING', v_now - interval '10 seconds')
   returning * into v_s1_rc;
   insert into request_member (request_id, user_id, role, status) values (v_s1_rc.id, v_s1_u3, 'OWNER', 'JOINED');
 
@@ -219,18 +219,18 @@ begin
     (v_s3_u2, 's3_u2@nycu.edu.tw', 'NYCU', 'S3 U2', 'https://avatar.s3u2', 'UNDERGRAD', 's3_u2_ig'),
     (v_s3_u3, 's3_u3@nycu.edu.tw', 'NYCU', 'S3 U3', 'https://avatar.s3u3', 'UNDERGRAD', 's3_u3_ig');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, sport_level)
-  values (v_s3_u1, v_badminton_id, 'NYCU', v_s3_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', 'LEVEL_6_7')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, sport_level, created_at)
+  values (v_s3_u1, v_badminton_id, 'NYCU', v_s3_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', 'LEVEL_6_7', v_now - interval '30 seconds')
   returning * into v_s3_ra;
   insert into request_member (request_id, user_id, role, status) values (v_s3_ra.id, v_s3_u1, 'OWNER', 'JOINED');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, sport_level)
-  values (v_s3_u2, v_badminton_id, 'NYCU', v_s3_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', 'LEVEL_1_5')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, sport_level, created_at)
+  values (v_s3_u2, v_badminton_id, 'NYCU', v_s3_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', 'LEVEL_1_5', v_now - interval '20 seconds')
   returning * into v_s3_rb;
   insert into request_member (request_id, user_id, role, status) values (v_s3_rb.id, v_s3_u2, 'OWNER', 'JOINED');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, sport_level)
-  values (v_s3_u3, v_badminton_id, 'NYCU', v_s3_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', 'LEVEL_8_10')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, sport_level, created_at)
+  values (v_s3_u3, v_badminton_id, 'NYCU', v_s3_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', 'LEVEL_8_10', v_now - interval '10 seconds')
   returning * into v_s3_rc;
   insert into request_member (request_id, user_id, role, status) values (v_s3_rc.id, v_s3_u3, 'OWNER', 'JOINED');
 
@@ -248,18 +248,18 @@ begin
     (v_s4_u2, 's4_u2@nycu.edu.tw', 'NYCU', 'S4 U2', 'https://avatar.s4u2', 'UNDERGRAD', 's4_u2_ig'),
     (v_s4_u3, 's4_u3@nycu.edu.tw', 'NYCU', 'S4 U3', 'https://avatar.s4u3', 'UNDERGRAD', 's4_u3_ig');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, study_target, study_target_normalized)
-  values (v_s4_u1, v_study_id, 'NYCU', v_s4_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', null, null)
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, study_target, study_target_normalized, created_at)
+  values (v_s4_u1, v_study_id, 'NYCU', v_s4_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', null, null, v_now - interval '30 seconds')
   returning * into v_s4_ra;
   insert into request_member (request_id, user_id, role, status) values (v_s4_ra.id, v_s4_u1, 'OWNER', 'JOINED');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, study_target, study_target_normalized)
-  values (v_s4_u2, v_study_id, 'NYCU', v_s4_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', '微積分', '微積分')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, study_target, study_target_normalized, created_at)
+  values (v_s4_u2, v_study_id, 'NYCU', v_s4_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', '微積分', '微積分', v_now - interval '20 seconds')
   returning * into v_s4_rb;
   insert into request_member (request_id, user_id, role, status) values (v_s4_rb.id, v_s4_u2, 'OWNER', 'JOINED');
 
-  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, study_target, study_target_normalized)
-  values (v_s4_u3, v_study_id, 'NYCU', v_s4_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', '線性代數', '線性代數')
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status, study_target, study_target_normalized, created_at)
+  values (v_s4_u3, v_study_id, 'NYCU', v_s4_campus, v_now, v_now + interval '2 hours', 2, 4, 'REQUESTING', '線性代數', '線性代數', v_now - interval '10 seconds')
   returning * into v_s4_rc;
   insert into request_member (request_id, user_id, role, status) values (v_s4_rc.id, v_s4_u3, 'OWNER', 'JOINED');
 

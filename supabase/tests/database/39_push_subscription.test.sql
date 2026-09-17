@@ -14,7 +14,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(6);
+select plan(7);
 
 -- -----------------------------------------------------------------------------
 -- 0. Setup
@@ -87,6 +87,11 @@ select is(
   (select user_id from user_push_subscription where endpoint = 'https://push.example.com/device1'),
   (select user_b from fixtures),
   '該 endpoint 之擁有人應已轉移給新使用者 B'
+);
+
+select ok(
+  not has_function_privilege('authenticated', 'public.cleanup_stale_push_subscriptions(text[])', 'execute'),
+  'authenticated 角色不可執行批次清理 cleanup_stale_push_subscriptions（僅限 service_role）'
 );
 
 -- -----------------------------------------------------------------------------

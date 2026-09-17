@@ -1,62 +1,124 @@
 -- =============================================================================
--- 配對引擎健壯性與邊界修復 (Matching Engine Soundness & Boundary Fixes) — v1.45
+-- 向前修正 Migration (Forward Fixes)
 --
--- 重點修復：
--- 1. 全體參與者硬條件保證：
---    - 人數範圍：N 方累積時，累積總人數必須滿足所有參與者的 min_participants
---      與 max_participants（greatest(min) <= least(max)），不得只依種子需求。
---    - 活動等級：候選需求必須與目前累積集合中的「每一個」需求相容（防止傳遞性失效，
---      例如 A 等級 5 與 B 等級 4、C 等級 6 各自相容，但 B 與 C 距離為 2 不相容）。
---    - 讀書目標：候選需求必須與目前累積集合中的非空目標完全一致（防止 wildcard 種子
---      同時吸納「微積分」與「線性代數」兩種互斥科目）。
--- 2. 封鎖檢查全體成員覆蓋：
---    - 封鎖檢查下探至 request_member（status = 'JOINED'），若累積集合中任一成員
---      與候選需求中任一成員存在雙向 user_block 關係，即阻擋撮合。
--- 3. 延遲撮合與過期時間防護：
---    - 排除 latest_start <= now() 之過期需求。
---    - 共同時間窗交集必須滿足 greatest(v_new_earliest, now()) <= v_new_latest，
---      防止撮合出已在過去的開始時間，無有效未來交集絕不成團。
--- 4. 純邀請朋友自足成團支援：
---    - fn_create_activity_from_requests 支援 array_length >= 1。
---    - 當單筆 Request 透過邀請連結（join_request_by_token）已湊滿自身 min_participants
---      （例如 4 位朋友湊齊羽球局），引擎可直接為其建立 Activity 成團，不再被受限於
---      「必須至少 2 筆獨立 Request」而永久卡死在 REQUESTING。
--- 5. 並發與防重防呆：
---    - 候選需求若含有已在累積集合中的同一使用者，禁止合併，防止重複成團與主鍵衝突。
---    - fn_run_matching_engine 於 commit 時加入防禦性異常攔截，單一撮合並發競爭
---      不致導致整輪排程中斷。
+-- 涵蓋：
+-- 1. [P1] 推播清理 RPC 權限收緊：revoke cleanup_stale_push_subscriptions from authenticated
+-- 2. [P1] 配對防重加固：單房自行成團與撮合均加入跨活動成員防重 (ACTIVE_ACTIVITY_IN_PROGRESS)
+-- 3. [P1] fn_create_activity_from_requests 增加 distinct on (rm.user_id) 防重複 key
+-- 4. [P2] 校園需求卡 get_campus_demands 人數分組向前落地
+-- 5. [P2] 營運指標 get_pilot_operational_metrics 重複參與率修復（區分實際活動留存與需求留存）
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1. fn_create_activity_from_requests：支援單筆自足需求與人數檢查強化
+-- 1. 推播清理 RPC 權限修正
 -- -----------------------------------------------------------------------------
-create or replace function fn_create_activity_from_requests(
-  p_request_ids uuid[]
+revoke execute on function cleanup_stale_push_subscriptions(text[]) from public, anon, authenticated;
+grant execute on function cleanup_stale_push_subscriptions(text[]) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 2. 校園需求卡向前修正（確保上下限分組）
+-- -----------------------------------------------------------------------------
+create or replace function get_campus_demands(
+  p_school school,
+  p_campus text default null
 )
+returns table (
+  activity_type_id    uuid,
+  activity_type_name  text,
+  campus              text,
+  earliest_start      timestamptz,
+  latest_start        timestamptz,
+  sport_level         text,
+  sport_level_rating  int,
+  study_target        text,
+  min_participants    int,
+  max_participants    int,
+  person_count        int,
+  request_count       int
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception using message = 'UNAUTHORIZED';
+  end if;
+
+  if exists (select 1 from app_user where id = v_user_id and deleted_at is not null) then
+    raise exception using message = 'ACCOUNT_DELETED';
+  end if;
+
+  return query
+    select
+      mr.activity_type_id,
+      at.name as activity_type_name,
+      mr.campus,
+      mr.earliest_start,
+      mr.latest_start,
+      mr.sport_level,
+      mr.sport_level_rating,
+      mr.study_target,
+      mr.min_participants::int as min_participants,
+      mr.max_participants::int as max_participants,
+      count(distinct rm.user_id)::int as person_count,
+      count(distinct mr.id)::int as request_count
+    from match_request mr
+    join activity_type at on at.id = mr.activity_type_id
+    join request_member rm on rm.request_id = mr.id and rm.status = 'JOINED'
+   where mr.status = 'REQUESTING'
+     and mr.latest_start > now()
+     and mr.school = p_school
+     and (p_campus is null or mr.campus = p_campus)
+   group by
+     mr.activity_type_id,
+     at.name,
+     mr.campus,
+     mr.earliest_start,
+     mr.latest_start,
+     mr.sport_level,
+     mr.sport_level_rating,
+     mr.study_target,
+     mr.min_participants,
+     mr.max_participants
+   order by
+     mr.earliest_start asc,
+     count(distinct rm.user_id) desc;
+end;
+$$;
+
+revoke execute on function get_campus_demands(school, text) from public, anon;
+grant execute on function get_campus_demands(school, text) to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 3. 配對防重：fn_create_activity_from_requests
+-- -----------------------------------------------------------------------------
+create or replace function fn_create_activity_from_requests(p_request_ids uuid[])
 returns activity
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  v_activity_type_id uuid;
-  v_school           school;
-  v_campus           text;
-  v_start_time       timestamptz;
-  v_latest_min       timestamptz;
-  v_req_min          int;
-  v_req_max          int;
-  v_total_joined     int;
-  v_dur              int;
-  v_activity         activity;
-  v_found_count      int;
-  v_bad_status_count int;
+  v_activity           activity;
+  v_activity_type_id   uuid;
+  v_school             school;
+  v_campus             text;
+  v_start_time         timestamptz;
+  v_latest_min         timestamptz;
+  v_req_min            int;
+  v_req_max            int;
+  v_total_joined       int;
+  v_dur                int;
+  v_found_count        int;
+  v_bad_status_count   int;
 begin
   if p_request_ids is null or array_length(p_request_ids, 1) < 1 then
     raise exception using message = 'INVALID_INPUT', detail = 'AT_LEAST_ONE_REQUEST_REQUIRED';
   end if;
 
-  -- 鎖定全部涉及的 Request，原子處理
   perform 1 from match_request where id = any(p_request_ids) for update;
 
   select count(*) into v_found_count from match_request where id = any(p_request_ids);
@@ -86,7 +148,6 @@ begin
    where id = any(p_request_ids)
    group by activity_type_id, school, campus;
 
-  -- 人數硬條件檢驗：實際成員數必須滿足全體要求
   select count(distinct rm.user_id) into v_total_joined
     from request_member rm
    where rm.request_id = any(p_request_ids) and rm.status = 'JOINED';
@@ -109,7 +170,6 @@ begin
     raise exception using message = 'ACTIVE_ACTIVITY_IN_PROGRESS', detail = 'MEMBER_ALREADY_IN_ACTIVE_ACTIVITY';
   end if;
 
-  -- 開始時間推進至當前時間（若當前時間較晚）
   v_start_time := greatest(v_start_time, now());
 
   if v_start_time > v_latest_min then
@@ -148,7 +208,7 @@ $$;
 revoke execute on function fn_create_activity_from_requests(uuid[]) from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
--- 2. commit_match：補齊未來時間窗檢查
+-- 4. 配對防重：commit_match
 -- -----------------------------------------------------------------------------
 create or replace function commit_match(
   p_request_a_id uuid,
@@ -163,6 +223,7 @@ declare
   v_req_a match_request;
   v_req_b match_request;
   v_total int;
+  v_pc_id uuid;
 begin
   select * into v_req_a from match_request where id = p_request_a_id for update;
   select * into v_req_b from match_request where id = p_request_b_id for update;
@@ -181,7 +242,6 @@ begin
     raise exception using message = 'INTERNAL_ERROR', detail = 'MISMATCHED_ACTIVITY_TYPE_OR_CAMPUS';
   end if;
 
-  -- 防禦性檢查：兩需求必須存在未來的有效共同時間交集
   if greatest(v_req_a.earliest_start, v_req_b.earliest_start, now()) > least(v_req_a.latest_start, v_req_b.latest_start) then
     raise exception using message = 'INTERNAL_ERROR', detail = 'NO_COMMON_TIME_WINDOW';
   end if;
@@ -204,19 +264,29 @@ begin
     from request_member
    where request_id in (p_request_a_id, p_request_b_id) and status = 'JOINED';
 
-  -- 分支 1：實際撮合人數 > 2 → 直接建立 Activity (R3a)
   if v_total > 2 then
     return fn_create_activity_from_requests(array[p_request_a_id, p_request_b_id]);
-
-  -- 分支 2：實際撮合人數 <= 2 → 建立 pending_confirmation (R3b)
   else
     insert into pending_confirmation (
       request_a_id, request_b_id, confirm_window_expire_at, status
     ) values (
       p_request_a_id, p_request_b_id, now() + fn_get_config_interval('confirm_window_minutes'), 'PENDING'
-    );
+    )
+    returning id into v_pc_id;
 
     update match_request set status = 'PENDING_CONFIRMATION' where id in (p_request_a_id, p_request_b_id);
+
+    insert into notification (user_id, event_type, payload)
+    select rm.user_id, 'PENDING_CONFIRMATION'::notification_event_type,
+           jsonb_build_object('request_id', p_request_a_id, 'pending_confirmation_id', v_pc_id)
+      from request_member rm
+     where rm.request_id = p_request_a_id and rm.status = 'JOINED';
+
+    insert into notification (user_id, event_type, payload)
+    select rm.user_id, 'PENDING_CONFIRMATION'::notification_event_type,
+           jsonb_build_object('request_id', p_request_b_id, 'pending_confirmation_id', v_pc_id)
+      from request_member rm
+     where rm.request_id = p_request_b_id and rm.status = 'JOINED';
 
     return null;
   end if;
@@ -226,7 +296,7 @@ $$;
 revoke execute on function commit_match(uuid, uuid) from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
--- 3. fn_run_matching_engine：全體條件滿足、全體成員封鎖檢查、未來時段保護、自足團成團
+-- 5. 配對防重：fn_run_matching_engine
 -- -----------------------------------------------------------------------------
 create or replace function fn_run_matching_engine()
 returns int
@@ -329,7 +399,6 @@ begin
       v_accum_min_participants := v_seed.min_participants;
       v_accum_max_participants := v_seed.max_participants;
 
-      -- 若種子本身尚未達到 max_participants（或無上限），嘗試併入候選需求
       if v_accum_max_participants is null or v_accum_count < v_accum_max_participants then
         for v_candidate in (
           select r.* from match_request r
@@ -346,7 +415,6 @@ begin
 
           v_group_scans_used := v_group_scans_used + 1;
 
-          -- 1. 即時狀態檢查（排除已非 REQUESTING 或已過期之候選）
           if not exists (
             select 1 from match_request
              where id = v_candidate.id
@@ -356,7 +424,6 @@ begin
             continue;
           end if;
 
-          -- 2. 避免同一使用者重複進入活動（候選需求不得含有已在累積集合中的成員）
           if exists (
             select 1
               from request_member rm_acc
@@ -369,7 +436,6 @@ begin
             continue;
           end if;
 
-          -- 2b. 跨活動防重檢查（候選需求成員不得已在進行中/成立中的活動）
           if exists (
             select 1
               from request_member rm_cand
@@ -383,7 +449,6 @@ begin
             continue;
           end if;
 
-          -- 3. 雙向封鎖檢查（涵蓋所有成員，包括透過邀請連結加入的朋友）
           if exists (
             select 1
               from request_member rm_acc
@@ -399,7 +464,6 @@ begin
             continue;
           end if;
 
-          -- 4. 歷史冷卻檢查 (match_history_avoidance，比對 Request 發起人)
           if exists (
             select 1
               from match_request mr_acc
@@ -412,10 +476,9 @@ begin
             continue;
           end if;
 
-          -- 5. 時間窗重疊與未來可行性檢查（N 方交集且尚未過期）
           v_new_earliest := greatest(v_accum_earliest, v_candidate.earliest_start);
           v_new_latest := least(v_accum_latest, v_candidate.latest_start);
-          if greatest(v_new_earliest, now()) > v_new_latest then
+          if v_new_earliest > v_new_latest or v_new_latest <= now() then
             continue;
           end if;
 
@@ -429,10 +492,8 @@ begin
             continue;
           end if;
 
-          -- 7. 讀書目標相容性（與累積集合中每一個需求皆須相容，防止互斥科目被撮合）
           if exists (
-            select 1
-              from match_request mr_acc
+            select 1 from match_request mr_acc
              where mr_acc.id = any(v_accum_ids)
                and mr_acc.study_target_normalized is not null
                and v_candidate.study_target_normalized is not null
@@ -441,7 +502,6 @@ begin
             continue;
           end if;
 
-          -- 8. 人數上下限相容性（全體累積人數必須符合每位參與者的上下限）
           select count(distinct user_id) into v_cand_count
             from request_member where request_id = v_candidate.id and status = 'JOINED';
 
@@ -464,7 +524,6 @@ begin
             end if;
           end if;
 
-          -- 相容，加入累積集合
           v_accum_ids := v_accum_ids || v_candidate.id;
           v_accum_count := v_accum_count + v_cand_count;
           v_accum_earliest := v_new_earliest;
@@ -474,15 +533,10 @@ begin
         end loop;
       end if;
 
-      -- 成團判定：
-      -- ① 實際總人數必須達到所有人的 min_participants 上限，且不超過任一人的 max_participants
-      -- ② 若為單筆 Request，其成員數必須已自行達到 min_participants（純邀請朋友湊滿達標）
-      -- ③ 若為多筆 Request 聚合，總成員數必須達標且組數 >= 2
       if v_accum_count >= v_accum_min_participants
          and (v_accum_max_participants is null or v_accum_count <= v_accum_max_participants)
          and (array_length(v_accum_ids, 1) >= 2 or (array_length(v_accum_ids, 1) = 1 and v_accum_count > 2 and v_accum_count >= v_seed.min_participants))
       then
-        -- 單房自足成團與多房撮合成團之跨活動防重保險：累積名單中任一成員不得已在活動中
         if exists (
           select 1
             from request_member rm
@@ -505,7 +559,6 @@ begin
           v_match_count := v_match_count + 1;
         exception
           when others then
-            -- 遇並發衝突（如候選剛好被取消或進入其他活動），略過該次嘗試，引擎繼續掃描
             null;
         end;
       end if;
@@ -518,3 +571,272 @@ end;
 $$;
 
 revoke execute on function fn_run_matching_engine() from public, anon, authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 6. 營運指標：get_pilot_operational_metrics（修復重複參與率計算）
+-- -----------------------------------------------------------------------------
+create or replace function get_pilot_operational_metrics(
+  p_school school default 'NYCU',
+  p_campus text default '光復',
+  p_since timestamptz default (now() - interval '7 days'),
+  p_until timestamptz default now()
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_demand_total int := 0;
+  v_demand_matched int := 0;
+  v_demand_expired int := 0;
+  v_demand_cancelled int := 0;
+  v_avg_wait numeric := null;
+  v_median_wait numeric := null;
+
+  v_act_total int := 0;
+  v_act_completed int := 0;
+  v_act_cancelled int := 0;
+  v_act_ongoing int := 0;
+
+  v_verified_attended int := 0;
+  v_unverified_completion int := 0;
+  v_no_show int := 0;
+
+  v_unique_act_users int := 0;
+  v_repeat_act_users int := 0;
+  v_repeat_act_rate numeric := 0;
+
+  v_unique_req_users int := 0;
+  v_repeat_req_users int := 0;
+  v_repeat_req_rate numeric := 0;
+
+  v_total_reports int := 0;
+  v_pending_reports int := 0;
+  v_spam_reports int := 0;
+  v_harass_reports int := 0;
+  v_other_reports int := 0;
+  v_feedbacks int := 0;
+begin
+  -- 1. 需求量與等待時間
+  select
+    count(*),
+    count(*) filter (where status = 'MATCHED'),
+    count(*) filter (where status = 'EXPIRED'),
+    count(*) filter (where status = 'CANCELLED')
+  into
+    v_demand_total,
+    v_demand_matched,
+    v_demand_expired,
+    v_demand_cancelled
+  from match_request
+  where created_at >= p_since and created_at <= p_until
+    and (p_school is null or school = p_school)
+    and (p_campus is null or campus = p_campus);
+
+  with matched_waits as (
+    select distinct r.id, extract(epoch from (a.created_at - r.created_at)) / 60.0 as wait_minutes
+    from match_request r
+    join activity_member am on am.source_request_id = r.id
+    join activity a on a.id = am.activity_id
+    where r.status = 'MATCHED'
+      and r.created_at >= p_since and r.created_at <= p_until
+      and (p_school is null or r.school = p_school)
+      and (p_campus is null or r.campus = p_campus)
+  )
+  select
+    round(avg(wait_minutes)::numeric, 1),
+    round((percentile_cont(0.5) within group (order by wait_minutes))::numeric, 1)
+  into
+    v_avg_wait,
+    v_median_wait
+  from matched_waits;
+
+  -- 2. 活動成團與出席（不可將成團當成出席）
+  select
+    count(*),
+    count(*) filter (where status = 'COMPLETED'),
+    count(*) filter (where status = 'CANCELLED'),
+    count(*) filter (where status in ('MATCHED', 'ONGOING'))
+  into
+    v_act_total,
+    v_act_completed,
+    v_act_cancelled,
+    v_act_ongoing
+  from activity
+  where created_at >= p_since and created_at <= p_until
+    and (p_school is null or school = p_school)
+    and (p_campus is null or campus = p_campus);
+
+  with member_evidence as (
+    select
+      am.activity_id,
+      am.user_id,
+      a.status as activity_status,
+      (am.arrived_at is not null or exists (
+        select 1 from user_reliability_event ure
+        where ure.activity_id = am.activity_id and ure.user_id = am.user_id and ure.event_type = 'ATTENDED'
+      )) as is_verified_attended,
+      exists (
+        select 1 from user_reliability_event ure
+        where ure.activity_id = am.activity_id and ure.user_id = am.user_id and ure.event_type = 'NO_SHOW'
+      ) as is_no_show
+    from activity_member am
+    join activity a on a.id = am.activity_id
+    where a.created_at >= p_since and a.created_at <= p_until
+      and (p_school is null or a.school = p_school)
+      and (p_campus is null or a.campus = p_campus)
+      and am.status = 'JOINED'
+  )
+  select
+    count(*) filter (where is_verified_attended),
+    count(*) filter (where activity_status = 'COMPLETED' and not is_verified_attended and not is_no_show),
+    count(*) filter (where is_no_show)
+  into
+    v_verified_attended,
+    v_unverified_completion,
+    v_no_show
+  from member_evidence;
+
+  -- 3. 再次參與（真實活動參與留存 vs 需求重複發起留存）
+  -- A. 實際活動參與留存
+  with period_act_users as (
+    select distinct am.user_id
+    from activity_member am
+    join activity a on a.id = am.activity_id
+    where a.created_at >= p_since and a.created_at <= p_until
+      and (p_school is null or a.school = p_school)
+      and (p_campus is null or a.campus = p_campus)
+      and am.status = 'JOINED'
+  ),
+  user_act_counts as (
+    select
+      pau.user_id,
+      (
+        select count(distinct am2.activity_id)
+        from activity_member am2
+        join activity a2 on a2.id = am2.activity_id
+        where am2.user_id = pau.user_id
+          and a2.created_at <= p_until
+          and am2.status = 'JOINED'
+      ) as total_activities_count
+    from period_act_users pau
+  )
+  select
+    count(*)::int,
+    count(*) filter (where total_activities_count >= 2)::int,
+    case
+      when count(*) > 0 then round((count(*) filter (where total_activities_count >= 2)::numeric / count(*)::numeric), 3)
+      else 0.000
+    end
+  into
+    v_unique_act_users,
+    v_repeat_act_users,
+    v_repeat_act_rate
+  from user_act_counts;
+
+  -- B. 需求發起留存
+  with period_req_users as (
+    select distinct r.owner_id as user_id
+    from match_request r
+    where r.created_at >= p_since and r.created_at <= p_until
+      and (p_school is null or r.school = p_school)
+      and (p_campus is null or r.campus = p_campus)
+  ),
+  user_req_counts as (
+    select
+      pru.user_id,
+      (
+        select count(distinct mr.id)
+        from match_request mr
+        where mr.owner_id = pru.user_id
+          and mr.created_at <= p_until
+      ) as total_requests_count
+    from period_req_users pru
+  )
+  select
+    count(*)::int,
+    count(*) filter (where total_requests_count >= 2)::int,
+    case
+      when count(*) > 0 then round((count(*) filter (where total_requests_count >= 2)::numeric / count(*)::numeric), 3)
+      else 0.000
+    end
+  into
+    v_unique_req_users,
+    v_repeat_req_users,
+    v_repeat_req_rate
+  from user_req_counts;
+
+  -- 4. 檢舉與人工審核
+  select
+    count(*),
+    count(*) filter (where status = 'PENDING'),
+    count(*) filter (where category = 'SPAM'),
+    count(*) filter (where category = 'HARASSMENT'),
+    count(*) filter (where category = 'OTHER')
+  into
+    v_total_reports,
+    v_pending_reports,
+    v_spam_reports,
+    v_harass_reports,
+    v_other_reports
+  from report
+  where created_at >= p_since and created_at <= p_until;
+
+  select count(*) into v_feedbacks
+  from feedback
+  where created_at >= p_since and created_at <= p_until;
+
+  return jsonb_build_object(
+    'scope', jsonb_build_object(
+      'school', p_school,
+      'campus', p_campus,
+      'since', p_since,
+      'until', p_until
+    ),
+    'demand', jsonb_build_object(
+      'total_requests', v_demand_total,
+      'matched_requests', v_demand_matched,
+      'expired_requests', v_demand_expired,
+      'cancelled_requests', v_demand_cancelled,
+      'avg_wait_to_match_minutes', v_avg_wait,
+      'median_wait_to_match_minutes', v_median_wait,
+      'cancelled_wait_minutes', 'UNKNOWN',
+      'cancelled_reasons', 'UNKNOWN'
+    ),
+    'attendance', jsonb_build_object(
+      'total_activities', v_act_total,
+      'completed_activities', v_act_completed,
+      'cancelled_activities', v_act_cancelled,
+      'ongoing_or_matched_activities', v_act_ongoing,
+      'verified_attended_members', v_verified_attended,
+      'unverified_completion_members', v_unverified_completion,
+      'no_show_members', v_no_show,
+      'unverified_note', 'A4 timeout completion without arrival check-in or settlement is marked as UNKNOWN'
+    ),
+    'retention', jsonb_build_object(
+      'unique_activity_participants', v_unique_act_users,
+      'repeat_activity_participants', v_repeat_act_users,
+      'repeat_activity_participation_rate', v_repeat_act_rate,
+      'unique_request_users', v_unique_req_users,
+      'repeat_request_users', v_repeat_req_users,
+      'repeat_request_rate', v_repeat_req_rate
+    ),
+    'issues_and_workload', jsonb_build_object(
+      'total_reports', v_total_reports,
+      'pending_reports', v_pending_reports,
+      'reports_by_category', jsonb_build_object(
+        'SPAM', v_spam_reports,
+        'HARASSMENT', v_harass_reports,
+        'OTHER', v_other_reports
+      ),
+      'feedbacks_count', v_feedbacks,
+      'notification_delivery_failures', 'PARTIALLY_UNKNOWN (only invalid push subscriptions 404/410 tracked via cleanup)',
+      'weekly_maintenance_hours', 'UNKNOWN (manual log required)'
+    )
+  );
+end;
+$$;
+
+revoke execute on function get_pilot_operational_metrics(school, text, timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function get_pilot_operational_metrics(school, text, timestamptz, timestamptz) to service_role;
