@@ -66,6 +66,25 @@ void main() {
       );
     });
 
+    test('Dance genre config and formatting', () {
+      final config = SportLevelConfig.forSystem(LEVEL_SYSTEM.DANCE_GENRE);
+      expect(config, isNotNull);
+      expect(config!.sectionTitle, '練舞曲風');
+      expect(config.fieldLabel, '曲風');
+      expect(config.wildcardLabel, '不限 / 都可以');
+      expect(config.supportsRating, isFalse);
+
+      expect(config.formatLevel(null), '不限 / 都可以');
+      expect(config.formatLevel('HIPHOP'), 'Hip-Hop');
+      expect(config.formatLevel('JAZZ'), 'Jazz');
+      expect(config.formatLevel('GIRLSTYLE'), 'Girl Style');
+      expect(config.formatLevel('POPPING'), 'Popping');
+      expect(config.formatLevel('LOCKING'), 'Locking');
+      expect(config.formatLevel('OTHER'), '其他曲風');
+      expect(config.formatFieldSummary('HIPHOP'), '曲風：Hip-Hop');
+      expect(config.formatWithActivityName('練舞', 'HIPHOP'), '練舞｜曲風：Hip-Hop');
+    });
+
     test('Non-sport returns null config and fallback formatting', () {
       expect(SportLevelConfig.forSystem(LEVEL_SYSTEM.NONE), isNull);
       expect(SportLevelConfig.forSystem(null), isNull);

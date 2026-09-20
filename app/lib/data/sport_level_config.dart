@@ -186,6 +186,76 @@ class SportLevelConfig {
     ],
   );
 
+  static const dance = SportLevelConfig(
+    system: LEVEL_SYSTEM.DANCE_GENRE,
+    sectionTitle: '練舞曲風',
+    fieldLabel: '曲風',
+    wildcardLabel: '不限 / 都可以',
+    helperText: '可指定想練的舞風，選「不限」會與所有舞風相容配對',
+    options: [
+      SportLevelOption(
+        value: 'HIPHOP',
+        label: 'Hip-Hop',
+        chipLabel: 'Hip-Hop',
+        secondaryDescription: '嘻哈',
+      ),
+      SportLevelOption(
+        value: 'JAZZ',
+        label: 'Jazz',
+        chipLabel: 'Jazz',
+        secondaryDescription: '爵士',
+      ),
+      SportLevelOption(
+        value: 'GIRLSTYLE',
+        label: 'Girl Style',
+        chipLabel: 'Girl Style',
+        secondaryDescription: '女子風格',
+      ),
+      SportLevelOption(
+        value: 'POPPING',
+        label: 'Popping',
+        chipLabel: 'Popping',
+        secondaryDescription: '機械舞 / 震感舞',
+      ),
+      SportLevelOption(
+        value: 'LOCKING',
+        label: 'Locking',
+        chipLabel: 'Locking',
+        secondaryDescription: '鎖舞',
+      ),
+      SportLevelOption(
+        value: 'BREAKING',
+        label: 'Breaking',
+        chipLabel: 'Breaking',
+        secondaryDescription: '霹靂舞',
+      ),
+      SportLevelOption(
+        value: 'WAACKING',
+        label: 'Waacking',
+        chipLabel: 'Waacking',
+        secondaryDescription: '甩手舞',
+      ),
+      SportLevelOption(
+        value: 'KPOP',
+        label: 'K-Pop / MV',
+        chipLabel: 'K-Pop',
+        secondaryDescription: 'MV 舞',
+      ),
+      SportLevelOption(
+        value: 'CHOREO',
+        label: 'Choreo / Urban',
+        chipLabel: 'Urban',
+        secondaryDescription: '編舞',
+      ),
+      SportLevelOption(
+        value: 'OTHER',
+        label: '其他曲風',
+        chipLabel: '其他',
+        secondaryDescription: 'House / Krump 等',
+      ),
+    ],
+  );
+
   /// 依 [LEVEL_SYSTEM] 取得對應的配置（若為 NONE 或未支援則回傳 null）
   static SportLevelConfig? forSystem(LEVEL_SYSTEM? system) {
     if (system == null || system == LEVEL_SYSTEM.NONE) return null;
@@ -194,6 +264,7 @@ class SportLevelConfig {
       LEVEL_SYSTEM.BADMINTON_LEVEL => badminton,
       LEVEL_SYSTEM.TENNIS_NTRP => tennis,
       LEVEL_SYSTEM.TABLE_TENNIS_SKILL => tableTennis,
+      LEVEL_SYSTEM.DANCE_GENRE => dance,
       LEVEL_SYSTEM.NONE => null,
     };
   }

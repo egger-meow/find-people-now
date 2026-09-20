@@ -26,12 +26,15 @@ class CampusDemandCardWidget extends StatelessWidget {
   final DateTime? relativeNow;
 
   String _formatLevel(String activityName, String? sportLevel, int? rating) {
-    if (sportLevel == null) return '不限程度';
+    if (sportLevel == null) {
+      return activityName == '練舞' ? '不限曲風' : '不限程度';
+    }
     final config = switch (activityName) {
       '羽球' => SportLevelConfig.badminton,
       '籃球' => SportLevelConfig.basketball,
       '網球' => SportLevelConfig.tennis,
       '桌球' => SportLevelConfig.tableTennis,
+      '練舞' => SportLevelConfig.dance,
       _ => null,
     };
     return config?.formatLevel(sportLevel, short: true, rating: rating) ??

@@ -80,6 +80,32 @@ final _testTypes = <ActivityType>[
     levelSystem: LEVEL_SYSTEM.NONE,
     aliases: const [],
   ),
+  ActivityType(
+    id: 'karaoke',
+    name: '唱K',
+    status: ACTIVITY_TYPE_STATUS.APPROVED,
+    createdAt: DateTime(2026),
+    defaultMinParticipants: 2,
+    defaultMaxParticipants: 30,
+    groupSizeStep: null,
+    skillLevelEnabled: false,
+    sortOrder: 30,
+    levelSystem: LEVEL_SYSTEM.NONE,
+    aliases: const ['唱歌', 'KTV'],
+  ),
+  ActivityType(
+    id: 'dance',
+    name: '練舞',
+    status: ACTIVITY_TYPE_STATUS.APPROVED,
+    createdAt: DateTime(2026),
+    defaultMinParticipants: 2,
+    defaultMaxParticipants: 30,
+    groupSizeStep: null,
+    skillLevelEnabled: true,
+    sortOrder: 31,
+    levelSystem: LEVEL_SYSTEM.DANCE_GENRE,
+    aliases: const ['跳舞', '街舞'],
+  ),
 ];
 
 final _testUser = AppUser(
@@ -320,6 +346,63 @@ void main() {
     await tester.tap(find.text('高強度'));
     await tester.pumpAndSettle();
 
+    expect(find.text('現在'), findsOneWidget);
+  });
+
+  testWidgets('Dance practice renders dance genres (Hip-Hop, Jazz, Girl Style, Popping, Locking, etc.)', (tester) async {
+    final gateway = _MockSubmissionGateway();
+    await tester.pumpWidget(_buildTestApp(gateway: gateway));
+    await tester.pumpAndSettle();
+
+    // Select 練舞
+    await _scrollTo(tester, find.text('練舞'));
+    await tester.tap(find.text('練舞'));
+    await tester.pumpAndSettle();
+
+    // Check section title and genre chips
+    expect(find.text('練舞曲風'), findsOneWidget);
+    expect(find.text('不限 / 都可以'), findsOneWidget);
+    expect(find.text('Hip-Hop'), findsOneWidget);
+    expect(find.text('Jazz'), findsOneWidget);
+    expect(find.text('Girl Style'), findsOneWidget);
+    expect(find.text('Popping'), findsOneWidget);
+    expect(find.text('Locking'), findsOneWidget);
+    expect(find.text('其他'), findsOneWidget);
+
+    // Select Hip-Hop
+    await tester.tap(find.text('Hip-Hop'));
+    await tester.pumpAndSettle();
+
+    // Advances to time section
+    expect(find.text('現在'), findsOneWidget);
+
+    // Check summary reflects genre
+    await tester.scrollUntilVisible(
+      find.text('送出前確認'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('曲風'), findsOneWidget);
+    expect(find.text('Hip-Hop'), findsWidgets);
+  });
+
+  testWidgets('Karaoke renders without parameters and directly advances to time section', (tester) async {
+    final gateway = _MockSubmissionGateway();
+    await tester.pumpWidget(_buildTestApp(gateway: gateway));
+    await tester.pumpAndSettle();
+
+    // Select 唱K
+    await _scrollTo(tester, find.text('唱K'));
+    await tester.tap(find.text('唱K'));
+    await tester.pumpAndSettle();
+
+    // Should NOT have sport level or dance genre section
+    expect(find.text('練舞曲風'), findsNothing);
+    expect(find.text('籃球強度'), findsNothing);
+
+    // Directly in time section
     expect(find.text('現在'), findsOneWidget);
   });
 }
