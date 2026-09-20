@@ -159,8 +159,10 @@ void main() {
     await _scrollTo(tester, find.text('時間'));
     expect(find.text('2'), findsOneWidget);
 
-    // Initial state: Quick time buckets
+    // Initial state: Quick time buckets with 今天 / 明天 prefix
     expect(find.text('現在'), findsOneWidget);
+    expect(find.text('今天 下午'), findsOneWidget);
+    expect(find.text('明天 早上'), findsOneWidget);
     expect(find.text('自訂時間'), findsOneWidget);
     expect(
       tester.widget<AnimatedCrossFade>(find.byType(AnimatedCrossFade)).crossFadeState,

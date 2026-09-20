@@ -278,7 +278,7 @@ class _TimeBucket {
   final bool isTomorrow;
   final IconData icon;
 
-  String get displayLabel => isTomorrow ? '明天 $label' : label;
+  String get displayLabel => isTomorrow ? '明天 $label' : '今天 $label';
 }
 
 /// 動態顯示規則（UI_PLAN §7）：僅列出「起始時間」落在 `now()~now()+24h`
