@@ -20,6 +20,9 @@ class AppCard extends StatelessWidget {
     this.onTap,
     this.semanticLabel,
     this.width,
+    this.color,
+    this.border,
+    this.borderRadius,
   });
 
   final Widget child;
@@ -31,16 +34,24 @@ class AppCard extends StatelessWidget {
   /// 的語意節點，唸出一句完整的描述。
   final String? semanticLabel;
   final double? width;
+  final Color? color;
+  final BoxBorder? border;
+  final double? borderRadius;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final effectiveRadius = borderRadius ?? AppRadius.md;
     final content = Container(
       width: width,
       padding: padding,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        color: color ?? scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(effectiveRadius),
+        border: border ??
+            Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.35),
+            ),
       ),
       child: child,
     );

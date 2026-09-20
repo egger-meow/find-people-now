@@ -17,12 +17,16 @@ class Skeleton extends StatefulWidget {
     this.width,
     required this.height,
     this.radius = AppRadius.sm,
+    this.baseColor,
+    this.highlightColor,
   });
 
   /// `null` 表示撐滿可用寬度。
   final double? width;
   final double height;
   final double radius;
+  final Color? baseColor;
+  final Color? highlightColor;
 
   @override
   State<Skeleton> createState() => _SkeletonState();
@@ -43,8 +47,9 @@ class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final base = scheme.surfaceContainerHigh;
-    final highlight = Color.lerp(base, scheme.onSurface, 0.06)!;
+    final base = widget.baseColor ?? scheme.surfaceContainerHighest;
+    final highlight = widget.highlightColor ??
+        Color.lerp(base, scheme.onSurface, 0.15)!;
 
     final block = Container(
       width: widget.width,
@@ -89,11 +94,15 @@ class ActivityCardSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        color: scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.35),
+        ),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,

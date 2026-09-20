@@ -7,37 +7,40 @@ import 'platform_adaptive.dart';
 /// 「校園裡有人正在做事，而你隨時可以加入。」— 清新綠為主色，天空藍/暖黃點綴，
 /// Material 3 為底層，但外觀（圓角、留白、無陰影卡片）刻意不是 Flutter 預設樣子。
 abstract final class AppColors {
-  static const seedGreen = Color(0xFF2FB380);
-  static const skyBlue = Color(0xFF4FB8E8);
-  static const warmYellow = Color(0xFFFFC94D);
+  static const seedGreen = Color(0xFF10B981);
+  static const skyBlue = Color(0xFF38BDF8);
+  static const warmYellow = Color(0xFFFBBF24);
 
-  /// 淺色模式：暖米白背景、森林綠主色、自然大地色調
-  static const lightSurface = Color(0xFFFAF8F5);
-  static const forestGreen = Color(0xFF1E5E3A);
-  static const forestGreenContainer = Color(0xFFE2EFE5);
-  static const forestGreenOnContainer = Color(0xFF113822);
-  static const lightSurfaceCard = Color(0xFFF2EFE9);
-  static const lightOutline = Color(0xFFDDD8CE);
+  /// 淺色模式：暖米白背景、森林翡翠綠主色、自然大地色調
+  static const lightSurface = Color(0xFFFAF9F6);
+  static const forestGreen = Color(0xFF059669);
+  static const forestGreenContainer = Color(0xFFD1FAE5);
+  static const forestGreenOnContainer = Color(0xFF065F46);
+  static const lightSurfaceCard = Color(0xFFF3F0EA);
+  static const lightOutline = Color(0xFFD8D3C8);
 
-  /// 暗色模式：暖炭灰底（告別 #121212 純黑）＋米白字＋柔和鼠尾草綠（告別 #7CFF6B 螢光綠）
-  /// 營造傍晚校園的放鬆感，去除刺眼螢光與操作工具的緊繃感。
-  static const darkSurface = Color(0xFF1C1D1B);
-  static const darkOnSurface = Color(0xFFF2EFEA);
-  static const darkOnSurfaceVariant = Color(0xFFC9C4BC);
-  static const darkOutline = Color(0xFF8A857D);
-  static const darkOutlineVariant = Color(0xFF3E423D);
+  /// 暗色模式：活力校園深色調（深邃暖炭黑底 ＋ 鮮活翡翠綠 + 明亮米白字）
+  static const darkSurface = Color(0xFF131614);
+  static const darkOnSurface = Color(0xFFF3F4F6);
+  static const darkOnSurfaceVariant = Color(0xFFC7CDC9);
+  static const darkOutline = Color(0xFF6B756F);
+  static const darkOutlineVariant = Color(0xFF323A35);
 
-  /// 柔和鼠尾草綠（取代刺眼螢光綠 #7CFF6B）
-  static const sageGreen = Color(0xFF92BFA0);
-  static const sageGreenOn = Color(0xFF133820);
-  static const sageGreenContainer = Color(0xFF263B2F);
-  static const sageGreenOnContainer = Color(0xFFD7E8DC);
+  /// 活力翡翠校園綠（取代暗淡的鼠尾草綠，呈現更具能量與快樂感之氛圍）
+  static const vibrantGreen = Color(0xFF10B981);
+  static const vibrantGreenOn = Color(0xFF022C22);
+  static const vibrantGreenContainer = Color(0xFF064E3B);
+  static const vibrantGreenOnContainer = Color(0xFFA7F3D0);
 
   // 向下相容別名
-  static const accentGreen = sageGreen;
-  static const accentGreenOn = sageGreenOn;
-  static const accentGreenContainer = sageGreenContainer;
-  static const accentGreenOnContainer = sageGreenOnContainer;
+  static const sageGreen = vibrantGreen;
+  static const sageGreenOn = vibrantGreenOn;
+  static const sageGreenContainer = vibrantGreenContainer;
+  static const sageGreenOnContainer = vibrantGreenOnContainer;
+  static const accentGreen = vibrantGreen;
+  static const accentGreenOn = vibrantGreenOn;
+  static const accentGreenContainer = vibrantGreenContainer;
+  static const accentGreenOnContainer = vibrantGreenOnContainer;
 }
 
 
@@ -97,19 +100,19 @@ class AppSurfaceColors extends ThemeExtension<AppSurfaceColors> {
   });
 
   static const light = AppSurfaceColors(
-    glass: Color(0xF2FAF8F5),
+    glass: Color(0xF2FAF9F6),
     glassBorder: Color(0x1F726F68),
     hairline: Color(0x14000000),
-    ambientStart: Color(0xFFE8F3EB),
-    ambientEnd: Color(0xFFEFF5F2),
+    ambientStart: Color(0xFFE6F4EA),
+    ambientEnd: Color(0xFFEDF6F2),
   );
 
   static const dark = AppSurfaceColors(
-    glass: Color(0xF21C1D1B),
-    glassBorder: Color(0x2EFFFFFF),
-    hairline: Color(0x1FFFFFFF),
-    ambientStart: Color(0xFF1B2A22),
-    ambientEnd: Color(0xFF1D2825),
+    glass: Color(0xF2161A17),
+    glassBorder: Color(0x33FFFFFF),
+    hairline: Color(0x24FFFFFF),
+    ambientStart: Color(0xFF142B1F),
+    ambientEnd: Color(0xFF12242C),
   );
 
 
@@ -238,19 +241,25 @@ abstract final class AppTheme {
     } else {
       scheme = scheme.copyWith(
         surface: AppColors.darkSurface,
-        surfaceContainerLowest: const Color(0xFF141513),
-        surfaceContainerLow: const Color(0xFF181917),
-        surfaceContainer: const Color(0xFF1E201E),
-        surfaceContainerHigh: const Color(0xFF242623),
-        surfaceContainerHighest: const Color(0xFF2C2E2A),
+        surfaceContainerLowest: const Color(0xFF0D100E),
+        surfaceContainerLow: const Color(0xFF161A17),
+        surfaceContainer: const Color(0xFF1C221E),
+        surfaceContainerHigh: const Color(0xFF242C27),
+        surfaceContainerHighest: const Color(0xFF2F3832),
         onSurface: AppColors.darkOnSurface,
         onSurfaceVariant: AppColors.darkOnSurfaceVariant,
         outline: AppColors.darkOutline,
         outlineVariant: AppColors.darkOutlineVariant,
-        primary: AppColors.sageGreen,
-        onPrimary: AppColors.sageGreenOn,
-        primaryContainer: AppColors.sageGreenContainer,
-        onPrimaryContainer: AppColors.sageGreenOnContainer,
+        primary: AppColors.vibrantGreen,
+        onPrimary: AppColors.vibrantGreenOn,
+        primaryContainer: AppColors.vibrantGreenContainer,
+        onPrimaryContainer: AppColors.vibrantGreenOnContainer,
+        secondary: AppColors.skyBlue,
+        secondaryContainer: const Color(0xFF0C4A6E),
+        onSecondaryContainer: const Color(0xFFBAE6FD),
+        tertiary: AppColors.warmYellow,
+        tertiaryContainer: const Color(0xFF451A03),
+        onTertiaryContainer: const Color(0xFFFDE68A),
       );
     }
 
