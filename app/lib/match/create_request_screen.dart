@@ -25,7 +25,6 @@ import '../widgets/app_button.dart';
 import '../widgets/app_error_state.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
-import '../widgets/app_section.dart';
 import '../widgets/app_selection_summary.dart';
 import '../widgets/app_snack_bar.dart';
 import '../widgets/app_sticky_action_area.dart';
@@ -1312,156 +1311,132 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       campus: effectiveCampus,
                       types: types,
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     KeyedSubtree(
                       key: _formTopKey,
-                      child: AppSection(
+                      child: _FormCardSection(
+                        stepNumber: 1,
                         title: '活動',
                         description: '今天想找人一起做什麼？',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 2,
-                            mainAxisSpacing: AppSpacing.sm,
-                            crossAxisSpacing: AppSpacing.sm,
-                            mainAxisExtent:
-                                72 + MediaQuery.textScalerOf(context).scale(24),
-                            children: [
-                              for (final type in types)
-                                _OptionCard(
-                                  icon: activityTypeIcon(type.name),
-                                  label: type.name,
-                                  selected: _selectedType?.id == type.id,
-                                  onTap: () {
-                                    final hasParams = _typeHasParameters(type);
-                                    final reliability =
-                                        ref.read(myReliabilityProvider).value;
-                                    final isNew =
-                                        reliability?.isNewUser ?? false;
-                                    var defaultMin =
-                                        type.defaultMinParticipants ?? 3;
-                                    if (isNew && defaultMin <= 2) {
-                                      defaultMin = 3;
-                                    }
-                                    var defaultMax =
-                                        type.defaultMaxParticipants ?? defaultMin;
-                                    if (defaultMax < defaultMin) {
-                                      defaultMax = defaultMin;
-                                    }
-                                    setState(() {
-                                      _selectedType = type;
-                                      _selectedMinHeadcount = defaultMin;
-                                      _selectedMaxHeadcount = defaultMax;
-                                      _selectedSportLevel = null;
-                                      _ratingController.clear();
-                                      _studyTargetController.clear();
-                                    });
-                                    if (hasParams) {
-                                      _scrollToSection(
-                                        _activityParamsKey,
-                                        alignment: null,
-                                      );
-                                    } else {
-                                      _scrollToSection(_timeSectionKey);
-                                    }
-                                  },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GridView.count(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              crossAxisCount: 2,
+                              mainAxisSpacing: AppSpacing.sm,
+                              crossAxisSpacing: AppSpacing.sm,
+                              mainAxisExtent:
+                                  72 + MediaQuery.textScalerOf(context).scale(24),
+                              children: [
+                                for (final type in types)
+                                  _OptionCard(
+                                    icon: activityTypeIcon(type.name),
+                                    label: type.name,
+                                    selected: _selectedType?.id == type.id,
+                                    onTap: () {
+                                      final hasParams = _typeHasParameters(type);
+                                      final reliability =
+                                          ref.read(myReliabilityProvider).value;
+                                      final isNew =
+                                          reliability?.isNewUser ?? false;
+                                      var defaultMin =
+                                          type.defaultMinParticipants ?? 3;
+                                      if (isNew && defaultMin <= 2) {
+                                        defaultMin = 3;
+                                      }
+                                      var defaultMax =
+                                          type.defaultMaxParticipants ?? defaultMin;
+                                      if (defaultMax < defaultMin) {
+                                        defaultMax = defaultMin;
+                                      }
+                                      setState(() {
+                                        _selectedType = type;
+                                        _selectedMinHeadcount = defaultMin;
+                                        _selectedMaxHeadcount = defaultMax;
+                                        _selectedSportLevel = null;
+                                        _ratingController.clear();
+                                        _studyTargetController.clear();
+                                      });
+                                      if (hasParams) {
+                                        _scrollToSection(
+                                          _activityParamsKey,
+                                          alignment: null,
+                                        );
+                                      } else {
+                                        _scrollToSection(_timeSectionKey);
+                                      }
+                                    },
+                                  ),
+                                _AddOptionCard(
+                                  label: '提議新增',
+                                  onTap: _proposeActivityType,
                                 ),
-                              _AddOptionCard(
-                                label: '提議新增',
-                                onTap: _proposeActivityType,
+                              ],
+                            ),
+                            if (_selectedType?.description != null) ...[
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                _selectedType!.description!,
+                                style: textTheme.bodySmall,
                               ),
                             ],
-                          ),
-                          if (_selectedType?.description != null) ...[
-                            const SizedBox(height: AppSpacing.sm),
-                            Text(
-                              _selectedType!.description!,
-                              style: textTheme.bodySmall,
-                            ),
-                          ],
-                          if (_typeHasParameters(_selectedType))
-                            KeyedSubtree(
-                              key: _activityParamsKey,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // v1.42 — 運動專屬強度/實力/NTRP 等級與選填積分
-                                  Builder(
-                                    builder: (context) {
-                                      final sportConfig =
-                                          SportLevelConfig.forSystem(
-                                            _selectedType?.levelSystem,
-                                          );
-                                      if (sportConfig == null) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      return Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: AppSpacing.lg),
-                                          Text(
-                                            sportConfig.sectionTitle,
-                                            style: textTheme.titleSmall,
-                                          ),
-                                          if (sportConfig.helperText !=
-                                              null) ...[
-                                            const SizedBox(height: 2),
+                            if (_typeHasParameters(_selectedType))
+                              KeyedSubtree(
+                                key: _activityParamsKey,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // v1.42 — 運動專屬強度/實力/NTRP 等級與選填積分
+                                    Builder(
+                                      builder: (context) {
+                                        final sportConfig =
+                                            SportLevelConfig.forSystem(
+                                              _selectedType?.levelSystem,
+                                            );
+                                        if (sportConfig == null) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const SizedBox(height: AppSpacing.lg),
                                             Text(
-                                              sportConfig.helperText!,
-                                              style: textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.onSurfaceVariant,
-                                                  ),
+                                              sportConfig.sectionTitle,
+                                              style: textTheme.titleSmall,
                                             ),
-                                          ],
-                                          const SizedBox(height: AppSpacing.xs),
-                                          Wrap(
-                                            spacing: AppSpacing.sm,
-                                            runSpacing: AppSpacing.xs,
-                                            children: [
-                                              ChoiceChip(
-                                                label: Text(
-                                                  sportConfig.wildcardLabel,
-                                                ),
-                                                selected:
-                                                    _selectedSportLevel == null,
-                                                onSelected: AppHaptics.select(
-                                                  (_) {
-                                                    setState(
-                                                      () =>
-                                                          _selectedSportLevel =
-                                                              null,
-                                                    );
-                                                    if (!sportConfig
-                                                        .supportsRating) {
-                                                      _scrollToSection(
-                                                        _timeSectionKey,
-                                                      );
-                                                    }
-                                                  },
-                                                ),
+                                            if (sportConfig.helperText !=
+                                                null) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                sportConfig.helperText!,
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(
+                                                        context,
+                                                      ).colorScheme.onSurfaceVariant,
+                                                    ),
                                               ),
-                                              for (final opt
-                                                  in sportConfig.options)
+                                            ],
+                                            const SizedBox(height: AppSpacing.xs),
+                                            Wrap(
+                                              spacing: AppSpacing.sm,
+                                              runSpacing: AppSpacing.xs,
+                                              children: [
                                                 ChoiceChip(
                                                   label: Text(
-                                                    opt.displayChipLabel,
+                                                    sportConfig.wildcardLabel,
                                                   ),
                                                   selected:
-                                                      _selectedSportLevel ==
-                                                      opt.value,
+                                                      _selectedSportLevel == null,
                                                   onSelected: AppHaptics.select(
                                                     (_) {
                                                       setState(
                                                         () =>
                                                             _selectedSportLevel =
-                                                                opt.value,
+                                                                null,
                                                       );
                                                       if (!sportConfig
                                                           .supportsRating) {
@@ -1472,188 +1447,268 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                     },
                                                   ),
                                                 ),
-                                            ],
-                                          ),
-                                          if (sportConfig.supportsRating) ...[
-                                            const SizedBox(
-                                              height: AppSpacing.sm,
-                                            ),
-                                            AppTextField(
-                                              controller: _ratingController,
-                                              label:
-                                                  sportConfig.ratingLabel ??
-                                                  '積分（選填）',
-                                              hint:
-                                                  sportConfig.ratingHint ??
-                                                  '例如：約 1450',
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              onChanged: (_) => setState(() {}),
-                                              onSubmitted: (_) =>
-                                                  _scrollToSection(
-                                                    _timeSectionKey,
+                                                for (final opt
+                                                    in sportConfig.options)
+                                                  ChoiceChip(
+                                                    label: Text(
+                                                      opt.displayChipLabel,
+                                                    ),
+                                                    selected:
+                                                        _selectedSportLevel ==
+                                                        opt.value,
+                                                    onSelected: AppHaptics.select(
+                                                      (_) {
+                                                        setState(
+                                                          () =>
+                                                              _selectedSportLevel =
+                                                                  opt.value,
+                                                        );
+                                                        if (!sportConfig
+                                                            .supportsRating) {
+                                                          _scrollToSection(
+                                                            _timeSectionKey,
+                                                          );
+                                                        }
+                                                      },
+                                                    ),
                                                   ),
+                                              ],
                                             ),
+                                            if (sportConfig.supportsRating) ...[
+                                              const SizedBox(
+                                                height: AppSpacing.sm,
+                                              ),
+                                              AppTextField(
+                                                controller: _ratingController,
+                                                label:
+                                                    sportConfig.ratingLabel ??
+                                                    '積分（選填）',
+                                                hint:
+                                                    sportConfig.ratingHint ??
+                                                    '例如：約 1450',
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                onChanged: (_) => setState(() {}),
+                                                onSubmitted: (_) =>
+                                                    _scrollToSection(
+                                                      _timeSectionKey,
+                                                    ),
+                                              ),
+                                            ],
                                           ],
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                  // v1.35 — 只有讀書類型顯示，選填。
-                                  if (_selectedType?.name == '讀書') ...[
-                                    const SizedBox(height: AppSpacing.lg),
-                                    Text(
-                                      '想找同樣在準備什麼的人？（選填）',
-                                      style: textTheme.titleSmall,
+                                        );
+                                      },
                                     ),
-                                    const SizedBox(height: AppSpacing.xs),
-                                    Wrap(
-                                      spacing: AppSpacing.xs,
-                                      runSpacing: AppSpacing.xs,
-                                      children: [
-                                        for (final subject
-                                            in _popularStudySubjects)
-                                          ActionChip(
-                                            label: Text(subject),
-                                            onPressed: () {
-                                              setState(
-                                                () =>
-                                                    _studyTargetController
-                                                        .text = subject,
-                                              );
-                                              _scrollToSection(_timeSectionKey);
-                                            },
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: AppSpacing.sm),
-                                    AppTextField(
-                                      controller: _studyTargetController,
-                                      label: '科目/課程/考試名稱',
-                                      hint: '例如：微積分(一)、雅思、多益',
-                                      onChanged: (_) => setState(() {}),
-                                      onSubmitted: (_) =>
-                                          _scrollToSection(_timeSectionKey),
-                                    ),
-                                    const SizedBox(height: AppSpacing.xs),
-                                    Text(
-                                      '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
-                                      '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
-                                      style: textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
+                                    // v1.35 — 只有讀書類型顯示，選填。
+                                    if (_selectedType?.name == '讀書') ...[
+                                      const SizedBox(height: AppSpacing.lg),
+                                      Text(
+                                        '想找同樣在準備什麼的人？（選填）',
+                                        style: textTheme.titleSmall,
                                       ),
-                                    ),
-                                    if (_studyTargetController
-                                        .text
-                                        .isNotEmpty) ...[
                                       const SizedBox(height: AppSpacing.xs),
-                                      Builder(
-                                        builder: (context) {
-                                          final normalized =
-                                              _normalizeStudyTargetPreview(
-                                                _studyTargetController.text,
-                                              );
-                                          return Text(
-                                            normalized == null
-                                                ? '目前輸入不會被當作指定條件（等同不限）'
-                                                : '將以「$normalized」進行比對',
-                                            style: textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.onSurfaceVariant,
-                                                ),
-                                          );
-                                        },
+                                      Wrap(
+                                        spacing: AppSpacing.xs,
+                                        runSpacing: AppSpacing.xs,
+                                        children: [
+                                          for (final subject
+                                              in _popularStudySubjects)
+                                            ActionChip(
+                                              label: Text(subject),
+                                              onPressed: () {
+                                                setState(
+                                                  () =>
+                                                      _studyTargetController
+                                                          .text = subject,
+                                                );
+                                                _scrollToSection(_timeSectionKey);
+                                              },
+                                            ),
+                                        ],
                                       ),
+                                      const SizedBox(height: AppSpacing.sm),
+                                      AppTextField(
+                                        controller: _studyTargetController,
+                                        label: '科目/課程/考試名稱',
+                                        hint: '例如：微積分(一)、雅思、多益',
+                                        onChanged: (_) => setState(() {}),
+                                        onSubmitted: (_) =>
+                                            _scrollToSection(_timeSectionKey),
+                                      ),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Text(
+                                        '想找完全同一堂課的人？可以連老師一起打，例如「微積分(一) 陳大文」——但比對是完全比對，'
+                                        '要對方也打一模一樣的內容才會配對成功，不確定的話單打科目名稱就好',
+                                        style: textTheme.bodySmall?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      if (_studyTargetController
+                                          .text
+                                          .isNotEmpty) ...[
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Builder(
+                                          builder: (context) {
+                                            final normalized =
+                                                _normalizeStudyTargetPreview(
+                                                  _studyTargetController.text,
+                                                );
+                                            return Text(
+                                              normalized == null
+                                                  ? '目前輸入不會被當作指定條件（等同不限）'
+                                                  : '將以「$normalized」進行比對',
+                                              style: textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: Theme.of(
+                                                      context,
+                                                    ).colorScheme.onSurfaceVariant,
+                                                  ),
+                                            );
+                                          },
+                                        ),
+                                      ],
                                     ],
                                   ],
-                                ],
+                                ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.md),
                     KeyedSubtree(
                       key: _timeSectionKey,
-                      child: AppSection(
+                      child: _FormCardSection(
+                        stepNumber: 2,
                         title: '時間',
-                        description: '什麼時候？',
+                        description: '希望什麼時候開始？',
+                        trailing: TextButton.icon(
+                          onPressed: () => setState(() {
+                            _detailedMode = !_detailedMode;
+                            _nowSelected = false;
+                            _selectedBucketIndices.clear();
+                          }),
+                          icon: Icon(
+                            _detailedMode
+                                ? Icons.view_timeline_rounded
+                                : Icons.tune_rounded,
+                            size: 16,
+                          ),
+                          label: Text(_detailedMode ? '改選時段' : '自訂時間'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                            ),
+                          ),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () => setState(() {
-                                  _detailedMode = !_detailedMode;
-                                  _nowSelected = false;
-                                  _selectedBucketIndices.clear();
-                                }),
-                                child: Text(_detailedMode ? '改選時段' : '自訂時間'),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 260),
+                              curve: Curves.easeInOutCubic,
+                              child: AnimatedCrossFade(
+                                duration: const Duration(milliseconds: 240),
+                                firstCurve: Curves.easeInOutCubic,
+                                secondCurve: Curves.easeInOutCubic,
+                                sizeCurve: Curves.easeInOutCubic,
+                                crossFadeState: _detailedMode
+                                    ? CrossFadeState.showSecond
+                                    : CrossFadeState.showFirst,
+                                firstChild: Wrap(
+                                  spacing: AppSpacing.sm,
+                                  runSpacing: AppSpacing.sm,
+                                  children: [
+                                    _TimeChip(
+                                      icon: Icons.flash_on_rounded,
+                                      label: '現在',
+                                      selected: _nowSelected,
+                                      onTap: _selectNow,
+                                    ),
+                                    for (var i = 0; i < _buckets.length; i++)
+                                      _TimeChip(
+                                        icon: _buckets[i].icon,
+                                        label: _buckets[i].displayLabel,
+                                        selected: _selectedBucketIndices.contains(
+                                          i,
+                                        ),
+                                        onTap: () => _toggleBucket(i),
+                                      ),
+                                  ],
+                                ),
+                                secondChild: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: _CustomTimeTile(
+                                          label: '最早開始時間',
+                                          time: _customEarliest,
+                                          onTap: () =>
+                                              _pickCustomTime(isEarliest: true),
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Expanded(
+                                        child: _CustomTimeTile(
+                                          label: '最晚開始時間',
+                                          time: _customLatest,
+                                          onTap: () =>
+                                              _pickCustomTime(isEarliest: false),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                            if (_detailedMode) ...[
-                              OutlinedButton(
-                                onPressed: () =>
-                                    _pickCustomTime(isEarliest: true),
-                                child: Text(
-                                  _customEarliest == null
-                                      ? '最早開始時間'
-                                      : _formatTime(_customEarliest!),
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.sm),
-                              OutlinedButton(
-                                onPressed: () =>
-                                    _pickCustomTime(isEarliest: false),
-                                child: Text(
-                                  _customLatest == null
-                                      ? '最晚開始時間'
-                                      : _formatTime(_customLatest!),
-                                ),
-                              ),
-                            ] else
-                              Wrap(
-                                spacing: AppSpacing.sm,
-                                runSpacing: AppSpacing.sm,
-                                children: [
-                                  _TimeChip(
-                                    icon: Icons.flash_on_rounded,
-                                    label: '現在',
-                                    selected: _nowSelected,
-                                    onTap: _selectNow,
-                                  ),
-                                  for (var i = 0; i < _buckets.length; i++)
-                                    _TimeChip(
-                                      icon: _buckets[i].icon,
-                                      label: _buckets[i].displayLabel,
-                                      selected: _selectedBucketIndices.contains(
-                                        i,
-                                      ),
-                                      onTap: () => _toggleBucket(i),
-                                    ),
-                                ],
-                              ),
                             if (window != null) ...[
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                '已選範圍：${_timeWindowLabel(window)}',
-                                style: textTheme.bodySmall,
+                              const SizedBox(height: AppSpacing.sm),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.sm,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                      .withValues(alpha: 0.25),
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.sm),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.schedule_rounded,
+                                      size: 14,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '已選範圍：${_timeWindowLabel(window)}',
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.md),
                     KeyedSubtree(
                       key: _campusSectionKey,
-                      child: AppSection(
+                      child: _FormCardSection(
+                        stepNumber: 3,
                         title: '校區',
                         description: '人在哪個校區？',
                         child: campusAsync.when(
@@ -1726,24 +1781,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.md),
                     KeyedSubtree(
                       key: _headcountSectionKey,
-                      child: AppSection(
+                      child: _FormCardSection(
+                        stepNumber: 4,
                         title: '人數',
-                        description: '整團大約要幾個人？',
+                        description: '整團大約要幾個人？（含你自己）',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '人數是整團的總人數，含你自己',
-                              style: textTheme.bodySmall?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
                             if (_selectedType == null)
                               Text('請先選活動類型', style: textTheme.bodySmall)
                             else
@@ -1758,6 +1805,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                   final hasLockedOption =
                                       reliability.isNewUser &&
                                       options.any((n) => n <= 2);
+                                  final isCupertino =
+                                      Theme.of(context).platform ==
+                                          TargetPlatform.iOS ||
+                                      Theme.of(context).platform ==
+                                          TargetPlatform.macOS;
+                                  final useRoller =
+                                      isCupertino || options.length > 5;
+
                                   return Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -1773,52 +1828,104 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                         ),
                                         const SizedBox(height: AppSpacing.sm),
                                       ],
-                                      Text('至少', style: textTheme.bodySmall),
-                                      const SizedBox(height: AppSpacing.xs),
-
-                                      Wrap(
-                                        spacing: AppSpacing.sm,
-                                        children: [
-                                          for (final n in options)
-                                            // UI_PLAN §2.2：New tier 使用者 ≤2 人選項直接 disable。
-                                            // 反饋：disable 但沒有任何說明，使用者不知道為什麼點不動
-                                            // ——用 Tooltip（長按/hover 可看）+ 下方常駐提示文字
-                                            // 兩種方式解釋原因，不用等送出才看到 NEW_USER_LOW_HEADCOUNT。
-                                            Tooltip(
-                                              message:
-                                                  (n <= 2 &&
-                                                      reliability.isNewUser)
-                                                  ? '新用戶尚未開放 2 人以下場次'
-                                                  : '',
-                                              triggerMode:
-                                                  TooltipTriggerMode.tap,
-                                              child: ChoiceChip(
-                                                label: Text('$n 人'),
-                                                selected:
-                                                    _selectedMinHeadcount == n,
-                                                onSelected:
+                                      if (useRoller)
+                                        _HeadcountRollerPicker(
+                                          options: options,
+                                          minCount: _selectedMinHeadcount ??
+                                              options.first,
+                                          maxCount: _selectedMaxHeadcount ??
+                                              _selectedMinHeadcount ??
+                                              options.first,
+                                          isNewUser: reliability.isNewUser,
+                                          onMinChanged: (n) {
+                                            setState(() {
+                                              _selectedMinHeadcount = n;
+                                              if (_selectedMaxHeadcount != null &&
+                                                  _selectedMaxHeadcount! < n) {
+                                                _selectedMaxHeadcount = n;
+                                              }
+                                            });
+                                          },
+                                          onMaxChanged: (n) {
+                                            setState(() {
+                                              _selectedMaxHeadcount = n;
+                                              if (_selectedMinHeadcount != null &&
+                                                  _selectedMinHeadcount! > n) {
+                                                _selectedMinHeadcount = n;
+                                              }
+                                            });
+                                          },
+                                        )
+                                      else ...[
+                                        Text('至少', style: textTheme.bodySmall),
+                                        const SizedBox(height: AppSpacing.xs),
+                                        Wrap(
+                                          spacing: AppSpacing.sm,
+                                          children: [
+                                            for (final n in options)
+                                              Tooltip(
+                                                message:
                                                     (n <= 2 &&
                                                         reliability.isNewUser)
-                                                    ? null
-                                                    : AppHaptics.select(
-                                                        (_) => setState(() {
-                                                          _selectedMinHeadcount =
-                                                              n;
-                                                          // 最多不能小於最少——若原本選的最多比新的
-                                                          // 最少還小，直接清掉讓使用者重選。
-                                                          if (_selectedMaxHeadcount !=
-                                                                  null &&
-                                                              _selectedMaxHeadcount! <
-                                                                  n) {
-                                                            _selectedMaxHeadcount =
-                                                                null;
-                                                          }
-                                                        }),
-                                                      ),
+                                                    ? '新用戶尚未開放 2 人以下場次'
+                                                    : '',
+                                                triggerMode:
+                                                    TooltipTriggerMode.tap,
+                                                child: ChoiceChip(
+                                                  label: Text('$n 人'),
+                                                  selected:
+                                                      _selectedMinHeadcount == n,
+                                                  onSelected:
+                                                      (n <= 2 &&
+                                                          reliability.isNewUser)
+                                                      ? null
+                                                      : AppHaptics.select(
+                                                          (_) => setState(() {
+                                                            _selectedMinHeadcount =
+                                                                n;
+                                                            if (_selectedMaxHeadcount !=
+                                                                    null &&
+                                                                _selectedMaxHeadcount! <
+                                                                    n) {
+                                                              _selectedMaxHeadcount =
+                                                                  null;
+                                                            }
+                                                          }),
+                                                        ),
+                                                ),
                                               ),
-                                            ),
-                                        ],
-                                      ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: AppSpacing.md),
+                                        Text('至多', style: textTheme.bodySmall),
+                                        const SizedBox(height: AppSpacing.xs),
+                                        if (_selectedMinHeadcount == null)
+                                          Text(
+                                            '請先選「至少」人數',
+                                            style: textTheme.bodySmall,
+                                          )
+                                        else
+                                          Wrap(
+                                            spacing: AppSpacing.sm,
+                                            children: [
+                                              for (final n in options)
+                                                if (n >= _selectedMinHeadcount!)
+                                                  ChoiceChip(
+                                                    label: Text('$n 人'),
+                                                    selected:
+                                                        _selectedMaxHeadcount ==
+                                                        n,
+                                                    onSelected: AppHaptics.select(
+                                                      (_) => setState(
+                                                        () =>
+                                                            _selectedMaxHeadcount =
+                                                                n,
+                                                      ),
+                                                    ),
+                                                  ),
+                                            ],
+                                          ),
+                                      ],
                                       if (hasLockedOption) ...[
                                         const SizedBox(height: AppSpacing.xs),
                                         Row(
@@ -1846,35 +1953,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                           ],
                                         ),
                                       ],
-                                      const SizedBox(height: AppSpacing.md),
-                                      Text('至多', style: textTheme.bodySmall),
-                                      const SizedBox(height: AppSpacing.xs),
-                                      if (_selectedMinHeadcount == null)
-                                        Text(
-                                          '請先選「至少」人數',
-                                          style: textTheme.bodySmall,
-                                        )
-                                      else
-                                        Wrap(
-                                          spacing: AppSpacing.sm,
-                                          children: [
-                                            for (final n in options)
-                                              if (n >= _selectedMinHeadcount!)
-                                                ChoiceChip(
-                                                  label: Text('$n 人'),
-                                                  selected:
-                                                      _selectedMaxHeadcount ==
-                                                      n,
-                                                  onSelected: AppHaptics.select(
-                                                    (_) => setState(
-                                                      () =>
-                                                          _selectedMaxHeadcount =
-                                                              n,
-                                                    ),
-                                                  ),
-                                                ),
-                                          ],
-                                        ),
                                     ],
                                   );
                                 },
@@ -1883,8 +1961,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
-                    AppSection(
+                    const SizedBox(height: AppSpacing.md),
+                    _FormCardSection(
+                      stepNumber: 5,
                       title: '降級配對',
                       description: '如果人數不足，可以選擇接受較少人也成立活動。',
                       child: Material(
@@ -1897,15 +1976,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
-                    AppSection(
+                    const SizedBox(height: AppSpacing.md),
+                    _FormCardSection(
+                      stepNumber: 6,
                       title: '送出前確認',
                       description: '請確認目前選擇；送出後會開始尋找符合條件的人。',
                       child: AppSelectionSummary(
                         items: _selectionSummaryItems(window),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.lg),
                   ],
                 ),
               ),
@@ -1972,6 +2052,382 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 }
 
+/// Bento 風格步驟決策卡——為「活動、時間、校區、人數、降級配對」建立清晰界線與層級。
+class _FormCardSection extends StatelessWidget {
+  const _FormCardSection({
+    required this.stepNumber,
+    required this.title,
+    this.description,
+    this.trailing,
+    required this.child,
+  });
+
+  final int stepNumber;
+  final String title;
+  final String? description;
+  final Widget? trailing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$stepNumber',
+                  style: textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (description != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description!,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              ?trailing,
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Divider(
+            height: 1,
+            color: scheme.outlineVariant.withValues(alpha: 0.35),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// 自訂時間按鈕卡片——點擊跳出時間選擇器，呈現精緻的時間卡片狀態
+class _CustomTimeTile extends StatelessWidget {
+  const _CustomTimeTile({
+    required this.label,
+    required this.time,
+    required this.onTap,
+  });
+
+  final String label;
+  final DateTime? time;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isSet = time != null;
+
+    return InkWell(
+      onTap: () {
+        AppHaptics.selection();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: isSet
+              ? scheme.primaryContainer.withValues(alpha: 0.25)
+              : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            color: isSet
+                ? scheme.primary.withValues(alpha: 0.6)
+                : scheme.outlineVariant.withValues(alpha: 0.4),
+            width: isSet ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: isSet ? scheme.primary : scheme.onSurfaceVariant,
+                fontWeight: isSet ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.access_time_rounded,
+                  size: 16,
+                  color: isSet ? scheme.primary : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  isSet
+                      ? '${time!.hour.toString().padLeft(2, '0')}:${time!.minute.toString().padLeft(2, '0')}'
+                      : '點擊設定',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: isSet ? FontWeight.bold : FontWeight.normal,
+                    color: isSet ? scheme.onSurface : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// iOS 滾輪數字人數選擇器（CupertinoPicker）——提供極度滑順的物理動能與震動回饋，
+/// 解決 5~20 人時產生 30+ 顆標籤擠滿畫面的問題。
+class _HeadcountRollerPicker extends StatefulWidget {
+  const _HeadcountRollerPicker({
+    required this.options,
+    required this.minCount,
+    required this.maxCount,
+    required this.onMinChanged,
+    required this.onMaxChanged,
+    required this.isNewUser,
+  });
+
+  final List<int> options;
+  final int minCount;
+  final int maxCount;
+  final ValueChanged<int> onMinChanged;
+  final ValueChanged<int> onMaxChanged;
+  final bool isNewUser;
+
+  @override
+  State<_HeadcountRollerPicker> createState() => _HeadcountRollerPickerState();
+}
+
+class _HeadcountRollerPickerState extends State<_HeadcountRollerPicker> {
+  late FixedExtentScrollController _minController;
+  late FixedExtentScrollController _maxController;
+
+  @override
+  void initState() {
+    super.initState();
+    final minIdx = widget.options.indexOf(widget.minCount);
+    final maxIdx = widget.options.indexOf(widget.maxCount);
+    _minController = FixedExtentScrollController(
+      initialItem: minIdx >= 0 ? minIdx : 0,
+    );
+    _maxController = FixedExtentScrollController(
+      initialItem: maxIdx >= 0 ? maxIdx : (widget.options.length - 1),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_HeadcountRollerPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.minCount != widget.minCount) {
+      final minIdx = widget.options.indexOf(widget.minCount);
+      if (minIdx >= 0 && _minController.hasClients && _minController.selectedItem != minIdx) {
+        _minController.animateToItem(
+          minIdx,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    }
+    if (oldWidget.maxCount != widget.maxCount) {
+      final maxIdx = widget.options.indexOf(widget.maxCount);
+      if (maxIdx >= 0 && _maxController.hasClients && _maxController.selectedItem != maxIdx) {
+        _maxController.animateToItem(
+          maxIdx,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _minController.dispose();
+    _maxController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
+    return Container(
+      height: 156,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(AppRadius.md),
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '至少 (${widget.minCount} 人)',
+                      style: textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: CupertinoPicker(
+                    itemExtent: 40,
+                    scrollController: _minController,
+                    magnification: 1.15,
+                    useMagnifier: true,
+                    squeeze: 1.15,
+                    selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
+                      background: scheme.primary.withValues(alpha: 0.12),
+                    ),
+                    onSelectedItemChanged: (index) {
+                      AppHaptics.selection();
+                      final chosenMin = widget.options[index];
+                      if (widget.isNewUser && chosenMin <= 2) return;
+                      widget.onMinChanged(chosenMin);
+                    },
+                    children: [
+                      for (final n in widget.options)
+                        Center(
+                          child: Text(
+                            '$n 人',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: n == widget.minCount ? FontWeight.bold : FontWeight.w500,
+                              color: (widget.isNewUser && n <= 2)
+                                  ? scheme.onSurfaceVariant.withValues(alpha: 0.35)
+                                  : (n == widget.minCount ? scheme.primary : scheme.onSurface),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: scheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(AppRadius.md),
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '至多 (${widget.maxCount} 人)',
+                      style: textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: CupertinoPicker(
+                    itemExtent: 40,
+                    scrollController: _maxController,
+                    magnification: 1.15,
+                    useMagnifier: true,
+                    squeeze: 1.15,
+                    selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
+                      background: scheme.primary.withValues(alpha: 0.12),
+                    ),
+                    onSelectedItemChanged: (index) {
+                      AppHaptics.selection();
+                      final chosenMax = widget.options[index];
+                      widget.onMaxChanged(chosenMax);
+                    },
+                    children: [
+                      for (final n in widget.options)
+                        Center(
+                          child: Text(
+                            '$n 人',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: n == widget.maxCount ? FontWeight.bold : FontWeight.w500,
+                              color: n < widget.minCount
+                                  ? scheme.onSurfaceVariant.withValues(alpha: 0.35)
+                                  : (n == widget.maxCount ? scheme.primary : scheme.onSurface),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 選擇型大卡片——活動類型步驟用，比 [ChoiceChip] 更大的觸控面積跟視覺重量，
 /// 呼應「像 Tinder / Uber 那種快速決策」的反饋。
 class _OptionCard extends StatelessWidget {
@@ -2004,9 +2460,12 @@ class _OptionCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: selected
-                ? Border.all(color: scheme.primary, width: 2)
-                : null,
+            border: Border.all(
+              color: selected
+                  ? scheme.primary
+                  : scheme.outlineVariant.withValues(alpha: 0.4),
+              width: selected ? 2 : 1,
+            ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Column(
@@ -2064,7 +2523,7 @@ class _AddOptionCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-              color: scheme.outlineVariant,
+              color: scheme.outlineVariant.withValues(alpha: 0.6),
               style: BorderStyle.solid,
             ),
           ),
@@ -2117,7 +2576,16 @@ class _TimeChip extends StatelessWidget {
           onTap();
         },
         borderRadius: BorderRadius.circular(AppRadius.pill),
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: selected
+                  ? scheme.primary
+                  : scheme.outlineVariant.withValues(alpha: 0.4),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md,
             vertical: AppSpacing.sm,
