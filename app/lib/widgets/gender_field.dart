@@ -36,7 +36,7 @@ class GenderField extends StatelessWidget {
               ),
             ),
             Text(
-              '選填，供展示與未來同性活動篩選',
+              '選填',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                 fontSize: 11,
