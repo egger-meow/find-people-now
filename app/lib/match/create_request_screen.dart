@@ -669,9 +669,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 
   List<int> _groupSizeOptions(ActivityType type) {
-    // 泛化所有活動人數選擇，至少提供 2 到 30 人的彈性規模，避免細節規則限制成團人數
+    // 泛化所有活動人數選擇，提供 2 到 20 人的規模，避免選項過多過長
     final min = math.min(2, type.defaultMinParticipants ?? 2);
-    final max = math.max(30, type.defaultMaxParticipants ?? 30);
+    final max = 20;
     final step = (type.groupSizeStep != null && type.groupSizeStep! > 0)
         ? type.groupSizeStep!
         : 1;
@@ -1352,6 +1352,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       }
                                       var defaultMax =
                                           type.defaultMaxParticipants ?? defaultMin;
+                                      if (defaultMax > 20) {
+                                        defaultMax = 20;
+                                      }
                                       if (defaultMax < defaultMin) {
                                         defaultMax = defaultMin;
                                       }

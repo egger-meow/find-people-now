@@ -208,7 +208,7 @@ void main() {
     expect(find.textContaining('至多 (10 人)'), findsOneWidget);
   });
 
-  testWidgets('跑步等所有活動人數範圍皆泛化至 2 到 30 人', (tester) async {
+  testWidgets('跑步等所有活動人數範圍皆泛化至 2 到 20 人', (tester) async {
     final runningType = ActivityType(
       id: 'running',
       name: '跑步',
@@ -264,11 +264,11 @@ void main() {
     // 滾動至人數區塊
     await _scrollTo(tester, find.text('人數'));
 
-    // 驗證人數選擇器支援 2 至 30 人，不再被鎖死在 3-4 人
+    // 驗證人數選擇器支援 2 至 20 人，不再被鎖死在 3-4 人
     expect(find.text('2 人'), findsWidgets);
     final pickers = tester.widgetList<CupertinoPicker>(find.byType(CupertinoPicker));
     expect(pickers, isNotEmpty);
     final delegate = pickers.first.childDelegate as ListWheelChildListDelegate;
-    expect(delegate.children.length, 29); // 2 到 30 共 29 個選項
+    expect(delegate.children.length, 19); // 2 到 20 共 19 個選項
   });
 }
