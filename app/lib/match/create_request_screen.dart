@@ -1347,13 +1347,22 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                           reliability?.isNewUser ?? false;
                                       var defaultMin =
                                           type.defaultMinParticipants ?? 3;
+                                      final step = (type.groupSizeStep != null && type.groupSizeStep! > 0)
+                                          ? type.groupSizeStep!
+                                          : 1;
                                       if (isNew && defaultMin <= 2) {
-                                        defaultMin = 3;
+                                        defaultMin = step > 1 ? (2 ~/ step + 1) * step : 3;
                                       }
                                       var defaultMax =
                                           type.defaultMaxParticipants ?? defaultMin;
                                       if (defaultMax > 20) {
                                         defaultMax = 20;
+                                      }
+                                      if (step > 1) {
+                                        final remainder = (defaultMax - defaultMin) % step;
+                                        if (remainder != 0) {
+                                          defaultMax -= remainder;
+                                        }
                                       }
                                       if (defaultMax < defaultMin) {
                                         defaultMax = defaultMin;

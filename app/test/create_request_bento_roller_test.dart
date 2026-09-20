@@ -34,7 +34,7 @@ final _testTypes = [
     createdAt: DateTime(2026),
     defaultMinParticipants: 4,
     defaultMaxParticipants: 10,
-    groupSizeStep: 1,
+    groupSizeStep: 2,
     skillLevelEnabled: true,
     sortOrder: 1,
     levelSystem: LEVEL_SYSTEM.BASKETBALL_INTENSITY,
@@ -206,6 +206,11 @@ void main() {
     expect(find.byType(CupertinoPicker), findsNWidgets(2));
     expect(find.textContaining('至少 (4 人)'), findsOneWidget);
     expect(find.textContaining('至多 (10 人)'), findsOneWidget);
+
+    // 籃球 step=2 僅產生偶數規模選項（2, 4, 6, 8, 10, 12, 14, 16, 18, 20 共 10 個選項）
+    final pickers = tester.widgetList<CupertinoPicker>(find.byType(CupertinoPicker));
+    final delegate = pickers.first.childDelegate as ListWheelChildListDelegate;
+    expect(delegate.children.length, 10);
   });
 
   testWidgets('跑步等所有活動人數範圍皆泛化至 2 到 20 人', (tester) async {
