@@ -63,8 +63,6 @@ final myMatchRequestsProvider = FutureProvider<List<MatchRequest>>((ref) async {
   final rows = await client.from('match_request').select().inFilter('status', [
     'REQUESTING',
     'PENDING_CONFIRMATION',
-    'EXPIRED',
-    'CANCELLED',
   ]);
   return rows.map(decodeMatchRequest).toList();
 });

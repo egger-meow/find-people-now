@@ -388,4 +388,28 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test('連成團都沒有的 match_request（取消或過期）絕不出現在過去活動 history 中', () {
+    final cancelledReq = MyActivityListItem.request(
+      _request('req_cancelled', REQUEST_STATUS.CANCELLED, 'running'),
+    );
+    final expiredReq = MyActivityListItem.request(
+      _request('req_expired', REQUEST_STATUS.EXPIRED, 'running'),
+    );
+    final completedAct = MyActivityListItem.activity(
+      _activity('act_completed', ACTIVITY_STATUS.COMPLETED, 'running'),
+    );
+
+    final sections = organizeMyActivitySections([
+      cancelledReq,
+      expiredReq,
+      completedAct,
+    ]);
+
+    expect(sections.actionRequired, isEmpty);
+    expect(sections.current, isEmpty);
+    // 只有真正成團過的 activity 會在 history 中，未成局的 request 絕不記錄
+    expect(sections.history.length, 1);
+    expect(sections.history.single.id, 'act_completed');
+  });
 }

@@ -205,4 +205,68 @@ void main() {
     expect(find.textContaining('至少 (4 人)'), findsOneWidget);
     expect(find.textContaining('至多 (10 人)'), findsOneWidget);
   });
+
+  testWidgets('跑步等所有活動人數範圍皆泛化至 2 到 30 人', (tester) async {
+    final runningType = ActivityType(
+      id: 'running',
+      name: '跑步',
+      status: ACTIVITY_TYPE_STATUS.APPROVED,
+      createdAt: DateTime(2026),
+      defaultMinParticipants: 3,
+      defaultMaxParticipants: 4,
+      groupSizeStep: 1,
+      skillLevelEnabled: false,
+      sortOrder: 1,
+      levelSystem: LEVEL_SYSTEM.NONE,
+      aliases: const [],
+    );
+
+    final gateway = _MockSubmissionGateway();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myActiveRequestProvider.overrideWith((ref) async => null),
+          myActiveActivityProvider.overrideWith((ref) async => null),
+          activityTypesProvider.overrideWith((ref) async => [runningType]),
+          myAppUserProvider.overrideWith((ref) async => _testUser),
+          campusOptionsProvider.overrideWith((ref, school) async => ['光復']),
+          myReliabilityProvider.overrideWith(
+            (ref) async => MyReliability(
+              tier: ReliabilityTier.normal,
+              isNewUser: false,
+            ),
+          ),
+          campusDemandsProvider.overrideWith(
+            (ref, key) => Stream.value(const <CampusDemandCard>[]),
+          ),
+          myActiveAlertSubscriptionsProvider.overrideWith(
+            (ref) async => const <ActivityAlertSubscription>[],
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light.copyWith(platform: TargetPlatform.iOS),
+          home: CreateRequestScreen(
+            submissionGateway: gateway,
+            now: () => _fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 點選跑步
+    await _scrollTo(tester, find.text('跑步'));
+    await tester.tap(find.text('跑步'));
+    await tester.pumpAndSettle();
+
+    // 滾動至人數區塊
+    await _scrollTo(tester, find.text('人數'));
+
+    // 驗證人數選擇器支援 2 至 30 人，不再被鎖死在 3-4 人
+    expect(find.text('2 人'), findsWidgets);
+    final pickers = tester.widgetList<CupertinoPicker>(find.byType(CupertinoPicker));
+    expect(pickers, isNotEmpty);
+    final delegate = pickers.first.childDelegate as ListWheelChildListDelegate;
+    expect(delegate.children.length, 29); // 2 到 30 共 29 個選項
+  });
 }

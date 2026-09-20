@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -667,8 +669,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 
   List<int> _groupSizeOptions(ActivityType type) {
-    final min = type.defaultMinParticipants ?? 3;
-    final max = type.defaultMaxParticipants ?? min;
+    // 泛化所有活動人數選擇，至少提供 2 到 30 人的彈性規模，避免細節規則限制成團人數
+    final min = math.min(2, type.defaultMinParticipants ?? 2);
+    final max = math.max(30, type.defaultMaxParticipants ?? 30);
     final step = (type.groupSizeStep != null && type.groupSizeStep! > 0)
         ? type.groupSizeStep!
         : 1;
@@ -1820,8 +1823,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                           TargetPlatform.iOS ||
                                       Theme.of(context).platform ==
                                           TargetPlatform.macOS;
-                                  final useRoller =
-                                      isCupertino || options.length > 5;
+                                  final useRoller = isCupertino;
 
                                   return Column(
                                     crossAxisAlignment:

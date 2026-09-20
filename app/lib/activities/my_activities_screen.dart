@@ -66,7 +66,11 @@ MyActivitySections organizeMyActivitySections(List<MyActivityListItem> items) {
     } else if (item.isOngoing) {
       current.add(item);
     } else {
-      history.add(item);
+      // 連成團都沒有的（未成局、配對等待期已取消的 match_request）不予記錄於過去活動。
+      // 只有真正成團過的 activity（MATCHED/ONGOING/COMPLETED/CANCELLED）才出現在活動歷史中。
+      if (item.kind == MyActivityKind.activity) {
+        history.add(item);
+      }
     }
   }
 
