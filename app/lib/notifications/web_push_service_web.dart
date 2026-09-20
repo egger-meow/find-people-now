@@ -70,7 +70,7 @@ class WebPushServiceImpl implements WebPushService {
     try {
       final promise = helper.callMethod(
         'subscribe'.toJS,
-        vapidPublicKey != null ? vapidPublicKey.toJS : null,
+        vapidPublicKey?.toJS,
       ) as JSPromise;
       final res = await promise.toDart;
       if (res == null) return null;

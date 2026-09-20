@@ -25,6 +25,7 @@ import '../widgets/app_button.dart';
 import '../widgets/app_error_state.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_section.dart';
 import '../widgets/app_selection_summary.dart';
 import '../widgets/app_snack_bar.dart';
 import '../widgets/app_sticky_action_area.dart';
@@ -1787,10 +1788,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       child: _FormCardSection(
                         stepNumber: 4,
                         title: '人數',
-                        description: '整團大約要幾個人？（含你自己）',
+                        description: '整團大約要幾個人？',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Text(
+                              '人數是整團的總人數，含你自己',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
                             if (_selectedType == null)
                               Text('請先選活動類型', style: textTheme.bodySmall)
                             else
@@ -2074,64 +2084,54 @@ class _FormCardSection extends StatelessWidget {
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  '$stepNumber',
-                  style: textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: scheme.onPrimaryContainer,
+    return AppSection(
+      title: title,
+      description: description,
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$stepNumber',
+                    style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onPrimaryContainer,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (description != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        description!,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  '步驟 $stepNumber',
+                  style: textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: scheme.primary,
+                  ),
                 ),
-              ),
-              ?trailing,
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Divider(
-            height: 1,
-            color: scheme.outlineVariant.withValues(alpha: 0.35),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          child,
-        ],
+                const Spacer(),
+                ?trailing,
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Divider(
+              height: 1,
+              color: scheme.outlineVariant.withValues(alpha: 0.35),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            child,
+          ],
+        ),
       ),
     );
   }
