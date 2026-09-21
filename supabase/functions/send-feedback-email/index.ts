@@ -1,8 +1,8 @@
 // =============================================================================
 // Edge Function: send-feedback-email（v1.25）
 //
-// 跟 delete-auth-user 同一種「唯一持有敏感金鑰的地方」精神：RESEND_API_KEY
-// 絕對不能進 Flutter client，這支 Function 是唯一呼叫 Resend API 的地方。
+// 跟 delete-auth-user 同一種「唯一持有敏感金鑰的地方」精神：郵件憑證
+// 絕對不能進 Flutter client，這支 Function 是唯一呼叫 email sender 的地方。
 //
 // 呼叫順序（Flutter 端保證，見 lib/rpc/feedback_rpc.dart）：先
 // submit_feedback() RPC 成功寫入 `feedback` 表（這一步是唯一保證存在的持久
@@ -19,9 +19,19 @@
 // 的既有精神——人工/事後仍查得到，不靠這封信才算數）。呼叫端
 // (lib/profile/feedback_screen.dart) 也據此設計：無論這支 Function 成功與
 // 否，只要 RPC 成功就顯示「已收到你的回饋」。
+//
+// 郵件傳送層使用共用的 EmailSender 抽象（../send-auth-email/email_sender.ts），
+// 目前由 SmtpRoundRobinSender 實作（同 send-auth-email 的做法）。
+// 未來切換郵件供應商（例如 Cloudflare Email）只需要更改 SMTP 相關 secrets，
+// 不需要改動這支 Function 的程式碼。
 // =============================================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import type { EmailSender } from '../send-auth-email/email_sender.ts'
+import { SmtpRoundRobinSender } from '../send-auth-email/smtp_round_robin_sender.ts'
+
+// v-- the one line that changes when migrating providers (mirrors send-auth-email/index.ts)
+const emailSender: EmailSender = new SmtpRoundRobinSender()
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -55,19 +65,13 @@ Deno.serve(async (req: Request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  const resendApiKey = Deno.env.get('RESEND_API_KEY')
   const feedbackEmailTo = Deno.env.get('FEEDBACK_EMAIL_TO')
-  // Resend's shared onboarding@resend.dev sender works with zero setup
-  // (no domain verification needed) — good enough for MVP; swap in a
-  // verified-domain address via this env var once one is set up in the
-  // Resend dashboard for production.
-  const feedbackEmailFrom = Deno.env.get('FEEDBACK_EMAIL_FROM') ?? 'Feedback <onboarding@resend.dev>'
 
-  if (!resendApiKey || !feedbackEmailTo) {
+  if (!feedbackEmailTo) {
     // Config gap, not a caller error — the feedback row is already durable
     // regardless (see file header). Logged server-side for ops to notice;
     // the client is designed to ignore this response either way.
-    console.error('send-feedback-email misconfigured: missing RESEND_API_KEY or FEEDBACK_EMAIL_TO secret')
+    console.error('send-feedback-email misconfigured: missing FEEDBACK_EMAIL_TO secret')
     return new Response(JSON.stringify({ error: 'EMAIL_NOT_CONFIGURED' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -120,24 +124,18 @@ Deno.serve(async (req: Request) => {
     </p>
   `
 
-  const resendRes = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${resendApiKey}`,
-    },
-    body: JSON.stringify({
-      from: feedbackEmailFrom,
-      to: [feedbackEmailTo],
+  try {
+    await emailSender.send({
+      to: feedbackEmailTo,
       subject: `[找人一起做點事] 新的使用者回饋`,
       html,
-    }),
-  })
-
-  if (!resendRes.ok) {
-    const detail = await resendRes.text()
-    console.error('Resend send failed:', resendRes.status, detail)
-    return new Response(JSON.stringify({ error: 'EMAIL_SEND_FAILED', detail }), {
+    })
+  } catch (err) {
+    console.error(
+      'send-feedback-email: send failed:',
+      err instanceof Error ? err.message : String(err),
+    )
+    return new Response(JSON.stringify({ error: 'EMAIL_SEND_FAILED' }), {
       status: 502,
       headers: { 'Content-Type': 'application/json' },
     })

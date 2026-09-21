@@ -215,7 +215,7 @@
 |---|---|---|
 | 12.1 | `rpc: submit_feedback(message, activity_id?, app_version?, device_info?)` | **送出意見回饋（SPEC v1.25）**：`message` 去頭尾空白後長度需在 1–2000 字，否則 `INVALID_INPUT` detail `MESSAGE_REQUIRED`/`MESSAGE_TOO_LONG`。寫入 `feedback` 表，**不檢查 `activity_id` 是否真的跟呼叫者有關**（同 11.4 對 `reported_activity_id` 的既有處理，純屬客服排查用的情境資訊，不是權限邊界）。 |
 | 12.2 | `GET feedback?user_id=eq.{自己}`（PostgREST，RLS：`user_id = auth.uid()`） | 查自己送出的回饋記錄；其餘使用者查不到。 |
-| 12.3 | Edge Function `send-feedback-email` | **非公開 API**，由 Flutter 端在 12.1 成功後盡力呼叫（失敗不影響 12.1 的成功狀態）。只接受 `{ feedback_id }`，信件內容由 Function 自己用 service_role 重新查表組出，並驗證該筆記錄的 `user_id` 等於呼叫者自己。透過 Resend 寄到 `FEEDBACK_EMAIL_TO`（Supabase secret，非 Flutter `.env`）。 |
+| 12.3 | Edge Function `send-feedback-email` | **非公開 API**，由 Flutter 端在 12.1 成功後盡力呼叫（失敗不影響 12.1 的成功狀態）。只接受 `{ feedback_id }`，信件內容由 Function 自己用 service_role 重新查表組出，並驗證該筆記錄的 `user_id` 等於呼叫者自己。透過共用 `EmailSender` 抽象（`SmtpRoundRobinSender`）寄到 `FEEDBACK_EMAIL_TO`（Supabase secret，非 Flutter `.env`）。切換郵件供應商只需更換 SMTP secrets，不需改動 Function 程式碼。 |
 
 錯誤碼：`INVALID_INPUT`（detail `MESSAGE_REQUIRED` / `MESSAGE_TOO_LONG`）
 

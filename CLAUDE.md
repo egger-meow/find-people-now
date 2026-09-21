@@ -90,6 +90,12 @@ second changelog — check the last few before adding a new one to understand re
   is idempotent; a companion Edge Function (`supabase/functions/delete-auth-user/`) is the only
   code holding the `service_role` key needed to call `auth.admin.deleteUser(..., shouldSoftDelete:
   true)`.
+- **Both email Edge Functions share a single `EmailSender` abstraction**
+  (`supabase/functions/send-auth-email/email_sender.ts`). `send-auth-email` (Auth/OTP hook) and
+  `send-feedback-email` both import `SmtpRoundRobinSender` from the same file. To migrate the
+  entire email stack to a new provider, implement a new `*Sender` class that satisfies `EmailSender`
+  and change the `new SmtpRoundRobinSender()` line in each function's `index.ts` — nothing else
+  changes. The env-var contract is documented in `docs/email-architecture.md`.
 
 ## Flutter app (`app/`)
 

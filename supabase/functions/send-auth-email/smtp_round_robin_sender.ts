@@ -21,11 +21,21 @@ interface SmtpAccount {
   port: number;
   user: string;
   pass: string;
+  // The envelope sender address used in the MIME From: header.
+  // Populated by loadAccounts() — always set (defaults to `user`), so callers
+  // never need to handle undefined.
+  from: string;
 }
 
 // Accounts are read from SMTP_ACCOUNT_1_*, SMTP_ACCOUNT_2_*, ... and probed
 // sequentially until one is missing USER/PASS — so the account count is
 // env-driven, not a hardcoded limit.
+//
+// Optional SMTP_ACCOUNT_N_FROM lets the display sender address differ from the
+// SMTP auth username — useful when migrating providers (e.g. Cloudflare Email
+// routes mail through a different address than the SMTP credential). If FROM
+// is absent it falls back to USER, preserving current Gmail behavior with no
+// env var change required.
 function loadAccounts(): SmtpAccount[] {
   const accounts: SmtpAccount[] = [];
   for (let i = 1; ; i++) {
@@ -41,6 +51,8 @@ function loadAccounts(): SmtpAccount[] {
       port: Number(Deno.env.get(`SMTP_ACCOUNT_${i}_PORT`) ?? "465"),
       user,
       pass,
+      // FROM defaults to USER so existing deployments need no env-var changes.
+      from: Deno.env.get(`SMTP_ACCOUNT_${i}_FROM`) ?? user,
     });
   }
   return accounts;
@@ -79,11 +91,10 @@ export class SmtpRoundRobinSender implements EmailSender {
 
     try {
       await client.send({
-        // RFC 5322 "Display Name <address>" — without this Gmail shows the
-        // raw SMTP account address as the sender instead of the app name
-        // (same sender_name = "敢不敢揪" the commented-out [auth.email.smtp]
-        // block above config.toml's hook section would have set).
-        from: `敢不敢揪 <${account.user}>`,
+        // RFC 5322 "Display Name <address>" — uses account.from (which equals
+        // account.user unless SMTP_ACCOUNT_N_FROM is set) so the display
+        // sender can differ from the SMTP auth credential without code changes.
+        from: `敢不敢揪 <${account.from}>`,
         to: message.to,
         subject: message.subject,
         // Not `html: message.html` — denomailer's own html/text path always
