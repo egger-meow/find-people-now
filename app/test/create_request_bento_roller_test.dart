@@ -189,7 +189,7 @@ void main() {
     );
   });
 
-  testWidgets('iOS platform renders CupertinoPicker headcount roller', (tester) async {
+  testWidgets('iOS platform renders dual-thumb RangeSlider headcount selector without CupertinoPicker', (tester) async {
     final gateway = _MockSubmissionGateway();
     await tester.pumpWidget(_buildApp(gateway: gateway, platform: TargetPlatform.iOS));
     await tester.pumpAndSettle();
@@ -202,15 +202,18 @@ void main() {
     // Scroll down to 人數 section
     await _scrollTo(tester, find.text('人數'));
 
-    // Should render CupertinoPicker roller wheels for min and max
-    expect(find.byType(CupertinoPicker), findsNWidgets(2));
-    expect(find.textContaining('至少 (4 人)'), findsOneWidget);
-    expect(find.textContaining('至多 (10 人)'), findsOneWidget);
+    // Should render single dual-thumb RangeSlider, and NO CupertinoPicker
+    expect(find.byType(CupertinoPicker), findsNothing);
+    expect(find.byType(RangeSlider), findsOneWidget);
+    expect(find.textContaining('4 人'), findsWidgets);
+    expect(find.textContaining('10 人'), findsWidgets);
 
-    // 籃球 step=2 僅產生偶數規模選項（2, 4, 6, 8, 10, 12, 14, 16, 18, 20 共 10 個選項）
-    final pickers = tester.widgetList<CupertinoPicker>(find.byType(CupertinoPicker));
-    final delegate = pickers.first.childDelegate as ListWheelChildListDelegate;
-    expect(delegate.children.length, 10);
+    final slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.min, 2.0);
+    expect(slider.max, 20.0);
+    expect(slider.values.start, 4.0);
+    expect(slider.values.end, 10.0);
+    expect(slider.divisions, 9); // (20 - 2) / 2
   });
 
   testWidgets('跑步等所有活動人數範圍皆泛化至 2 到 20 人', (tester) async {
@@ -270,10 +273,13 @@ void main() {
     await _scrollTo(tester, find.text('人數'));
 
     // 驗證人數選擇器支援 2 至 20 人，不再被鎖死在 3-4 人
+    expect(find.byType(CupertinoPicker), findsNothing);
+    expect(find.byType(RangeSlider), findsOneWidget);
+    final slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.min, 2.0);
+    expect(slider.max, 20.0);
+    expect(slider.divisions, 18); // 2 到 20 步進 1
     expect(find.text('2 人'), findsWidgets);
-    final pickers = tester.widgetList<CupertinoPicker>(find.byType(CupertinoPicker));
-    expect(pickers, isNotEmpty);
-    final delegate = pickers.first.childDelegate as ListWheelChildListDelegate;
-    expect(delegate.children.length, 19); // 2 到 20 共 19 個選項
+    expect(find.text('20 人'), findsWidgets);
   });
 }

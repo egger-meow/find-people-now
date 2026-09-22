@@ -318,8 +318,8 @@ void main() {
     await tester.tap(find.text('微積分'));
     await tester.pumpAndSettle();
 
-    // Verify it scrolled to the time section
-    expect(find.text('現在'), findsOneWidget);
+    // Verify study target input is filled without auto-scrolling
+    expect(find.widgetWithText(TextField, '微積分'), findsOneWidget);
 
     // Verify study target is reflected in selection summary
     await tester.scrollUntilVisible(
@@ -333,7 +333,7 @@ void main() {
     expect(find.text('微積分'), findsWidgets);
   });
 
-  testWidgets('Selecting sport level chip advances to time section', (tester) async {
+  testWidgets('Selecting sport level chip updates selection without auto scroll', (tester) async {
     final gateway = _MockSubmissionGateway();
     await tester.pumpWidget(_buildTestApp(gateway: gateway));
     await tester.pumpAndSettle();
@@ -346,7 +346,17 @@ void main() {
     await tester.tap(find.text('高強度'));
     await tester.pumpAndSettle();
 
-    expect(find.text('現在'), findsOneWidget);
+    // Verify sport level chip remains selected and visible in place without jumping
+    expect(find.text('高強度'), findsOneWidget);
+
+    // Verify in selection summary
+    await tester.scrollUntilVisible(
+      find.text('送出前確認'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('高強度'), findsWidgets);
   });
 
   testWidgets('Dance practice renders dance genres (Hip-Hop, Jazz, Girl Style, Popping, Locking, etc.)', (tester) async {
@@ -373,8 +383,8 @@ void main() {
     await tester.tap(find.text('Hip-Hop'));
     await tester.pumpAndSettle();
 
-    // Advances to time section
-    expect(find.text('現在'), findsOneWidget);
+    // Hip-Hop remains selected
+    expect(find.text('Hip-Hop'), findsOneWidget);
 
     // Check summary reflects genre
     await tester.scrollUntilVisible(

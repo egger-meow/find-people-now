@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -658,28 +657,30 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     });
   }
 
-  void _scrollToNextAfterTime() {
-    final user = ref.read(myAppUserProvider).value;
-    if (user == null) return;
-    final campuses =
-        ref.read(campusOptionsProvider(user.school)).value ?? const [];
-    _scrollToSection(
-      campuses.length > 1 ? _campusSectionKey : _headcountSectionKey,
-    );
+  void _scrollToFirstMissingField(String missing) {
+    if (_selectedType == null) {
+      _scrollToSection(_formTopKey);
+    } else if (_resolveWindow() == null) {
+      _scrollToSection(_timeSectionKey);
+    } else if (_selectedCampus == null) {
+      _scrollToSection(_campusSectionKey);
+    } else if (_selectedMinHeadcount == null || _selectedMaxHeadcount == null) {
+      _scrollToSection(_headcountSectionKey);
+    }
   }
 
-  List<int> _groupSizeOptions(ActivityType type) {
-    // 泛化所有活動人數選擇，提供 2 到 20 人的規模，避免選項過多過長
-    final min = math.min(2, type.defaultMinParticipants ?? 2);
-    final max = 20;
-    final step = (type.groupSizeStep != null && type.groupSizeStep! > 0)
-        ? type.groupSizeStep!
-        : 1;
-    return [for (var v = min; v <= max; v += step) v];
+  String _formatDeadline(DateTime value) {
+    final local = value.toLocal();
+    final now = widget.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final valDate = DateTime(local.year, local.month, local.day);
+    final prefix = valDate == today ? '今天' : '${local.month}月${local.day}日';
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '$prefix $h:$m';
   }
 
   void _toggleBucket(int index) {
-    final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = false;
       if (_selectedBucketIndices.contains(index)) {
@@ -688,16 +689,13 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         _selectedBucketIndices.add(index);
       }
     });
-    if (wasEmpty && _resolveWindow() != null) _scrollToNextAfterTime();
   }
 
   void _selectNow() {
-    final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = true;
       _selectedBucketIndices.clear();
     });
-    if (wasEmpty) _scrollToNextAfterTime();
   }
 
   Future<void> _pickCustomTime({required bool isEarliest}) async {
@@ -736,7 +734,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     }
     if (picked == null || !mounted) return;
 
-    final wasEmpty = _resolveWindow() == null;
     setState(() {
       _nowSelected = false;
       _selectedBucketIndices.clear();
@@ -746,7 +743,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         _customLatest = picked;
       }
     });
-    if (wasEmpty && _resolveWindow() != null) _scrollToNextAfterTime();
   }
 
   /// iOS 版自訂時間選擇——單一 [CupertinoDatePicker]（滾輪、日期+時間一次選）
@@ -858,6 +854,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       } on StateError {
         // See [invalidateActiveRequest].
       }
+    }
+
+    if (snapshot.window.$2.isBefore(widget.now())) {
+      setState(() {
+        _error = '這個時段已過，請重新選擇';
+        _submitting = false;
+        _selectedBucketIndices.clear();
+        _nowSelected = false;
+        _customEarliest = null;
+        _customLatest = null;
+      });
+      _scrollToSection(_timeSectionKey);
+      return;
     }
 
     try {
@@ -1079,6 +1088,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     final missing = _missingRequiredChoice(window);
     if (missing != null) {
       setState(() => _error = '請完成所有選擇：$missing');
+      _scrollToFirstMissingField(missing);
+      return;
+    }
+
+    if (window!.$2.isBefore(widget.now())) {
+      setState(() {
+        _error = '這個時段已過，請重新選擇';
+        _selectedBucketIndices.clear();
+        _nowSelected = false;
+        _customEarliest = null;
+        _customLatest = null;
+      });
+      _scrollToSection(_timeSectionKey);
       return;
     }
 
@@ -1088,7 +1110,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       campus: _selectedCampus!,
       minParticipants: _selectedMinHeadcount!,
       maxParticipants: _selectedMaxHeadcount!,
-      window: window!,
+      window: window,
       allowDowngrade: _allowDowngrade,
       sportLevel: _selectedSportLevel,
       sportLevelRating: rating,
@@ -1187,9 +1209,14 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         error: (error, stack) => const AppErrorState(),
         data: (user) {
           if (user == null) return const LoadingIndicator();
-          final activeRequest = ref.watch(myActiveRequestProvider).value;
-          final activeActivity = ref.watch(myActiveActivityProvider).value;
-          final hasActiveState = activeRequest != null || activeActivity != null;
+          final activeRequestAsync = ref.watch(myActiveRequestProvider);
+          final activeActivityAsync = ref.watch(myActiveActivityProvider);
+          final isActiveLoading =
+              activeRequestAsync.isLoading || activeActivityAsync.isLoading;
+          final activeRequest = activeRequestAsync.value;
+          final activeActivity = activeActivityAsync.value;
+          final hasActiveState =
+              activeRequest != null || activeActivity != null;
 
           final globalCampus = ref.watch(selectedCampusProvider);
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
@@ -1340,7 +1367,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                     label: type.name,
                                     selected: _selectedType?.id == type.id,
                                     onTap: () {
-                                      final hasParams = _typeHasParameters(type);
                                       final reliability =
                                           ref.read(myReliabilityProvider).value;
                                       final isNew =
@@ -1375,14 +1401,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                         _ratingController.clear();
                                         _studyTargetController.clear();
                                       });
-                                      if (hasParams) {
-                                        _scrollToSection(
-                                          _activityParamsKey,
-                                          alignment: null,
-                                        );
-                                      } else {
-                                        _scrollToSection(_timeSectionKey);
-                                      }
                                     },
                                   ),
                                 _AddOptionCard(
@@ -1454,12 +1472,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                             _selectedSportLevel =
                                                                 null,
                                                       );
-                                                      if (!sportConfig
-                                                          .supportsRating) {
-                                                        _scrollToSection(
-                                                          _timeSectionKey,
-                                                        );
-                                                      }
                                                     },
                                                   ),
                                                 ),
@@ -1479,12 +1491,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                               _selectedSportLevel =
                                                                   opt.value,
                                                         );
-                                                        if (!sportConfig
-                                                            .supportsRating) {
-                                                          _scrollToSection(
-                                                            _timeSectionKey,
-                                                          );
-                                                        }
                                                       },
                                                     ),
                                                   ),
@@ -1505,10 +1511,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                 keyboardType:
                                                     TextInputType.number,
                                                 onChanged: (_) => setState(() {}),
-                                                onSubmitted: (_) =>
-                                                    _scrollToSection(
-                                                      _timeSectionKey,
-                                                    ),
                                               ),
                                             ],
                                           ],
@@ -1537,7 +1539,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                       _studyTargetController
                                                           .text = subject,
                                                 );
-                                                _scrollToSection(_timeSectionKey);
                                               },
                                             ),
                                         ],
@@ -1684,10 +1685,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                             if (window != null) ...[
                               const SizedBox(height: AppSpacing.sm),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.sm,
-                                  vertical: 6,
-                                ),
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(AppSpacing.sm),
                                 decoration: BoxDecoration(
                                   color: Theme.of(context)
                                       .colorScheme
@@ -1695,21 +1694,46 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       .withValues(alpha: 0.25),
                                   borderRadius:
                                       BorderRadius.circular(AppRadius.sm),
+                                  border: Border.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withValues(alpha: 0.3),
+                                  ),
                                 ),
                                 child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(
-                                      Icons.schedule_rounded,
-                                      size: 14,
-                                      color: Theme.of(context).colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '已選範圍：${_timeWindowLabel(window)}',
-                                      style: textTheme.bodySmall?.copyWith(
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Icon(
+                                        Icons.schedule_rounded,
+                                        size: 16,
                                         color: Theme.of(context).colorScheme.primary,
-                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '可開始時段：${_timeWindowLabel(window)}',
+                                            style: textTheme.bodySmall?.copyWith(
+                                              color: Theme.of(context).colorScheme.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '配對截止：最晚於 ${_formatDeadline(window.$2)} 前完成配對',
+                                            style: textTheme.bodySmall?.copyWith(
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
@@ -1788,7 +1812,6 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       ref
                                           .read(selectedCampusProvider.notifier)
                                           .setCampus(campus);
-                                      _scrollToSection(_headcountSectionKey);
                                     },
                                   ),
                               ],
@@ -1823,19 +1846,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                 loading: () => const LoadingIndicator(),
                                 error: (error, stack) => const AppErrorState(),
                                 data: (reliability) {
-                                  final options = _groupSizeOptions(
-                                    _selectedType!,
-                                  );
                                   final scheme = Theme.of(context).colorScheme;
-                                  final hasLockedOption =
-                                      reliability.isNewUser &&
-                                      options.any((n) => n <= 2);
-                                  final isCupertino =
-                                      Theme.of(context).platform ==
-                                          TargetPlatform.iOS ||
-                                      Theme.of(context).platform ==
-                                          TargetPlatform.macOS;
-                                  final useRoller = isCupertino;
+                                  final step = (_selectedType?.groupSizeStep != null &&
+                                          _selectedType!.groupSizeStep! > 0)
+                                      ? _selectedType!.groupSizeStep!
+                                      : 1;
 
                                   return Column(
                                     crossAxisAlignment:
@@ -1852,131 +1867,20 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                         ),
                                         const SizedBox(height: AppSpacing.sm),
                                       ],
-                                      if (useRoller)
-                                        _HeadcountRollerPicker(
-                                          options: options,
-                                          minCount: _selectedMinHeadcount ??
-                                              options.first,
-                                          maxCount: _selectedMaxHeadcount ??
-                                              _selectedMinHeadcount ??
-                                              options.first,
-                                          isNewUser: reliability.isNewUser,
-                                          onMinChanged: (n) {
-                                            setState(() {
-                                              _selectedMinHeadcount = n;
-                                              if (_selectedMaxHeadcount != null &&
-                                                  _selectedMaxHeadcount! < n) {
-                                                _selectedMaxHeadcount = n;
-                                              }
-                                            });
-                                          },
-                                          onMaxChanged: (n) {
-                                            setState(() {
-                                              _selectedMaxHeadcount = n;
-                                              if (_selectedMinHeadcount != null &&
-                                                  _selectedMinHeadcount! > n) {
-                                                _selectedMinHeadcount = n;
-                                              }
-                                            });
-                                          },
-                                        )
-                                      else ...[
-                                        Text('至少', style: textTheme.bodySmall),
-                                        const SizedBox(height: AppSpacing.xs),
-                                        Wrap(
-                                          spacing: AppSpacing.sm,
-                                          children: [
-                                            for (final n in options)
-                                              Tooltip(
-                                                message:
-                                                    (n <= 2 &&
-                                                        reliability.isNewUser)
-                                                    ? '新用戶尚未開放 2 人以下場次'
-                                                    : '',
-                                                triggerMode:
-                                                    TooltipTriggerMode.tap,
-                                                child: ChoiceChip(
-                                                  label: Text('$n 人'),
-                                                  selected:
-                                                      _selectedMinHeadcount == n,
-                                                  onSelected:
-                                                      (n <= 2 &&
-                                                          reliability.isNewUser)
-                                                      ? null
-                                                      : AppHaptics.select(
-                                                          (_) => setState(() {
-                                                            _selectedMinHeadcount =
-                                                                n;
-                                                            if (_selectedMaxHeadcount !=
-                                                                    null &&
-                                                                _selectedMaxHeadcount! <
-                                                                    n) {
-                                                              _selectedMaxHeadcount =
-                                                                  null;
-                                                            }
-                                                          }),
-                                                        ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: AppSpacing.md),
-                                        Text('至多', style: textTheme.bodySmall),
-                                        const SizedBox(height: AppSpacing.xs),
-                                        if (_selectedMinHeadcount == null)
-                                          Text(
-                                            '請先選「至少」人數',
-                                            style: textTheme.bodySmall,
-                                          )
-                                        else
-                                          Wrap(
-                                            spacing: AppSpacing.sm,
-                                            children: [
-                                              for (final n in options)
-                                                if (n >= _selectedMinHeadcount!)
-                                                  ChoiceChip(
-                                                    label: Text('$n 人'),
-                                                    selected:
-                                                        _selectedMaxHeadcount ==
-                                                        n,
-                                                    onSelected: AppHaptics.select(
-                                                      (_) => setState(
-                                                        () =>
-                                                            _selectedMaxHeadcount =
-                                                                n,
-                                                      ),
-                                                    ),
-                                                  ),
-                                            ],
-                                          ),
-                                      ],
-                                      if (hasLockedOption) ...[
-                                        const SizedBox(height: AppSpacing.xs),
-                                        Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Icon(
-                                              Icons.info_outline_rounded,
-                                              size: 14,
-                                              color: scheme.onSurfaceVariant,
-                                            ),
-                                            const SizedBox(
-                                              width: AppSpacing.xs,
-                                            ),
-                                            Expanded(
-                                              child: Text(
-                                                '新用戶需要先完成一次活動、建立信譽後，才能發起 2 人以下的小型場次',
-                                                style: textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: scheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                      _HeadcountRangeSlider(
+                                        minCount: _selectedMinHeadcount ?? 2,
+                                        maxCount: _selectedMaxHeadcount ?? 4,
+                                        minPossible: 2,
+                                        maxPossible: 20,
+                                        step: step,
+                                        isNewUser: reliability.isNewUser,
+                                        onRangeChanged: (min, max) {
+                                          setState(() {
+                                            _selectedMinHeadcount = min;
+                                            _selectedMaxHeadcount = max;
+                                          });
+                                        },
+                                      ),
                                     ],
                                   );
                                 },
@@ -2032,7 +1936,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                             textAlign: TextAlign.center,
                             style: textTheme.bodySmall?.copyWith(
                               color: hasActiveState
-                                  ? Theme.of(context).colorScheme.error
+                                  ? Theme.of(context).colorScheme.primary
                                   : Theme.of(
                                       context,
                                     ).colorScheme.onSurfaceVariant,
@@ -2052,16 +1956,29 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         ],
                         AppButton(
                           label: hasActiveState
-                              ? (activeRequest != null ? '已在配對等待室中' : '活動進行中')
+                              ? (activeRequest != null ? '前往等待室' : '查看活動')
                               : (isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人'),
-                          loading: _submitting,
-                          onPressed: hasActiveState ||
-                                  isCooldown ||
-                                  missing != null ||
-                                  _confirming ||
-                                  _submitting
+                          loading: isActiveLoading || _submitting,
+                          onPressed: isActiveLoading || _submitting || _confirming
                               ? null
-                              : _confirmAndSubmit,
+                              : hasActiveState
+                                  ? (activeRequest != null
+                                      ? () => context.push(
+                                          '/waiting-room/${activeRequest.id}',
+                                        )
+                                      : () => context.push(
+                                          '/activity/${activeActivity!.id}',
+                                        ))
+                                  : isCooldown
+                                      ? null
+                                      : missing != null
+                                          ? () {
+                                              setState(() => _error =
+                                                  '請完成所有選擇：$missing');
+                                              _scrollToFirstMissingField(
+                                                  missing);
+                                            }
+                                          : _confirmAndSubmit,
                         ),
                       ],
                     );
@@ -2229,77 +2146,26 @@ class _CustomTimeTile extends StatelessWidget {
   }
 }
 
-/// iOS 滾輪數字人數選擇器（CupertinoPicker）——提供極度滑順的物理動能與震動回饋，
-/// 解決 5~20 人時產生 30+ 顆標籤擠滿畫面的問題。
-class _HeadcountRollerPicker extends StatefulWidget {
-  const _HeadcountRollerPicker({
-    required this.options,
+/// 雙端滑桿人數選擇器（RangeSlider）——2 至 20 人單軸、兩個拖曳點，
+/// iOS / Android 雙平台統一使用，數字即時更新，整數步進。
+class _HeadcountRangeSlider extends StatelessWidget {
+  const _HeadcountRangeSlider({
     required this.minCount,
     required this.maxCount,
-    required this.onMinChanged,
-    required this.onMaxChanged,
+    required this.onRangeChanged,
     required this.isNewUser,
+    this.minPossible = 2,
+    this.maxPossible = 20,
+    this.step = 1,
   });
 
-  final List<int> options;
   final int minCount;
   final int maxCount;
-  final ValueChanged<int> onMinChanged;
-  final ValueChanged<int> onMaxChanged;
+  final void Function(int min, int max) onRangeChanged;
   final bool isNewUser;
-
-  @override
-  State<_HeadcountRollerPicker> createState() => _HeadcountRollerPickerState();
-}
-
-class _HeadcountRollerPickerState extends State<_HeadcountRollerPicker> {
-  late FixedExtentScrollController _minController;
-  late FixedExtentScrollController _maxController;
-
-  @override
-  void initState() {
-    super.initState();
-    final minIdx = widget.options.indexOf(widget.minCount);
-    final maxIdx = widget.options.indexOf(widget.maxCount);
-    _minController = FixedExtentScrollController(
-      initialItem: minIdx >= 0 ? minIdx : 0,
-    );
-    _maxController = FixedExtentScrollController(
-      initialItem: maxIdx >= 0 ? maxIdx : (widget.options.length - 1),
-    );
-  }
-
-  @override
-  void didUpdateWidget(_HeadcountRollerPicker oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.minCount != widget.minCount) {
-      final minIdx = widget.options.indexOf(widget.minCount);
-      if (minIdx >= 0 && _minController.hasClients && _minController.selectedItem != minIdx) {
-        _minController.animateToItem(
-          minIdx,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-        );
-      }
-    }
-    if (oldWidget.maxCount != widget.maxCount) {
-      final maxIdx = widget.options.indexOf(widget.maxCount);
-      if (maxIdx >= 0 && _maxController.hasClients && _maxController.selectedItem != maxIdx) {
-        _maxController.animateToItem(
-          maxIdx,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _minController.dispose();
-    _maxController.dispose();
-    super.dispose();
-  }
+  final int minPossible;
+  final int maxPossible;
+  final int step;
 
   @override
   Widget build(BuildContext context) {
@@ -2307,8 +2173,14 @@ class _HeadcountRollerPickerState extends State<_HeadcountRollerPicker> {
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
+    final effectiveMinPossible = (isNewUser && minPossible < 3) ? 3 : minPossible;
+    final clampedMin = minCount.clamp(effectiveMinPossible, maxPossible);
+    final clampedMax = maxCount.clamp(clampedMin, maxPossible);
+
+    final divisions = ((maxPossible - minPossible) ~/ (step > 0 ? step : 1));
+
     return Container(
-      height: 156,
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -2316,126 +2188,153 @@ class _HeadcountRollerPickerState extends State<_HeadcountRollerPicker> {
           color: scheme.outlineVariant.withValues(alpha: 0.4),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(AppRadius.md),
-                    ),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
-                  child: Center(
-                    child: Text(
-                      '至少 (${widget.minCount} 人)',
-                      style: textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '至少',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$clampedMin 人',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: scheme.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Expanded(
-                  child: CupertinoPicker(
-                    itemExtent: 40,
-                    scrollController: _minController,
-                    magnification: 1.15,
-                    useMagnifier: true,
-                    squeeze: 1.15,
-                    selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
-                      background: scheme.primary.withValues(alpha: 0.12),
-                    ),
-                    onSelectedItemChanged: (index) {
-                      AppHaptics.selection();
-                      final chosenMin = widget.options[index];
-                      if (widget.isNewUser && chosenMin <= 2) return;
-                      widget.onMinChanged(chosenMin);
-                    },
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final n in widget.options)
-                        Center(
-                          child: Text(
-                            '$n 人',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: n == widget.minCount ? FontWeight.bold : FontWeight.w500,
-                              color: (widget.isNewUser && n <= 2)
-                                  ? scheme.onSurfaceVariant.withValues(alpha: 0.35)
-                                  : (n == widget.minCount ? scheme.primary : scheme.onSurface),
-                            ),
-                          ),
+                      Text(
+                        '至多',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        clampedMin == clampedMax
+                            ? '固定 $clampedMax 人'
+                            : '$clampedMax 人',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: scheme.primary,
+                        ),
+                      ),
                     ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Semantics(
+            label: '人數規模滑桿，最少 $clampedMin 人，最多 $clampedMax 人',
+            child: RangeSlider(
+              values: RangeValues(
+                clampedMin.toDouble(),
+                clampedMax.toDouble(),
+              ),
+              min: minPossible.toDouble(),
+              max: maxPossible.toDouble(),
+              divisions: divisions > 0 ? divisions : null,
+              labels: RangeLabels('$clampedMin 人', '$clampedMax 人'),
+              onChanged: (values) {
+                AppHaptics.selection();
+                var newStart = values.start.round();
+                var newEnd = values.end.round();
+                if (step > 1) {
+                  newStart = ((newStart - minPossible) ~/ step) * step + minPossible;
+                  newEnd = ((newEnd - minPossible) ~/ step) * step + minPossible;
+                }
+                if (isNewUser && newStart < 3) {
+                  newStart = 3;
+                }
+                if (newEnd < newStart) {
+                  newEnd = newStart;
+                }
+                onRangeChanged(newStart, newEnd);
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '$minPossible 人',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: (isNewUser && minPossible < 3)
+                        ? scheme.onSurfaceVariant.withValues(alpha: 0.4)
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  '$maxPossible 人',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
-          VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: scheme.outlineVariant.withValues(alpha: 0.4),
-          ),
-          Expanded(
-            child: Column(
+          if (isNewUser && minPossible <= 2) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(AppRadius.md),
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '至多 (${widget.maxCount} 人)',
-                      style: textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ),
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
                 ),
+                const SizedBox(width: AppSpacing.xs),
                 Expanded(
-                  child: CupertinoPicker(
-                    itemExtent: 40,
-                    scrollController: _maxController,
-                    magnification: 1.15,
-                    useMagnifier: true,
-                    squeeze: 1.15,
-                    selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
-                      background: scheme.primary.withValues(alpha: 0.12),
+                  child: Text(
+                    '新用戶需要先完成一次活動、建立信譽後，才能發起 2 人以下的小型場次',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 11,
                     ),
-                    onSelectedItemChanged: (index) {
-                      AppHaptics.selection();
-                      final chosenMax = widget.options[index];
-                      widget.onMaxChanged(chosenMax);
-                    },
-                    children: [
-                      for (final n in widget.options)
-                        Center(
-                          child: Text(
-                            '$n 人',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: n == widget.maxCount ? FontWeight.bold : FontWeight.w500,
-                              color: n < widget.minCount
-                                  ? scheme.onSurfaceVariant.withValues(alpha: 0.35)
-                                  : (n == widget.maxCount ? scheme.primary : scheme.onSurface),
-                            ),
-                          ),
-                        ),
-                    ],
                   ),
                 ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );

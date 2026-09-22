@@ -260,11 +260,14 @@ void main() {
     // 置頂狀態卡顯示
     expect(find.byType(PinnedActiveStatusCard), findsOneWidget);
     expect(find.text('你正在配對中'), findsOneWidget);
-    expect(find.text('前往等待室'), findsOneWidget);
 
-    // 底部按鈕與提示被鎖定
+    // 底部按鈕與提示導向等待室，按鈕可點擊
     expect(find.text('你已有進行中的配對，請先前往等待室或取消後再發起新配對'), findsOneWidget);
-    expect(find.text('已在配對等待室中'), findsOneWidget);
+    expect(find.text('前往等待室'), findsWidgets);
+    final waitingBtn = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '前往等待室').last,
+    );
+    expect(waitingBtn.onPressed, isNotNull);
 
     // 點擊需求卡開啟詳情 Sheet，確認「以相容條件加入配對」停用
     await tester.tap(find.byType(CampusDemandCardWidget));
@@ -302,8 +305,13 @@ void main() {
     expect(find.text('你目前有進行中的活動'), findsOneWidget);
     expect(find.text('前往活動房間'), findsOneWidget);
 
-    // 底部按鈕顯示鎖定
+    // 底部按鈕提示並提供「查看活動」入口，按鈕可點擊
     expect(find.text('你目前有進行中的活動，請先前往活動或結束後再發起新配對'), findsOneWidget);
+    expect(find.text('查看活動'), findsOneWidget);
+    final activityBtn = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '查看活動'),
+    );
+    expect(activityBtn.onPressed, isNotNull);
   });
 
   testWidgets('場景 4：點擊需求卡「調整條件後發起」，成功預填表單並滾動定位', (tester) async {

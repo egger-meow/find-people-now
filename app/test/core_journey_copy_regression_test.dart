@@ -346,9 +346,7 @@ Future<void> _selectCompleteRequest(
   await _settle(tester);
 
   await _scrollTo(tester, find.text('至少'));
-  await tester.tap(find.widgetWithText(ChoiceChip, '3 人').first);
-  await tester.pump();
-  await tester.tap(find.widgetWithText(ChoiceChip, '5 人').last);
+  expect(find.byType(RangeSlider), findsOneWidget);
   await _settle(tester);
 
   if (allowDowngrade) {

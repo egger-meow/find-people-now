@@ -378,26 +378,27 @@ class _SkeletonDemandCard extends StatelessWidget {
             children: const [
               Skeleton(width: 32, height: 32, radius: AppRadius.sm),
               SizedBox(width: AppSpacing.sm),
-              Skeleton(width: 80, height: 20),
-              Spacer(),
-              Skeleton(width: 120, height: 20, radius: AppRadius.pill),
+              Expanded(child: Skeleton(height: 20)),
+              SizedBox(width: AppSpacing.sm),
+              Skeleton(width: 80, height: 20, radius: AppRadius.pill),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
             children: const [
+              Skeleton(width: 60, height: 22),
               Skeleton(width: 70, height: 22),
-              SizedBox(width: AppSpacing.xs),
-              Skeleton(width: 80, height: 22),
-              SizedBox(width: AppSpacing.xs),
-              Skeleton(width: 90, height: 22),
+              Skeleton(width: 70, height: 22),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
-              Skeleton(width: 140, height: 16),
+              Expanded(child: Skeleton(height: 16)),
+              SizedBox(width: AppSpacing.sm),
               Skeleton(width: 60, height: 16),
             ],
           ),
