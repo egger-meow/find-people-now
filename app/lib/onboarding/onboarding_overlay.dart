@@ -22,6 +22,19 @@ class _OnboardingGateState extends ConsumerState<OnboardingGate> {
   bool _shown = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _shown) return;
+      final user = ref.read(myAppUserProvider).value;
+      if (user != null && user.onboardingSeenAt == null) {
+        _shown = true;
+        _showOnboarding();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     ref.listen(myAppUserProvider, (previous, next) {
       final user = next.value;
@@ -58,11 +71,9 @@ class _OnboardingGateState extends ConsumerState<OnboardingGate> {
 }
 
 const _cards = [
-  ('選活動、約時間', '選活動類型、時段、人數 → 送出，進入「等待室」'),
-  ('邀朋友，或讓系統配對', '等待室可以邀朋友一起，也可以直接等系統幫你配對陌生人；有朋友的邀請碼的話，點右上角的連結圖示輸入就能直接加入他的房間'),
-  ('配對成功', '配對成功（人數少時會先跳出安全確認）→ 進「我的活動」'),
-  ('約碰面細節', '活動確定後：在「地點與集合」投票決定地點與設定集合地點；在「成員與聯絡」填見面提示、查看隊友聯絡方式，到了現場點「我到了」完成報到'),
-  ('活動結束', '花 10 秒回報有沒有順利進行，可以跟一起參加的人按「再約」'),
+  ('選活動與時間', '選活動類型、時段與人數 → 送出後進入等待室，系統會持續比對相容夥伴。'),
+  ('等配對，也能邀朋友', '在等待室可以直接等系統配對，也可以一鍵複製邀請碼或分享給朋友，加入後立即同房。'),
+  ('成團後約地點、報到', '配對成功後：投票決定集合地點；現場點「我到了」完成報到，結束後花十秒回報並可選再約。'),
 ];
 
 class _OnboardingDialog extends StatefulWidget {
@@ -85,79 +96,125 @@ class _OnboardingDialogState extends State<_OnboardingDialog> {
   @override
   Widget build(BuildContext context) {
     final isLast = _page == _cards.length - 1;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final maxDialogHeight = screenHeight * 0.82;
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).pop(),
-                  tooltip: '跳過',
-                ),
-              ],
-            ),
-            SizedBox(
-              height: 180,
-              child: PageView(
-                controller: _controller,
-                onPageChanged: (i) => setState(() => _page = i),
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: maxDialogHeight,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  for (final (title, body) in _cards)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(title, style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(body, style: Theme.of(context).textTheme.bodyMedium),
-                        ],
+                  Text(
+                    '${_page + 1} / ${_cards.length}',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(context).pop(),
+                    tooltip: '跳過',
+                    constraints: const BoxConstraints(
+                      minWidth: 44,
+                      minHeight: 44,
+                    ),
+                  ),
+                ],
+              ),
+              Flexible(
+                child: PageView(
+                  controller: _controller,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  children: [
+                    for (final (title, body) in _cards)
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                          vertical: AppSpacing.sm,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              body,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    height: 1.5,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < _cards.length; i++)
+                    AnimatedContainer(
+                      duration: AppMotion.fast,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: i == _page ? 20 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: i == _page
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
                     ),
                 ],
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < _cards.length; i++)
-                  AnimatedContainer(
-                    duration: AppMotion.fast,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: i == _page ? 20 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: i == _page
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                    ),
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
                   ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () {
-                  if (isLast) {
-                    Navigator.of(context).pop();
-                  } else {
-                    _controller.nextPage(duration: AppMotion.normal, curve: AppMotion.curve);
-                  }
-                },
-                child: Text(isLast ? '開始使用' : '下一步'),
+                  onPressed: () {
+                    if (isLast) {
+                      Navigator.of(context).pop();
+                    } else {
+                      _controller.nextPage(
+                        duration: AppMotion.normal,
+                        curve: AppMotion.curve,
+                      );
+                    }
+                  },
+                  child: Text(isLast ? '開始使用' : '下一步'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
