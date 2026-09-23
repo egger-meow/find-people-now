@@ -60,6 +60,50 @@ void main() {
     );
   }
 
+  Widget createSubjectWithController({
+    required StreamController<MatchRequest?> controller,
+    required String requestId,
+    required List<RequestMember> members,
+    required String currentUserId,
+    ActivityType? activityType,
+  }) {
+    final type = activityType ??
+        ActivityType(
+          id: 'act-type-1',
+          name: '羽球',
+          status: ACTIVITY_TYPE_STATUS.APPROVED,
+          createdAt: now,
+          skillLevelEnabled: false,
+          sortOrder: 1,
+          levelSystem: LEVEL_SYSTEM.NONE,
+          aliases: const [],
+        );
+
+    return ProviderScope(
+      overrides: [
+        currentUserIdProvider.overrideWith((ref) => currentUserId),
+        matchRequestStreamProvider(requestId).overrideWith(
+          (ref) => controller.stream,
+        ),
+        requestMembersStreamProvider(requestId).overrideWith(
+          (ref) => Stream.value(members),
+        ),
+        activityTypeByIdProvider(type.id).overrideWith((ref) async => type),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.light,
+        builder: (context, child) => MediaQuery(
+          data: const MediaQueryData(
+            size: Size(390, 844),
+            disableAnimations: true,
+          ),
+          child: child!,
+        ),
+        home: WaitingRoomScreen(requestId: requestId),
+      ),
+    );
+  }
+
   testWidgets('等待室包含 RefreshIndicator 且下拉能觸發刷新', (tester) async {
     final request = MatchRequest(
       id: 'req-refresh-test',
@@ -372,6 +416,166 @@ void main() {
     expect(find.text('stale-revoked-token'), findsNothing);
 
     // Member sees revoked notice, but NO regenerate button
+    expect(find.text('邀請碼已被房主撤銷'), findsOneWidget);
+    expect(find.text('重新產生邀請碼'), findsNothing);
+  });
+
+  testWidgets('等待室畫面開啟中若房主從另一台裝置撤銷（即時推播 revokedAt != null），畫面立即隱藏失效碼並切換為已撤銷狀態（房主端）', (tester) async {
+    final controller = StreamController<MatchRequest?>.broadcast();
+    addTearDown(controller.close);
+
+    final activeRequest = MatchRequest(
+      id: 'req-realtime-revoke-owner',
+      ownerId: 'u-owner',
+      activityTypeId: 'act-type-1',
+      school: SCHOOL.NYCU,
+      campus: '光復',
+      earliestStart: now.add(const Duration(hours: 1)),
+      latestStart: now.add(const Duration(hours: 2)),
+      flexibleMinutes: 0,
+      minParticipants: 2,
+      allowDowngrade: false,
+      status: REQUEST_STATUS.REQUESTING,
+      inviteToken: 'live-active-token',
+      revokedAt: null,
+      createdAt: now,
+    );
+
+    final member = RequestMember(
+      id: 'm-owner',
+      requestId: 'req-realtime-revoke-owner',
+      userId: 'u-owner',
+      role: REQUEST_MEMBER_ROLE.OWNER,
+      status: REQUEST_MEMBER_STATUS.JOINED,
+      createdAt: now,
+    );
+
+    await tester.pumpWidget(
+      createSubjectWithController(
+        controller: controller,
+        requestId: activeRequest.id,
+        members: [member],
+        currentUserId: 'u-owner',
+      ),
+    );
+
+    // Initial state: active request with token
+    controller.add(activeRequest);
+    await tester.pumpAndSettle();
+
+    // Verify: active token is displayed
+    expect(find.text('live-active-token'), findsOneWidget);
+    expect(find.text('複製邀請碼'), findsOneWidget);
+    expect(find.text('邀請碼已撤銷'), findsNothing);
+
+    // Simulate cross-device revocation: stream emits updated request with revokedAt != null
+    final revokedRequest = MatchRequest(
+      id: activeRequest.id,
+      ownerId: activeRequest.ownerId,
+      activityTypeId: activeRequest.activityTypeId,
+      school: activeRequest.school,
+      campus: activeRequest.campus,
+      earliestStart: activeRequest.earliestStart,
+      latestStart: activeRequest.latestStart,
+      flexibleMinutes: activeRequest.flexibleMinutes,
+      minParticipants: activeRequest.minParticipants,
+      allowDowngrade: activeRequest.allowDowngrade,
+      status: activeRequest.status,
+      inviteToken: 'live-active-token',
+      revokedAt: now,
+      createdAt: activeRequest.createdAt,
+    );
+
+    controller.add(revokedRequest);
+    await tester.pumpAndSettle();
+
+    // Verification: active token must be immediately removed and revoked state shown
+    expect(find.text('live-active-token'), findsNothing);
+    expect(find.text('複製邀請碼'), findsNothing);
+    expect(find.text('邀請碼已撤銷'), findsOneWidget);
+    expect(find.text('重新產生邀請碼'), findsOneWidget);
+  });
+
+  testWidgets('等待室畫面開啟中若房主從另一台裝置撤銷，一般成員畫面亦立即隱藏失效碼並顯示房主已撤銷', (tester) async {
+    final controller = StreamController<MatchRequest?>.broadcast();
+    addTearDown(controller.close);
+
+    final activeRequest = MatchRequest(
+      id: 'req-realtime-revoke-guest',
+      ownerId: 'u-owner',
+      activityTypeId: 'act-type-1',
+      school: SCHOOL.NYCU,
+      campus: '光復',
+      earliestStart: now.add(const Duration(hours: 1)),
+      latestStart: now.add(const Duration(hours: 2)),
+      flexibleMinutes: 0,
+      minParticipants: 2,
+      allowDowngrade: false,
+      status: REQUEST_STATUS.REQUESTING,
+      inviteToken: 'guest-seen-token',
+      revokedAt: null,
+      createdAt: now,
+    );
+
+    final members = [
+      RequestMember(
+        id: 'm-owner',
+        requestId: 'req-realtime-revoke-guest',
+        userId: 'u-owner',
+        role: REQUEST_MEMBER_ROLE.OWNER,
+        status: REQUEST_MEMBER_STATUS.JOINED,
+        createdAt: now,
+      ),
+      RequestMember(
+        id: 'm-guest',
+        requestId: 'req-realtime-revoke-guest',
+        userId: 'u-guest',
+        role: REQUEST_MEMBER_ROLE.MEMBER,
+        status: REQUEST_MEMBER_STATUS.JOINED,
+        createdAt: now,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      createSubjectWithController(
+        controller: controller,
+        requestId: activeRequest.id,
+        members: members,
+        currentUserId: 'u-guest',
+      ),
+    );
+
+    // Initial state: active request with token
+    controller.add(activeRequest);
+    await tester.pumpAndSettle();
+
+    expect(find.text('guest-seen-token'), findsOneWidget);
+    expect(find.text('複製邀請碼'), findsOneWidget);
+
+    // Simulate cross-device revocation
+    final revokedRequest = MatchRequest(
+      id: activeRequest.id,
+      ownerId: activeRequest.ownerId,
+      activityTypeId: activeRequest.activityTypeId,
+      school: activeRequest.school,
+      campus: activeRequest.campus,
+      earliestStart: activeRequest.earliestStart,
+      latestStart: activeRequest.latestStart,
+      flexibleMinutes: activeRequest.flexibleMinutes,
+      minParticipants: activeRequest.minParticipants,
+      allowDowngrade: activeRequest.allowDowngrade,
+      status: activeRequest.status,
+      inviteToken: 'guest-seen-token',
+      revokedAt: now,
+      createdAt: activeRequest.createdAt,
+    );
+
+    controller.add(revokedRequest);
+    await tester.pumpAndSettle();
+
+    // Verification: token removed, member sees revocation notice, NO regenerate button
+    expect(find.text('guest-seen-token'), findsNothing);
+    expect(find.text('複製邀請碼'), findsNothing);
     expect(find.text('邀請碼已被房主撤銷'), findsOneWidget);
     expect(find.text('重新產生邀請碼'), findsNothing);
   });

@@ -1,7 +1,7 @@
 # iOS 優先 UI/UX 全流程改善驗收報告與實作紀錄 (Walkthrough)
 
 日期：2026-09-24  
-狀態：已完成實作並通過全數自動化測試驗證 (`flutter analyze` 0 issues, 40+ UX tests passed)  
+狀態：已完成實作並通過全數自動化測試驗證 (`flutter analyze` 0 issues, 42+ UX tests passed)  
 分支：`main`  
 
 ---
@@ -35,17 +35,21 @@
 ### 2.3 [Part 3] 精簡等待室與撤銷邀請碼生命週期修正 (`WaitingRoomScreen`)
 - **檔案**：[`app/lib/match/waiting_room_screen.dart`](file:///c:/IDEA/find-people-now/app/lib/match/waiting_room_screen.dart)
 - **資料庫遷移**：[`supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql`](file:///c:/IDEA/find-people-now/supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql)
-- **問題現況**：
-  1. 等待室資訊曾過度冗長，包含多重說明區塊與撤銷按鈕。
-  2. 若房主撤銷過邀請碼（`revoked_at is not null`），重新進房時前端仍可能因 fallback 取用 stale 的 `_inviteToken`，或因自動取碼呼叫舊 RPC（舊 RPC 只判斷 `v_token is null`，會把已被撤銷的舊碼直接回傳），導致畫面上重新提供已失效的邀請碼。
-- **改善實作**：
-  - **後端**：升級 `get_or_create_invite_link` RPC，若 `v_token is null or v_revoked_at is not null`，則重新產生 12-byte hex 邀請碼並重設 `revoked_at = null`。
-  - **前端撤銷判定**：`final isRevoked = _inviteToken == null && request.revokedAt != null;`；當 `isRevoked` 為真時，`effectiveInviteToken` 強制為 `null`，**絕對不 fallback 至任何 stale token**。
-  - **進房行為防護**：進入已被撤銷的房間時，**絕不自動呼叫 RPC 取碼**（尊重房主撤銷操作意圖）。
-  - **介面狀態呈現**：
-    - 房主：顯示「邀請碼已撤銷」狀態卡片，提供「重新產生邀請碼」手動操作按鈕；點擊後呼叫後端更新並立即顯示新有效邀請碼。房主亦可在有碼時點擊「撤銷邀請碼」進行撤銷。
-    - 成員：顯示「邀請碼已被房主撤銷」，不提供無權限之操作按鈕。
-  - 精簡等待室：保留活動摘要、成員名單、配對倒數、一鍵「複製邀請碼」與「複製邀請訊息」、以及低強調且標明「無冷卻與扣分」的退出／取消按鈕；加入 `RefreshIndicator` 支援下拉刷新。
+- **資料庫 pgTAP 測試**：[`supabase/tests/database/44_invite_token_lifecycle.test.sql`](file:///c:/IDEA/find-people-now/supabase/tests/database/44_invite_token_lifecycle.test.sql)
+- **問題現況與解決**：
+  1. **資料庫層原子性與並發保證（FOR UPDATE 列鎖）**：
+     - 原 `get_or_create_invite_link` RPC 僅使用一般的 `SELECT`，若兩台裝置並發呼叫重生，可能產生不同的邀請碼。
+     - 遷移升級為 `SELECT ... FOR UPDATE` 鎖定該筆 `match_request` 列，首個交易取得鎖後產生新 12-byte hex 邀請碼並原子重設 `revoked_at = null`；後續排隊交易在鎖釋放後於 Read Committed 模式下重讀已提交列，直接回傳已產生的有效碼，保證原子性與唯一性。
+     - 新增 [`44_invite_token_lifecycle.test.sql`](file:///c:/IDEA/find-people-now/supabase/tests/database/44_invite_token_lifecycle.test.sql) 完整涵蓋生成、冪等、加入、撤銷阻擋、原子重生與新碼加入之資料庫層回歸測試。
+  2. **跨裝置撤銷與動態推播即時防護**：
+     - 原等待室在判斷 `isRevoked` 時混入 `_inviteToken == null`，導致若本機曾快取碼、房主在另一台裝置撤銷時，本機仍會繼續顯示失效碼。
+     - 重構判定為 `final isRevoked = request.revokedAt != null;`；並在 Realtime 監聽器中加入：一旦收到 `req.revokedAt != null`，立即執行 `_inviteToken = null`。
+     - 無論畫面開啟中還是重新進房，一旦房間處於撤銷狀態，`effectiveInviteToken` 強制為 `null`，舊碼與複製按鈕立即自畫面完全消失。
+  3. **進房行為防護**：進入已被撤銷的房間時，**絕不自動呼叫 RPC 取碼**（尊重房主撤銷操作意圖）。
+  4. **介面狀態呈現**：
+     - 房主：顯示「邀請碼已撤銷」狀態卡片，提供「重新產生邀請碼」手動操作按鈕；點擊後呼叫後端更新並立即顯示新有效邀請碼。房主亦可在有碼時點擊「撤銷邀請碼」進行撤銷。
+     - 成員：顯示「邀請碼已被房主撤銷」，不提供無權限之操作按鈕。
+  5. **精簡等待室**：保留活動摘要、成員名單、配對倒數、一鍵「複製邀請碼」與「複製邀請訊息」、以及低強調且標明「無冷卻與扣分」的退出／取消按鈕；加入 `RefreshIndicator` 支援下拉刷新。
 
 ### 2.4 [Part 4] 探索首頁需求聚合與真實呈現 (`CampusDemandsSection`)
 - **檔案**：[`app/lib/match/widgets/campus_demands_section.dart`](file:///c:/IDEA/find-people-now/app/lib/match/widgets/campus_demands_section.dart)
@@ -86,13 +90,15 @@
   - 2.0x 字級與橫向短高螢幕無 overflow，跳過按鈕可抵達。
   - **非模態點擊驗證**：引導卡片顯示時，底層導覽按鈕與頁面操作完全可直接點選（無 ModalBarrier 攔截）。
   - **手勢關閉驗證**：支援向上滑動手勢（`Dismissible`）滑動即關閉並寫入後端。
-- `test/waiting_room_ux_part3_test.dart` (7/7 通過)
+- `test/waiting_room_ux_part3_test.dart` (9/9 通過)
   - 下拉刷新 `RefreshIndicator`。
   - 超過 5 人時顯示 `+N` 匿名標記。
   - 發起人取消與成員退出對話框包含完整無扣分文案。
   - 倒數過期顯示「正在確認配對結果」。
   - **撤銷邀請碼進入驗證**：進入已被撤銷的房間時，絕不顯示失效邀請碼；房主介面顯示「邀請碼已撤銷」與「重新產生邀請碼」按鈕。
   - **非房主撤銷驗證**：非房主進入已被撤銷的房間時，顯示「邀請碼已被房主撤銷」，且無重新產生按鈕。
+  - **跨裝置即時撤銷驗證（房主端）**：等待室畫面開啟中若收到即時推播（`revokedAt != null`），畫面立即移除失效碼並呈現「邀請碼已撤銷」與重新產生按鈕。
+  - **跨裝置即時撤銷驗證（成員端）**：等待室畫面開啟中若收到即時推播，成員畫面亦立即移除失效碼並顯示「邀請碼已被房主撤銷」，絕無失效碼殘留。
 - `test/waiting_confirmation_widget_test.dart` (5/5 通過)
 - `test/create_request_ux_part2_test.dart` (10/10 通過)
 - `test/activity_post_match_ux_test.dart` (6/6 通過)
@@ -100,13 +106,14 @@
 - `test/gender_field_test.dart` (通過)
 - `test/degree_level_field_test.dart` (通過)
 
-**總計 40+ 項 UX 核心測試全數 PASS。**
+**總計 42+ 項 UX 核心測試全數 PASS。**
 
 ---
 
-## 4. 環境與後續真機驗收說明
+## 4. 環境邊界與驗收狀態透明揭露
 
-> [!NOTE]
-> **本機開發與驗證環境說明**：
-> 當前開發執行環境為 Windows 主機，已完成 Dart / Flutter 靜態程式碼分析（`flutter analyze` 0 issues）、所有元件/分頁/流程 Widget 測試（模擬各項 iPhone 螢幕尺寸、2.0x 字級與手勢互動）。
-> 根據 Apple 生態系限制，編譯原生 iOS 封裝檔（`.ipa`）與執行 Xcode iOS Simulator 需在具備 macOS 與 Xcode 之工作站或 CI/CD Runner 上執行。
+> [!IMPORTANT]
+> **資料庫遷移與環境邊界誠實揭露**：
+> 1. **資料庫遷移套用狀態**：遷移檔 `supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql` 與資料庫測試 `supabase/tests/database/44_invite_token_lifecycle.test.sql` 已編寫並納入 Git 版本庫追蹤。但由於本機 Windows 開發環境未啟動 Docker Engine，因此該遷移尚未由本機 Supabase CLI 實際套用至目標資料庫實例（需由具備 Docker 之環境或遠端 CI/CD / Supabase 控制台執行 `supabase db push` 或遷移套用）。
+> 2. **Flutter 測試狀態**：Flutter 分析器（`flutter analyze`）與所有 Dart 單元/Widget 測試已於 Windows 主機全數執行完畢並取得 PASS 結果。
+> 3. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。

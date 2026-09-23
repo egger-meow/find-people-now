@@ -63,19 +63,22 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     ref.listen<AsyncValue<MatchRequest?>>(
       matchRequestStreamProvider(widget.requestId),
       (previous, next) {
-        final status = next.value?.status;
-        if (status != null && isTerminalForWaitingRoom(status)) {
-          if (_inviteToken != null) {
+        final req = next.value;
+        if (req != null) {
+          // 當收到跨裝置撤銷推播（revokedAt 被設定）時，立即清空本地快取的 invite token
+          if (req.revokedAt != null && _inviteToken != null) {
             setState(() => _inviteToken = null);
           }
-          _autoFetchInviteAttempted = false;
-          ref.invalidate(myActiveRequestProvider);
-          ref.invalidate(myActiveActivityProvider);
-          // 反饋：配對成功後點「前往我的活動」，清單卻還是配對前的「等待配對中」
-          // ——這裡原本只 invalidate myActivityListProvider，但那個 provider 只是
-          // watch 兩個來源 provider 組出來的，沒有連帶讓來源重新查詢，等於沒用
-          // （見 invalidateMyActivityList 註解）。
-          invalidateMyActivityList(ref);
+          final status = req.status;
+          if (isTerminalForWaitingRoom(status)) {
+            if (_inviteToken != null) {
+              setState(() => _inviteToken = null);
+            }
+            _autoFetchInviteAttempted = false;
+            ref.invalidate(myActiveRequestProvider);
+            ref.invalidate(myActiveActivityProvider);
+            invalidateMyActivityList(ref);
+          }
         }
       },
     );
@@ -135,8 +138,10 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   (m) =>
                       m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
-                final isRevoked =
-                    _inviteToken == null && request.revokedAt != null;
+                final isRevoked = request.revokedAt != null;
+                if (isRevoked && _inviteToken != null) {
+                  _inviteToken = null;
+                }
                 final effectiveInviteToken =
                     isRevoked ? null : (_inviteToken ?? request.inviteToken);
 
