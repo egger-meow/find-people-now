@@ -271,4 +271,108 @@ void main() {
 
     expect(find.text('正在確認配對結果'), findsOneWidget);
   });
+
+  testWidgets('等待室進入已被撤銷的房間時，不顯示失效邀請碼，房主顯示「邀請碼已撤銷」與重新產生按鈕', (tester) async {
+    final revokedTime = now.subtract(const Duration(minutes: 10));
+    final request = MatchRequest(
+      id: 'req-revoked-owner',
+      ownerId: 'u-owner',
+      activityTypeId: 'act-type-1',
+      school: SCHOOL.NYCU,
+      campus: '光復',
+      earliestStart: now.add(const Duration(hours: 1)),
+      latestStart: now.add(const Duration(hours: 2)),
+      flexibleMinutes: 0,
+      minParticipants: 2,
+      allowDowngrade: false,
+      status: REQUEST_STATUS.REQUESTING,
+      inviteToken: 'stale-revoked-token',
+      revokedAt: revokedTime,
+      createdAt: now,
+    );
+
+    final member = RequestMember(
+      id: 'm-owner',
+      requestId: 'req-revoked-owner',
+      userId: 'u-owner',
+      role: REQUEST_MEMBER_ROLE.OWNER,
+      status: REQUEST_MEMBER_STATUS.JOINED,
+      createdAt: now,
+    );
+
+    await tester.pumpWidget(
+      createSubject(
+        request: request,
+        members: [member],
+        currentUserId: 'u-owner',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Stale token must NEVER be visible
+    expect(find.text('stale-revoked-token'), findsNothing);
+
+    // Revocation status and regenerate button must be visible for owner
+    expect(find.text('邀請碼已撤銷'), findsOneWidget);
+    expect(
+      find.text('目前的邀請碼已失效，朋友無法透過舊連結加入。如需再次邀請，請重新產生。'),
+      findsOneWidget,
+    );
+    expect(find.text('重新產生邀請碼'), findsOneWidget);
+  });
+
+  testWidgets('等待室非房主進入已被撤銷的房間時，顯示「邀請碼已被房主撤銷」且無重新產生按鈕', (tester) async {
+    final revokedTime = now.subtract(const Duration(minutes: 10));
+    final request = MatchRequest(
+      id: 'req-revoked-guest',
+      ownerId: 'u-owner',
+      activityTypeId: 'act-type-1',
+      school: SCHOOL.NYCU,
+      campus: '光復',
+      earliestStart: now.add(const Duration(hours: 1)),
+      latestStart: now.add(const Duration(hours: 2)),
+      flexibleMinutes: 0,
+      minParticipants: 2,
+      allowDowngrade: false,
+      status: REQUEST_STATUS.REQUESTING,
+      inviteToken: 'stale-revoked-token',
+      revokedAt: revokedTime,
+      createdAt: now,
+    );
+
+    final members = [
+      RequestMember(
+        id: 'm-owner',
+        requestId: 'req-revoked-guest',
+        userId: 'u-owner',
+        role: REQUEST_MEMBER_ROLE.OWNER,
+        status: REQUEST_MEMBER_STATUS.JOINED,
+        createdAt: now,
+      ),
+      RequestMember(
+        id: 'm-guest',
+        requestId: 'req-revoked-guest',
+        userId: 'u-guest',
+        role: REQUEST_MEMBER_ROLE.MEMBER,
+        status: REQUEST_MEMBER_STATUS.JOINED,
+        createdAt: now,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      createSubject(
+        request: request,
+        members: members,
+        currentUserId: 'u-guest',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Stale token must NEVER be visible
+    expect(find.text('stale-revoked-token'), findsNothing);
+
+    // Member sees revoked notice, but NO regenerate button
+    expect(find.text('邀請碼已被房主撤銷'), findsOneWidget);
+    expect(find.text('重新產生邀請碼'), findsNothing);
+  });
 }

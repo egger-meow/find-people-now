@@ -135,11 +135,13 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   (m) =>
                       m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
+                final isRevoked =
+                    _inviteToken == null && request.revokedAt != null;
                 final effectiveInviteToken =
-                    (request.revokedAt == null ? request.inviteToken : null) ??
-                        _inviteToken;
+                    isRevoked ? null : (_inviteToken ?? request.inviteToken);
 
                 if (isOwner &&
+                    !isRevoked &&
                     effectiveInviteToken == null &&
                     !_busy &&
                     !_autoFetchInviteAttempted) {
@@ -214,6 +216,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         inviteToken: effectiveInviteToken,
                         busy: _busy,
                         isOwner: isOwner,
+                        isRevoked: isRevoked,
                         onGenerate: () => _getOrCreateInviteLink(request.id),
                         onCopy: () async {
                           if (effectiveInviteToken == null) return;
@@ -265,6 +268,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       );
       if (!mounted) return;
       setState(() => _inviteToken = token);
+      ref.invalidate(matchRequestStreamProvider(requestId));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = userErrorMessage(e));
@@ -282,6 +286,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       await revokeInviteLink(ref.read(supabaseClientProvider), requestId);
       if (!mounted) return;
       setState(() => _inviteToken = null);
+      ref.invalidate(matchRequestStreamProvider(requestId));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = userErrorMessage(e));
@@ -408,6 +413,7 @@ class WaitingRoomActionSections extends StatelessWidget {
     required this.onGenerate,
     required this.onCopy,
     required this.onManage,
+    this.isRevoked = false,
     this.onRevoke,
     this.onShare,
   });
@@ -415,6 +421,7 @@ class WaitingRoomActionSections extends StatelessWidget {
   final String? inviteToken;
   final bool busy;
   final bool isOwner;
+  final bool isRevoked;
   final VoidCallback onGenerate;
   final VoidCallback onCopy;
   final VoidCallback onManage;
@@ -515,21 +522,76 @@ class WaitingRoomActionSections extends StatelessWidget {
                     ],
                   ],
                 ),
+                if (isOwner && onRevoke != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: busy ? null : onRevoke,
+                      icon: const Icon(Icons.link_off_rounded, size: 16),
+                      label: const Text('撤銷邀請碼'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: scheme.error,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         ] else if (isOwner) ...[
-          AppButton(
-            label: busy ? '準備邀請碼…' : '邀請朋友',
-            loading: busy,
-            onPressed: busy ? null : onGenerate,
-          ),
+          if (isRevoked) ...[
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.link_off_rounded,
+                        size: 20,
+                        color: scheme.error,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        '邀請碼已撤銷',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: scheme.error,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '目前的邀請碼已失效，朋友無法透過舊連結加入。如需再次邀請，請重新產生。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppButton(
+                    label: busy ? '重新產生中…' : '重新產生邀請碼',
+                    loading: busy,
+                    onPressed: busy ? null : onGenerate,
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            AppButton(
+              label: busy ? '準備邀請碼…' : '邀請朋友',
+              loading: busy,
+              onPressed: busy ? null : onGenerate,
+            ),
+          ],
         ] else ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
             child: Center(
               child: Text(
-                '等待房主產生邀請碼',
+                isRevoked ? '邀請碼已被房主撤銷' : '等待房主產生邀請碼',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),

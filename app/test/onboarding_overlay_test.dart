@@ -160,4 +160,93 @@ void main() {
     expect(find.text('選活動與時間'), findsNothing);
     expect(find.text('首頁內容'), findsOneWidget);
   });
+
+  testWidgets('OnboardingGate allows tapping bottom navigation and underlying widgets without ModalBarrier interception', (tester) async {
+    final user = _createUser(onboardingSeenAt: null);
+    final dummyClient = _createDummyClient();
+    var underlyingTapped = 0;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          supabaseClientProvider.overrideWithValue(dummyClient),
+          myAppUserProvider.overrideWith((ref) async => user),
+          currentUserIdProvider.overrideWith((ref) => user.id),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: Scaffold(
+            body: OnboardingGate(
+              child: Stack(
+                children: [
+                  const Align(
+                    alignment: Alignment.center,
+                    child: Text('首頁探索清單'),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: ElevatedButton(
+                        onPressed: () => underlyingTapped++,
+                        child: const Text('底層導覽按鈕'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Both floating card and underlying button are in the tree
+    expect(find.text('選活動與時間'), findsOneWidget);
+    expect(find.text('底層導覽按鈕'), findsOneWidget);
+
+    // Tap underlying button without modal barrier intercepting
+    await tester.tap(find.text('底層導覽按鈕'));
+    await tester.pumpAndSettle();
+
+    // The underlying action succeeded while the card is still visible
+    expect(underlyingTapped, 1);
+    expect(find.text('選活動與時間'), findsOneWidget);
+  });
+
+  testWidgets('Onboarding floating card can be dismissed via upward swipe gesture', (tester) async {
+    final user = _createUser(onboardingSeenAt: null);
+    final dummyClient = _createDummyClient();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          supabaseClientProvider.overrideWithValue(dummyClient),
+          myAppUserProvider.overrideWith((ref) async => user),
+          currentUserIdProvider.overrideWith((ref) => user.id),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(
+            body: OnboardingGate(
+              child: Center(child: Text('首頁內容')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('選活動與時間'), findsOneWidget);
+
+    // Swipe up on the card
+    await tester.drag(find.text('選活動與時間'), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    // The card is dismissed
+    expect(find.text('選活動與時間'), findsNothing);
+    expect(find.text('首頁內容'), findsOneWidget);
+  });
 }
