@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
+import '../theme/platform_adaptive.dart';
 
 /// 操作結果提示的語意分類。呼叫端說「這是成功／這是錯誤」，
 /// 顏色、圖示、觸覺、停留時間由這裡統一決定。
@@ -20,11 +21,7 @@ enum AppSnackKind { neutral, success, error }
 ///   必要的，不是裝飾——`color-not-only`：色盲使用者不能只靠紅／綠分辨結果。
 /// - **觸覺**：成功一下中等、錯誤一下強震。手機通常在手上，觸覺比顏色更快到達。
 /// - **停留時間**：錯誤訊息需要比「已複製」這種瑣事更久的閱讀時間。
-///
-/// 刻意仍然使用 Material [SnackBar] 而不是在 iOS 上換成別的東西：iOS 沒有
-/// 對應的原生「短暫提示」元件（原生 App 多半自己刻），底部浮動膠囊在兩個
-/// 平台上都不違和，而且 Flutter 的 SnackBar 本身就不搶焦點、符合
-/// `toast-accessibility`（螢幕閱讀器會朗讀，但不會把焦點抓走）。
+/// - **iOS 浮動膠囊避讓**：iOS 上預設 floating 並浮在膠囊上方（iOS UX 指南 §8）。
 void showAppSnackBar(
   BuildContext context,
   String message, {
@@ -33,9 +30,21 @@ void showAppSnackBar(
   final scheme = Theme.of(context).colorScheme;
 
   final (Color background, Color foreground, IconData? icon) = switch (kind) {
-    AppSnackKind.success => (scheme.primaryContainer, scheme.onPrimaryContainer, Icons.check_circle_rounded),
-    AppSnackKind.error => (scheme.errorContainer, scheme.onErrorContainer, Icons.error_rounded),
-    AppSnackKind.neutral => (scheme.inverseSurface, scheme.onInverseSurface, null),
+    AppSnackKind.success => (
+        scheme.primaryContainer,
+        scheme.onPrimaryContainer,
+        Icons.check_circle_rounded
+      ),
+    AppSnackKind.error => (
+        scheme.errorContainer,
+        scheme.onErrorContainer,
+        Icons.error_rounded
+      ),
+    AppSnackKind.neutral => (
+        scheme.inverseSurface,
+        scheme.onInverseSurface,
+        null
+      ),
   };
 
   switch (kind) {
@@ -48,14 +57,27 @@ void showAppSnackBar(
   }
 
   final messenger = ScaffoldMessenger.of(context);
-  // 連續操作時舊的提示還掛在畫面上，新的會排隊等前一則播完——使用者會看到
-  // 一則明顯過期的訊息。直接換掉。
   messenger.hideCurrentSnackBar();
+
+  final mediaQuery = MediaQuery.maybeOf(context);
+  final isKeyboardOpen = (mediaQuery?.viewInsets.bottom ?? 0) > 0;
+  final isIosFloating = isCupertino && !isKeyboardOpen;
+
   messenger.showSnackBar(
     SnackBar(
+      behavior: isIosFloating ? SnackBarBehavior.floating : SnackBarBehavior.fixed,
+      margin: isIosFloating
+          ? EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              0,
+              AppSpacing.md,
+              (mediaQuery?.padding.bottom ?? 0) + 76.0 + 8.0,
+            )
+          : null,
+      shape: isIosFloating
+          ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md))
+          : null,
       backgroundColor: background,
-      // guideline `toast-dismiss`：3–5 秒。錯誤給滿 5 秒（要讀懂發生什麼事、
-      // 可能還要記下來），其餘 3 秒。
       duration: Duration(seconds: kind == AppSnackKind.error ? 5 : 3),
       content: Row(
         children: [

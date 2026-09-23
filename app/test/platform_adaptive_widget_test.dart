@@ -28,6 +28,7 @@ import 'package:find_people_now/theme/platform_adaptive.dart';
 import 'package:find_people_now/widgets/adaptive_refresh.dart';
 import 'package:find_people_now/widgets/app_card.dart';
 import 'package:find_people_now/widgets/app_dialog.dart';
+import 'package:find_people_now/widgets/app_glass_surface.dart';
 import 'package:find_people_now/widgets/countdown_text.dart';
 import 'package:find_people_now/widgets/loading_indicator.dart';
 
@@ -106,7 +107,11 @@ GoRouter _shellRouter() => GoRouter(
   ],
 );
 
-Widget _shellHost(GoRouter router, {TextScaler? textScaler}) => ProviderScope(
+Widget _shellHost(
+  GoRouter router, {
+  TextScaler? textScaler,
+  EdgeInsets? viewInsets,
+}) => ProviderScope(
   overrides: [
     myAppUserProvider.overrideWith((ref) async => null),
     pendingDowngradesStreamProvider.overrideWith(
@@ -118,9 +123,15 @@ Widget _shellHost(GoRouter router, {TextScaler? textScaler}) => ProviderScope(
     theme: AppTheme.light,
     routerConfig: router,
     builder: (context, child) {
-      if (textScaler == null) return child!;
+      var media = MediaQuery.of(context);
+      if (textScaler != null) {
+        media = media.copyWith(textScaler: textScaler);
+      }
+      if (viewInsets != null) {
+        media = media.copyWith(viewInsets: viewInsets);
+      }
       return MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        data: media,
         child: child!,
       );
     },
@@ -243,7 +254,7 @@ void main() {
   });
 
   group('AppShell', () {
-    testWidgets('iOS 顯示四個底部目的地與未讀徽章', (tester) async {
+    testWidgets('iOS 顯示四個底部目的地與未讀徽章（浮動玻璃膠囊）', (tester) async {
       await _withPlatform(TargetPlatform.iOS, () async {
         final router = _shellRouter();
         addTearDown(router.dispose);
@@ -251,16 +262,17 @@ void main() {
         await tester.pumpWidget(_shellHost(router));
         await tester.pumpAndSettle();
 
-        expect(find.text('探索'), findsOneWidget);
-        expect(find.text('我的活動'), findsOneWidget);
-        expect(find.text('通知'), findsOneWidget);
-        expect(find.text('個人'), findsOneWidget);
+        expect(find.bySemanticsLabel('探索'), findsOneWidget);
+        expect(find.bySemanticsLabel('我的活動'), findsOneWidget);
+        expect(find.bySemanticsLabel('通知'), findsOneWidget);
+        expect(find.bySemanticsLabel('個人'), findsOneWidget);
         expect(find.text('3'), findsOneWidget);
-        expect(find.byType(CupertinoTabBar), findsOneWidget);
+        expect(find.byType(AppGlassSurface), findsOneWidget);
+        expect(find.byType(CupertinoTabBar), findsNothing);
       });
     });
 
-    testWidgets('iOS 在 200% 文字縮放時保留標籤與 44pt 觸控目標', (tester) async {
+    testWidgets('iOS 在 200% 文字縮放時保留語意標籤與 44pt 觸控目標', (tester) async {
       await _withPlatform(TargetPlatform.iOS, () async {
         final router = _shellRouter();
         addTearDown(router.dispose);
@@ -271,10 +283,10 @@ void main() {
         await tester.pumpAndSettle();
 
         for (final label in ['探索', '我的活動', '通知', '個人']) {
-          expect(find.text(label), findsOneWidget);
+          expect(find.bySemanticsLabel(label), findsOneWidget);
         }
         expect(
-          tester.getSize(find.byType(CupertinoTabBar)).height,
+          tester.getSize(find.byType(AppGlassSurface)).height,
           greaterThanOrEqualTo(44),
         );
         await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
@@ -302,13 +314,39 @@ void main() {
             '${destination.$2}/detail',
           );
 
-          await tester.tap(find.text(destination.$1));
+          await tester.tap(find.bySemanticsLabel(destination.$1));
           await tester.pumpAndSettle();
           expect(
             router.routerDelegate.currentConfiguration.uri.path,
             destination.$2,
           );
         }
+      });
+    });
+
+    testWidgets('iOS 鍵盤開啟時隱藏浮動導覽列，收起時還原', (tester) async {
+      await _withPlatform(TargetPlatform.iOS, () async {
+        final router = _shellRouter();
+        addTearDown(router.dispose);
+
+        // Standard screen with no keyboard
+        await tester.pumpWidget(_shellHost(router));
+        await tester.pumpAndSettle();
+        expect(find.byType(AppGlassSurface), findsOneWidget);
+
+        // Simulate virtual keyboard showing (viewInsets.bottom = 300)
+        await tester.pumpWidget(
+          _shellHost(router, viewInsets: const EdgeInsets.only(bottom: 300)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(AppGlassSurface), findsNothing);
+
+        // Dismiss keyboard
+        await tester.pumpWidget(
+          _shellHost(router, viewInsets: EdgeInsets.zero),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(AppGlassSurface), findsOneWidget);
       });
     });
 
@@ -321,7 +359,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(NavigationBar), findsOneWidget);
-        expect(find.byType(CupertinoTabBar), findsNothing);
+        expect(find.byType(AppGlassSurface), findsNothing);
       });
     });
   });
