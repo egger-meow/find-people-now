@@ -14,6 +14,7 @@ import '../rpc/auth_profile_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/degree_level_field.dart';
 import '../widgets/department_field.dart';
 import '../widgets/gender_field.dart';
 import '../widgets/loading_indicator.dart';
@@ -216,25 +217,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 const SizedBox(height: AppSpacing.md),
                 AppTextField(controller: _displayNameController, label: '顯示名稱'),
                 const SizedBox(height: AppSpacing.md),
-                DropdownButtonFormField<DEGREE_LEVEL>(
-                  initialValue: _degreeLevel,
-                  decoration: const InputDecoration(labelText: '學制'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: DEGREE_LEVEL.UNDERGRAD,
-                      child: Text('大學部'),
-                    ),
-                    DropdownMenuItem(
-                      value: DEGREE_LEVEL.MASTER,
-                      child: Text('碩士班'),
-                    ),
-                    DropdownMenuItem(
-                      value: DEGREE_LEVEL.PHD,
-                      child: Text('博士班'),
-                    ),
-                  ],
+                DegreeLevelField(
+                  selectedDegreeLevel: _degreeLevel,
                   onChanged: (value) {
-                    if (value == null) return;
                     setState(() {
                       _degreeLevel = value;
                       if (!departmentOptionsFor(

@@ -11,6 +11,7 @@ import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
+import '../generated/completion_report.dart';
 import '../generated/location.dart';
 import '../generated/supadart_header.dart'
     show
@@ -310,8 +311,12 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 approvedLocationsAsync.hasError;
             return ActivityDetailBodyLayout(
               summary: ActivityDetailStatusSummary(activity: activity),
-              completionBanner: activity.status == ACTIVITY_STATUS.ONGOING
-                  ? _CompletionReportBanner(activityId: activity.id)
+              completionBanner: (activity.status == ACTIVITY_STATUS.ONGOING ||
+                      activity.status == ACTIVITY_STATUS.COMPLETED)
+                  ? _CompletionReportBanner(
+                      activityId: activity.id,
+                      activityStatus: activity.status,
+                    )
                   : null,
               navigation: _ActivityDetailNavigation(
                 index: _sectionIndex,
@@ -792,34 +797,149 @@ class ActivityMemberSafetyActions extends StatelessWidget {
 /// [ownCompletionReportProvider]）。文案呼應 `COMPLETE_CONFIRMATION`
 /// 通知（docs/UI_PLAN.md §9）：「活動結束了嗎？花 10 秒回報一下」。
 class _CompletionReportBanner extends ConsumerWidget {
-  const _CompletionReportBanner({required this.activityId});
+  const _CompletionReportBanner({
+    required this.activityId,
+    required this.activityStatus,
+  });
 
   final String activityId;
+  final ACTIVITY_STATUS activityStatus;
+
+  Future<void> _openRematchSheet(
+    BuildContext context,
+    WidgetRef ref,
+    CompletionReport report,
+  ) async {
+    final myId = ref.read(currentUserIdProvider);
+    final roster = await ref.read(
+      activityMemberRosterProvider(activityId).future,
+    );
+    final rematchTargets = roster
+        .where(
+          (m) =>
+              m.userId != myId &&
+              m.status == ACTIVITY_MEMBER_STATUS.JOINED &&
+              !report.absentUserIds.contains(m.userId),
+        )
+        .toList();
+    if (!context.mounted) return;
+    if (rematchTargets.isEmpty) {
+      showAppSnackBar(context, '目前沒有其他可再約的成員');
+      return;
+    }
+    await showAppSheet<void>(
+      context,
+      builder: (context) => _RematchSheet(
+        activityId: activityId,
+        targets: rematchTargets,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reportAsync = ref.watch(ownCompletionReportProvider(activityId));
     return reportAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (error, stack) => const SizedBox.shrink(),
+      error: (error, stack) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: AppGlassSurface(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '無法載入回報狀態',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              TextButton(
+                onPressed: () =>
+                    ref.invalidate(ownCompletionReportProvider(activityId)),
+                child: const Text('重試'),
+              ),
+            ],
+          ),
+        ),
+      ),
       data: (report) {
-        if (report != null) return const SizedBox.shrink();
+        if (report == null) {
+          if (activityStatus != ACTIVITY_STATUS.ONGOING) {
+            return const SizedBox.shrink();
+          }
+          return Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: AppGlassSurface(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: AppSection(
+                title: '活動完成回報',
+                description: '活動結束了嗎？花 10 秒回報一下',
+                child: AppButton(
+                  label: '開始回報',
+                  icon: Icons.fact_check_outlined,
+                  onPressed: () async {
+                    final submitted = await showAppSheet<bool>(
+                      context,
+                      builder: (context) =>
+                          _CompletionReportSheet(activityId: activityId),
+                    );
+                    if (submitted == true && context.mounted) {
+                      showAppSnackBar(
+                        context,
+                        '活動回報已送出，謝謝你的回饋！',
+                        kind: AppSnackKind.success,
+                      );
+                    }
+                  },
+                ),
+              ),
+            ),
+          );
+        }
+
         return Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.md),
           child: AppGlassSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
-            child: AppSection(
-              title: '活動完成回報',
-              description: '活動結束了嗎？花 10 秒回報一下',
-              child: AppButton(
-                label: '開始回報',
-                icon: Icons.fact_check_outlined,
-                onPressed: () => showAppSheet<void>(
-                  context,
-                  builder: (context) =>
-                      _CompletionReportSheet(activityId: activityId),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      '已完成活動回報',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '回報狀態已同步。想繼續保持聯繫嗎？雙方都點選「想再約」後將永久保留聯絡方式。',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppButton(
+                  label: '想再約其他成員',
+                  icon: Icons.thumb_up_alt_outlined,
+                  onPressed: () => _openRematchSheet(context, ref, report),
+                ),
+              ],
             ),
           ),
         );
@@ -830,10 +950,7 @@ class _CompletionReportBanner extends ConsumerWidget {
 
 /// UI_PLAN.md §6.3 三選一。選「對方沒來」時展開成員複選清單（限定
 /// `JOINED` 成員，對齊 `submit_completion_report` 的 `INVALID_ABSENT_TARGET`
-/// 檢查範圍）。任一選項送出成功後，緊接跳出第二步再約 sheet（同一節文案：
-/// 「完成確認送出成功後緊接跳出」），對象是「本次回報中沒被我標記缺席的其他
-/// 成員」——`SELF_CANCELLED` 也一併適用同一條規則，SPEC 沒有特別排除這個
-/// 分支，維持三個結果分支統一行為，不特判。
+/// 檢查範圍）。
 class _CompletionReportSheet extends ConsumerStatefulWidget {
   const _CompletionReportSheet({required this.activityId});
 
@@ -869,35 +986,15 @@ class _CompletionReportSheetState
       );
       ref.invalidate(ownCompletionReportProvider(widget.activityId));
       if (!mounted) return;
-      Navigator.of(context).pop();
-
-      final myId = ref.read(currentUserIdProvider);
-      final roster = await ref.read(
-        activityMemberRosterProvider(widget.activityId).future,
-      );
-      final rematchTargets = roster
-          .where(
-            (m) =>
-                m.userId != myId &&
-                m.status == ACTIVITY_MEMBER_STATUS.JOINED &&
-                !absentUserIds.contains(m.userId),
-          )
-          .toList();
-      if (!mounted || rematchTargets.isEmpty) return;
-      await showAppSheet<void>(
-        context,
-        builder: (context) => _RematchSheet(
-          activityId: widget.activityId,
-          targets: rematchTargets,
-        ),
-      );
+      Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e.code == ApiErrorCode.alreadyReported
-            ? '你已經回報過了'
-            : userErrorMessage(e);
-      });
+      if (e.code == ApiErrorCode.alreadyReported) {
+        ref.invalidate(ownCompletionReportProvider(widget.activityId));
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() => _error = userErrorMessage(e));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -940,18 +1037,32 @@ class _CompletionReportSheetState
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    if (candidates.isEmpty) const Text('沒有其他成員可以指認'),
-                    for (final m in candidates)
-                      CheckboxListTile(
-                        value: _absentIds.contains(m.userId),
-                        title: Text(m.displayName),
-                        onChanged: (checked) => setState(() {
-                          if (checked == true) {
-                            _absentIds.add(m.userId);
-                          } else {
-                            _absentIds.remove(m.userId);
-                          }
-                        }),
+                    if (candidates.isEmpty)
+                      const Text('沒有其他成員可以指認')
+                    else
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.4,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final m in candidates)
+                                CheckboxListTile(
+                                  value: _absentIds.contains(m.userId),
+                                  title: Text(m.displayName),
+                                  onChanged: (checked) => setState(() {
+                                    if (checked == true) {
+                                      _absentIds.add(m.userId);
+                                    } else {
+                                      _absentIds.remove(m.userId);
+                                    }
+                                  }),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     if (_error != null) ...[
                       Text(
@@ -1067,8 +1178,14 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
           kind: AppSnackKind.success,
         );
       }
-    } on ApiException {
-      // 安靜失敗，使用者可再試一次——跟封鎖/檢舉一樣不特別解讀錯誤碼。
+    } on ApiException catch (e) {
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          userErrorMessage(e),
+          kind: AppSnackKind.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy.remove(toUserId));
     }
@@ -1091,37 +1208,50 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
           const SizedBox(height: AppSpacing.xs),
           Text('雙方都按了才會永久保留聯絡方式', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: AppSpacing.sm),
-          for (final m in widget.targets)
-            ListTile(
-              key: ValueKey(m.userId),
-              contentPadding: EdgeInsets.zero,
-              leading: SizedBox(
-                width: 40,
-                height: 40,
-                child: CircleAvatar(
-                  backgroundImage: m.avatarUrl.isEmpty
-                      ? null
-                      : NetworkImage(m.avatarUrl),
-                  child: m.avatarUrl.isEmpty
-                      ? const Icon(Icons.person_rounded)
-                      : null,
-                ),
-              ),
-              title: Text(
-                m.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(64, 44),
-                ),
-                onPressed: _voted.contains(m.userId) || _busy.contains(m.userId)
-                    ? null
-                    : () => _vote(m.userId),
-                child: Text(_voted.contains(m.userId) ? '已按讚' : '👍 再約'),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.45,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final m in widget.targets)
+                    ListTile(
+                      key: ValueKey(m.userId),
+                      contentPadding: EdgeInsets.zero,
+                      leading: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: CircleAvatar(
+                          backgroundImage: m.avatarUrl.isEmpty
+                              ? null
+                              : NetworkImage(m.avatarUrl),
+                          child: m.avatarUrl.isEmpty
+                              ? const Icon(Icons.person_rounded)
+                              : null,
+                        ),
+                      ),
+                      title: Text(
+                        m.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(64, 44),
+                        ),
+                        onPressed:
+                            _voted.contains(m.userId) || _busy.contains(m.userId)
+                                ? null
+                                : () => _vote(m.userId),
+                        child: Text(_voted.contains(m.userId) ? '已按讚' : '👍 再約'),
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
           const SizedBox(height: AppSpacing.sm),
           AppButton(label: '完成', onPressed: () => Navigator.of(context).pop()),
         ],
@@ -1873,6 +2003,8 @@ class _MembersTab extends ConsumerWidget {
         ? ''
         : matchingTypes.first.name;
 
+    final myId = ref.watch(currentUserIdProvider);
+
     return rosterAsync.when(
       loading: () => const LoadingIndicator(),
       error: (error, stack) => const AppErrorState(),
@@ -1910,6 +2042,11 @@ class _MembersTab extends ConsumerWidget {
                   m.arrivedAt != null,
             )
             .length;
+        final myMember = roster.where((m) => m.userId == myId).firstOrNull;
+        final isMyMemberJoined = myMember != null &&
+            myMember.status == ACTIVITY_MEMBER_STATUS.JOINED;
+        final hasMyArrived = myMember?.arrivedAt != null;
+
         return AdaptiveRefresh(
           onRefresh: () async =>
               ref.invalidate(activityMemberRosterProvider(activityId)),
@@ -1923,21 +2060,61 @@ class _MembersTab extends ConsumerWidget {
                       padding: const EdgeInsets.all(AppSpacing.md),
                       child: AppSection(
                         title: '報到狀態',
-                        description: '抵達集合地點後，請在自己的成員卡片完成報到。',
+                        description: isMyMemberJoined
+                            ? (hasMyArrived
+                                ? '你已完成報到，請在集合點與夥伴會合。'
+                                : '抵達集合地點後，請點擊「我到了」完成報到。')
+                            : '抵達集合地點後，完成報到即可讓夥伴知道你已到達。',
                         child: AppCard(
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                Icons.flag_circle_rounded,
-                                color: Theme.of(context).colorScheme.primary,
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.flag_circle_rounded,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      '已抵達 $arrivedCount / $joinedCount',
+                                      style: Theme.of(context).textTheme.titleSmall,
+                                    ),
+                                  ),
+                                  if (isMyMemberJoined && !hasMyArrived)
+                                    _ArrivalButton(activityId: activityId),
+                                ],
                               ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Expanded(
-                                child: Text(
-                                  '已抵達 $arrivedCount / $joinedCount',
-                                  style: Theme.of(context).textTheme.titleSmall,
+                              if (isMyMemberJoined && hasMyArrived) ...[
+                                const SizedBox(height: AppSpacing.sm),
+                                const Divider(height: 1),
+                                const SizedBox(height: AppSpacing.sm),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      size: 16,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Expanded(
+                                      child: Text(
+                                        '你已於 ${_hm(myMember.arrivedAt!.toLocal())} 完成報到',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
+                              ],
                             ],
                           ),
                         ),
@@ -2291,7 +2468,9 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            member.arrivedAt != null ? '已抵達' : '尚未抵達',
+                            member.arrivedAt != null
+                                ? '已於 ${_hm(member.arrivedAt!.toLocal())} 抵達'
+                                : '尚未抵達',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: member.arrivedAt != null
@@ -2639,6 +2818,14 @@ class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
         ref.read(supabaseClientProvider),
         activityId: widget.activityId,
       );
+      AppHaptics.success();
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          '已完成報到！已通知其他成員你已抵達。',
+          kind: AppSnackKind.success,
+        );
+      }
     } on ApiException {
       if (mounted) {
         showAppSnackBar(context, '標記失敗，請再試一次', kind: AppSnackKind.error);
@@ -2803,18 +2990,30 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
         children: [
           Text('檢舉這位成員', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.sm),
-          DropdownButtonFormField<REPORT_CATEGORY>(
-            initialValue: _category,
-            items: [
+          Text(
+            '檢舉類別',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
               for (final category in REPORT_CATEGORY.values)
-                DropdownMenuItem(
-                  value: category,
-                  child: Text(_reportCategoryLabel(category)),
+                ChoiceChip(
+                  label: Text(_reportCategoryLabel(category)),
+                  selected: _category == category,
+                  onSelected: (selected) {
+                    if (selected) {
+                      AppHaptics.selection();
+                      setState(() => _category = category);
+                    }
+                  },
                 ),
             ],
-            onChanged: (value) {
-              if (value != null) setState(() => _category = value);
-            },
           ),
           const SizedBox(height: AppSpacing.sm),
           AppTextField(controller: _detailController, hint: '選填：補充說明'),

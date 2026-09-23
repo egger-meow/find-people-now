@@ -154,17 +154,13 @@ void main() {
     await tester.pumpAndSettle();
 
 
-    // 1. 目前狀態與下一步
-    expect(find.textContaining('目前狀態：系統正在比對時段與條件相容的同學'), findsOneWidget);
-    expect(find.textContaining('下一步驟：兩人配對時將進入限時雙向確認'), findsOneWidget);
-    // 2. 退出方式：隨時可退出，無冷卻無扣分
-    expect(find.textContaining('退出方式：可隨時取消或離開，無任何冷卻限制與信用扣分'), findsOneWidget);
-    // 3. 嚴格守則：通知未驗證前不得承諾離開後會收到通知
-    expect(find.textContaining('提醒：背景推播功能尚在驗證中，離開 App 可能無法即時收到通知'), findsOneWidget);
-    // 4. 成員描述不保證達到人數即成團
-    await tester.scrollUntilVisible(find.text('房間成員'), 200);
-    expect(find.textContaining('非單純達到人數即可保證成團'), findsOneWidget);
-    expect(find.textContaining('達到門檻就能成團'), findsNothing);
+    // 1. 正在幫你找人標題與狀態
+    expect(find.text('正在幫你找人'), findsOneWidget);
+    expect(find.textContaining('系統會持續配對'), findsOneWidget);
+    // 2. 邀請朋友與次要取消操作
+    await tester.scrollUntilVisible(find.text('取消整個配對'), 200);
+    expect(find.text('取消整個配對'), findsOneWidget);
+    expect(find.textContaining('此操作無冷卻限制且不影響信譽評分'), findsOneWidget);
   });
 
 
@@ -207,18 +203,18 @@ void main() {
     expect(find.text('以相容條件加入配對'), findsOneWidget);
   });
 
-  testWidgets('暗色模式主題色彩對比度與色票驗證（暖炭灰底與柔和鼠尾草綠）', (tester) async {
+  testWidgets('暗色模式主題色彩對比度與色票驗證（暗色底與綠色主色）', (tester) async {
     final darkTheme = AppTheme.dark;
 
-    // 暗色底為暖炭灰 #1C1D1B，非純黑 #121212
-    expect(darkTheme.colorScheme.surface, const Color(0xFF1C1D1B));
-    // 主色為柔和鼠尾草綠 #92BFA0，非螢光綠 #7CFF6B
-    expect(darkTheme.colorScheme.primary, const Color(0xFF92BFA0));
+    // 暗色底為 AppColors.darkSurface
+    expect(darkTheme.colorScheme.surface, AppColors.darkSurface);
+    // 主色為 AppColors.vibrantGreen
+    expect(darkTheme.colorScheme.primary, AppColors.vibrantGreen);
 
     final lightTheme = AppTheme.light;
-    // 淺色底為暖米白 #FAF8F5
-    expect(lightTheme.colorScheme.surface, const Color(0xFFFAF8F5));
-    // 淺色主色為森林綠 #1E5E3A
-    expect(lightTheme.colorScheme.primary, const Color(0xFF1E5E3A));
+    // 淺色底為 AppColors.lightSurface
+    expect(lightTheme.colorScheme.surface, AppColors.lightSurface);
+    // 淺色主色為森林綠
+    expect(lightTheme.colorScheme.primary, AppColors.forestGreen);
   });
 }

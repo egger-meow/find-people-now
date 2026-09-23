@@ -10,10 +10,12 @@ import '../match/match_providers.dart';
 import '../profile/avatar_upload.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart';
+import '../theme/app_haptics.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/degree_level_field.dart';
 import '../widgets/department_field.dart';
 import '../widgets/gender_field.dart';
 import 'auth_providers.dart';
@@ -253,22 +255,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: AppSpacing.sm),
             AppTextField(controller: _displayNameController, label: '顯示名稱'),
             const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<DEGREE_LEVEL>(
-              initialValue: _degreeLevel,
-              decoration: const InputDecoration(labelText: '學制'),
-              items: const [
-                DropdownMenuItem(
-                  value: DEGREE_LEVEL.UNDERGRAD,
-                  child: Text('大學部'),
-                ),
-                DropdownMenuItem(
-                  value: DEGREE_LEVEL.MASTER,
-                  child: Text('碩士班'),
-                ),
-                DropdownMenuItem(value: DEGREE_LEVEL.PHD, child: Text('博士班')),
-              ],
+            DegreeLevelField(
+              selectedDegreeLevel: _degreeLevel,
               onChanged: (value) {
-                if (value == null) return;
                 setState(() {
                   _degreeLevel = value;
                   final school = schoolFromEmail(
@@ -307,17 +296,30 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: AppSpacing.md),
-                      DropdownButtonFormField<String>(
-                        initialValue: _defaultCampus,
-                        decoration: const InputDecoration(
-                          labelText: '你平常在哪個校區？',
-                        ),
-                        items: [
+                      Text(
+                        '平常所在校區',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.xs,
+                        children: [
                           for (final c in campuses)
-                            DropdownMenuItem(value: c, child: Text(c)),
+                            ChoiceChip(
+                              label: Text(c),
+                              selected: _defaultCampus == c,
+                              onSelected: (selected) {
+                                if (selected) {
+                                  AppHaptics.selection();
+                                  setState(() => _defaultCampus = c);
+                                }
+                              },
+                            ),
                         ],
-                        onChanged: (value) =>
-                            setState(() => _defaultCampus = value),
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
