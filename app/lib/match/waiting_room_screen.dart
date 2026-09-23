@@ -49,6 +49,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   String? _inviteToken;
   bool _busy = false;
   String? _error;
+  bool _autoFetchInviteAttempted = false;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +68,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
           if (_inviteToken != null) {
             setState(() => _inviteToken = null);
           }
+          _autoFetchInviteAttempted = false;
           ref.invalidate(myActiveRequestProvider);
           ref.invalidate(myActiveActivityProvider);
           // 反饋：配對成功後點「前往我的活動」，清單卻還是配對前的「等待配對中」
@@ -133,15 +135,31 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   (m) =>
                       m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
+                final effectiveInviteToken =
+                    (request.revokedAt == null ? request.inviteToken : null) ??
+                        _inviteToken;
+
+                if (isOwner &&
+                    effectiveInviteToken == null &&
+                    !_busy &&
+                    !_autoFetchInviteAttempted) {
+                  _autoFetchInviteAttempted = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _getOrCreateInviteLink(request.id);
+                  });
+                }
+
                 final statusContent = waitingRoomStatusContent(request.status);
                 return RefreshIndicator(
                   onRefresh: () async {
-                    ref.invalidate(
-                      matchRequestStreamProvider(widget.requestId),
-                    );
-                    ref.invalidate(
-                      requestMembersStreamProvider(widget.requestId),
-                    );
+                    await Future.wait([
+                      ref.refresh(
+                        matchRequestStreamProvider(widget.requestId).future,
+                      ),
+                      ref.refresh(
+                        requestMembersStreamProvider(widget.requestId).future,
+                      ),
+                    ]);
                   },
                   child: ListView(
                     padding: const EdgeInsets.all(AppSpacing.lg),
@@ -176,11 +194,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      AppSection(
-                        title: '配對條件',
-                        description: '確認這次正在等待的活動、時間、人數與校區。',
-                        child: _RequestInfoCard(request: request),
-                      ),
+                      _RequestInfoCard(request: request),
                       const SizedBox(height: AppSpacing.lg),
                       _RoomMembersSection(
                         members: members,
@@ -197,23 +211,23 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         const SizedBox(height: AppSpacing.sm),
                       ],
                       WaitingRoomActionSections(
-                        inviteToken: _inviteToken,
+                        inviteToken: effectiveInviteToken,
                         busy: _busy,
                         isOwner: isOwner,
                         onGenerate: () => _getOrCreateInviteLink(request.id),
                         onCopy: () async {
-                          if (_inviteToken == null) return;
+                          if (effectiveInviteToken == null) return;
                           await Clipboard.setData(
-                            ClipboardData(text: _inviteToken!),
+                            ClipboardData(text: effectiveInviteToken),
                           );
                           if (context.mounted) {
                             showAppSnackBar(context, '已複製邀請碼');
                           }
                         },
                         onShare: () async {
-                          if (_inviteToken == null) return;
+                          if (effectiveInviteToken == null) return;
                           final shareText =
-                              '來跟我一起參加配對！我的邀請碼是：$_inviteToken';
+                              '來跟我一起參加配對！我的邀請碼是：$effectiveInviteToken';
                           await Clipboard.setData(
                             ClipboardData(text: shareText),
                           );
@@ -244,8 +258,9 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       _error = null;
     });
     try {
+      final client = ref.read(supabaseClientProvider);
       final token = await getOrCreateInviteLink(
-        ref.read(supabaseClientProvider),
+        client,
         requestId,
       );
       if (!mounted) return;
@@ -253,6 +268,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = userErrorMessage(e));
+    } catch (_) {
+      // 網路或未初始化環境防護，不讓等待室崩潰
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -351,7 +368,6 @@ class _RoomMembersSection extends StatelessWidget {
 
     return AppSection(
       title: '房間成員 · $countLabel',
-      description: '系統將依據校區、時段與各方條件綜合撮合，非單純達到人數即可保證成團。',
       child: Wrap(
         spacing: AppSpacing.sm,
         runSpacing: AppSpacing.sm,
@@ -391,8 +407,8 @@ class WaitingRoomActionSections extends StatelessWidget {
     required this.isOwner,
     required this.onGenerate,
     required this.onCopy,
-    required this.onRevoke,
     required this.onManage,
+    this.onRevoke,
     this.onShare,
   });
 
@@ -401,8 +417,8 @@ class WaitingRoomActionSections extends StatelessWidget {
   final bool isOwner;
   final VoidCallback onGenerate;
   final VoidCallback onCopy;
-  final VoidCallback onRevoke;
   final VoidCallback onManage;
+  final VoidCallback? onRevoke;
   final VoidCallback? onShare;
 
   @override
@@ -413,42 +429,50 @@ class WaitingRoomActionSections extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppSection(
-          title: '邀請朋友',
-          description:
-              '系統會同時在背景自動幫你配對其他也在等的人，不是只能靠邀請朋友湊人數。'
-              '想約特定朋友的話，請他們盡快用邀請碼加入——如果人數在朋友加入前就湊滿，'
-              '房間可能已經跟別人成團。',
-          child: inviteToken == null
-              ? AppButton(
-                  label: busy ? '準備邀請碼…' : '邀請朋友',
-                  loading: busy,
-                  onPressed: busy ? null : onGenerate,
-                )
-              : AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        if (inviteToken != null) ...[
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.group_add_rounded,
+                      size: 20,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      '邀請朋友',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(
+                      color: scheme.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
                     children: [
                       Text(
-                        '邀請碼（分享給朋友）',
-                        style: theme.textTheme.labelLarge?.copyWith(
+                        '邀請碼：',
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                          vertical: AppSpacing.sm,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(AppRadius.sm),
-                          border: Border.all(
-                            color: scheme.outlineVariant,
-                          ),
-                        ),
+                      Expanded(
                         child: SelectableText(
                           inviteToken!,
                           style: theme.textTheme.titleMedium?.copyWith(
@@ -463,58 +487,76 @@ class WaitingRoomActionSections extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: busy ? null : onCopy,
-                              icon: const Icon(Icons.copy_rounded, size: 18),
-                              label: const Text('複製'),
-                            ),
-                          ),
-                          if (onShare != null) ...[
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: FilledButton.tonalIcon(
-                                onPressed: busy ? null : onShare,
-                                icon: const Icon(Icons.share_rounded, size: 18),
-                                label: const Text('分享邀請'),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: busy ? null : onRevoke,
-                              icon: const Icon(
-                                Icons.link_off_rounded,
-                                size: 18,
-                              ),
-                              label: const Text('撤銷'),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        AppSection(
-          title: '管理配對',
-          description: isOwner
-              ? '取消配對後房間將關閉；此操作無冷卻限制且不影響信譽評分。'
-              : '離開後將退出這個房間；無冷卻限制且不影響信譽評分。',
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: busy ? null : onManage,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: scheme.onSurfaceVariant,
-                side: BorderSide(color: scheme.outlineVariant),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: busy ? null : onCopy,
+                        icon: const Icon(Icons.copy_rounded, size: 18),
+                        label: const Text('複製邀請碼'),
+                      ),
+                    ),
+                    if (onShare != null) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: busy ? null : onShare,
+                          icon: const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 18,
+                          ),
+                          label: const Text('複製邀請訊息'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ] else if (isOwner) ...[
+          AppButton(
+            label: busy ? '準備邀請碼…' : '邀請朋友',
+            loading: busy,
+            onPressed: busy ? null : onGenerate,
+          ),
+        ] else ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: Center(
+              child: Text(
+                '等待房主產生邀請碼',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
-              child: Text(isOwner ? '取消整個配對' : '退出房間'),
+            ),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.xl),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: busy ? null : onManage,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: scheme.onSurfaceVariant,
+              side: BorderSide(color: scheme.outlineVariant),
+            ),
+            child: Text(isOwner ? '取消整個配對' : '退出房間'),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Center(
+          child: Text(
+            isOwner
+                ? '此操作無冷卻限制且不影響信譽評分'
+                : '無冷卻限制且不影響信譽評分',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
             ),
           ),
         ),

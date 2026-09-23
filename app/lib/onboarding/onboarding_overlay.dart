@@ -51,7 +51,7 @@ class _OnboardingGateState extends ConsumerState<OnboardingGate> {
   Future<void> _showOnboarding() async {
     await showDialog<void>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (context) => const _OnboardingDialog(),
     );
     if (!mounted) return;

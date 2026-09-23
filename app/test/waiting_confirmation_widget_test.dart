@@ -15,7 +15,6 @@ import 'package:find_people_now/match/waiting_room_screen.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/confirmation_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
-import 'package:find_people_now/widgets/app_section.dart';
 import 'package:find_people_now/widgets/app_status_summary.dart';
 
 Widget _host(Widget child, {bool disableAnimations = false}) {
@@ -213,8 +212,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(AppSection), findsNWidgets(2));
-      expect(find.text('邀請朋友'), findsNWidgets(2));
+      expect(find.text('邀請朋友'), findsOneWidget);
       expect(find.text('取消整個配對'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '邀請朋友'));
       await tester.tap(find.widgetWithText(OutlinedButton, '取消整個配對'));
@@ -223,11 +221,10 @@ void main() {
     },
   );
 
-  testWidgets('waiting room production actions keep copy, revoke, and leave', (
+  testWidgets('waiting room production actions keep copy and leave for members without unauthorized revoke', (
     tester,
   ) async {
     var copied = 0;
-    var revoked = 0;
     var left = 0;
     await tester.pumpWidget(
       _host(
@@ -237,7 +234,7 @@ void main() {
           isOwner: false,
           onGenerate: () {},
           onCopy: () => copied++,
-          onRevoke: () => revoked++,
+          onRevoke: () {},
           onManage: () => left++,
         ),
       ),
@@ -245,14 +242,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('invite-token-123'), findsOneWidget);
-    expect(find.text('複製'), findsOneWidget);
-    expect(find.text('撤銷'), findsOneWidget);
+    expect(find.text('複製邀請碼'), findsOneWidget);
+    expect(find.text('撤銷'), findsNothing);
     expect(find.text('退出房間'), findsOneWidget);
-    await tester.tap(find.widgetWithText(OutlinedButton, '複製'));
-    await tester.tap(find.widgetWithText(OutlinedButton, '撤銷'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '複製邀請碼'));
     await tester.tap(find.widgetWithText(OutlinedButton, '退出房間'));
     expect(copied, 1);
-    expect(revoked, 1);
     expect(left, 1);
   });
 
