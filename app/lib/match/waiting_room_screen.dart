@@ -10,9 +10,9 @@ import '../data/school_labels.dart';
 import '../data/sport_level_config.dart';
 import '../errors/user_error_message.dart';
 import '../generated/match_request.dart';
+import '../generated/request_member.dart';
 import '../generated/supadart_header.dart'
     show REQUEST_MEMBER_ROLE, REQUEST_STATUS;
-import '../notifications/web_push_service.dart';
 import '../rpc/api_exception.dart';
 import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
@@ -64,6 +64,9 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       (previous, next) {
         final status = next.value?.status;
         if (status != null && isTerminalForWaitingRoom(status)) {
+          if (_inviteToken != null) {
+            setState(() => _inviteToken = null);
+          }
           ref.invalidate(myActiveRequestProvider);
           ref.invalidate(myActiveActivityProvider);
           // 反饋：配對成功後點「前往我的活動」，清單卻還是配對前的「等待配對中」
@@ -131,179 +134,100 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                       m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
                 final statusContent = waitingRoomStatusContent(request.status);
-                return ListView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  children: [
-                    AppStatusSummary(
-                      title: statusContent.title,
-                      message: statusContent.message,
-                      leading: const MatchingPulse(),
-                      deadline: '配對截止：${_formatDeadline(request.latestStart)}',
-                      action: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              const Expanded(child: Text('剩餘時間')),
-                              CountdownText(
-                                deadline: request.latestStart,
-                                style: Theme.of(context).textTheme.titleSmall,
-                                urgentColor: Theme.of(
-                                  context,
-                                ).colorScheme.error,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    // 狀態說明、下一步、無負擔退出與通知未驗證守則提醒
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: Text(
-                                  '配對進行中：\n'
-                                  '• 目前狀態：系統正在比對時段與條件相容的同學。\n'
-                                  '• 下一步驟：兩人配對時將進入限時雙向確認，雙方同意才成團；多人團體達標時將直接成立活動。\n'
-                                  '• 退出方式：可隨時取消或離開，無任何冷卻限制與信用扣分。',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    height: 1.5,
-                                  ),
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    ref.invalidate(
+                      matchRequestStreamProvider(widget.requestId),
+                    );
+                    ref.invalidate(
+                      requestMembersStreamProvider(widget.requestId),
+                    );
+                  },
+                  child: ListView(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    children: [
+                      AppStatusSummary(
+                        title: statusContent.title,
+                        message: statusContent.message,
+                        leading: const MatchingPulse(),
+                        deadline: '配對截止：${_formatDeadline(request.latestStart)}',
+                        action: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(child: Text('剩餘時間')),
+                                CountdownText(
+                                  deadline: request.latestStart,
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                  urgentColor: Theme.of(
+                                    context,
+                                  ).colorScheme.error,
+                                  expiredLabel: '正在確認配對結果',
+                                  onExpired: () {
+                                    ref.invalidate(
+                                      matchRequestStreamProvider(widget.requestId),
+                                    );
+                                  },
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Consumer(
-                            builder: (context, ref, _) {
-                              final pushStatus = ref.watch(pushPermissionStatusProvider).value ?? PushPermissionStatus.unsupported;
-                              final String pushHint = switch (pushStatus) {
-                                PushPermissionStatus.denied =>
-                                  '提醒：瀏覽器通知權限已被關閉；背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
-                                PushPermissionStatus.granted =>
-                                  '提醒：已允許通知；背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
-                                _ =>
-                                  '提醒：背景推播功能尚在驗證中，離開 App 可能無法即時收到通知；請在截止前主動回到本畫面留意配對進度。',
-                              };
-
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(
-                                        Icons.notifications_active_outlined,
-                                        size: 16,
-                                        color: Theme.of(context).colorScheme.primary,
-                                      ),
-                                      const SizedBox(width: AppSpacing.xs),
-                                      Expanded(
-                                        child: Text(
-                                          pushHint,
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            color: Theme.of(context).colorScheme.primary,
-                                            fontWeight: FontWeight.w600,
-                                            height: 1.45,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (pushStatus == PushPermissionStatus.defaultStatus) ...[
-                                    const SizedBox(height: AppSpacing.xs),
-                                    TextButton.icon(
-                                      onPressed: () async {
-                                        final service = ref.read(webPushServiceProvider);
-                                        final newStatus = await service.requestPermission();
-                                        ref.invalidate(pushPermissionStatusProvider);
-                                        if (newStatus == PushPermissionStatus.granted) {
-                                          final client = ref.read(supabaseClientProvider);
-                                          await service.syncWithServer(client);
-                                        }
-                                      },
-                                      icon: const Icon(Icons.notifications_outlined, size: 16),
-                                      label: const Text('開啟配對即時推播通知'),
-                                      style: TextButton.styleFrom(
-                                        padding: EdgeInsets.zero,
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    AppSection(
-                      title: '配對條件',
-                      description: '確認這次正在等待的活動、時間、人數與校區。',
-                      child: _RequestInfoCard(request: request),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    AppSection(
-                      title: '房間成員',
-                      description:
-                          '目前房間內有 ${members.length} 人。系統將依據校區、時段與各方條件綜合撮合，非單純達到人數即可保證成團。',
-                      child: Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: [
-                          for (final member in members)
-                            _AnonymousAvatar(
-                              key: ValueKey(member.id),
-                              isSelf: member.userId == userId,
-                              isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
+                              ],
                             ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-
-                    if (_error != null) ...[
-                      Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                          ],
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppSection(
+                        title: '配對條件',
+                        description: '確認這次正在等待的活動、時間、人數與校區。',
+                        child: _RequestInfoCard(request: request),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _RoomMembersSection(
+                        members: members,
+                        currentUserId: userId,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      if (_error != null) ...[
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                      WaitingRoomActionSections(
+                        inviteToken: _inviteToken,
+                        busy: _busy,
+                        isOwner: isOwner,
+                        onGenerate: () => _getOrCreateInviteLink(request.id),
+                        onCopy: () async {
+                          if (_inviteToken == null) return;
+                          await Clipboard.setData(
+                            ClipboardData(text: _inviteToken!),
+                          );
+                          if (context.mounted) {
+                            showAppSnackBar(context, '已複製邀請碼');
+                          }
+                        },
+                        onShare: () async {
+                          if (_inviteToken == null) return;
+                          final shareText =
+                              '來跟我一起參加配對！我的邀請碼是：$_inviteToken';
+                          await Clipboard.setData(
+                            ClipboardData(text: shareText),
+                          );
+                          if (context.mounted) {
+                            showAppSnackBar(context, '已複製邀請訊息，可直接貼給朋友');
+                          }
+                        },
+                        onRevoke: () => _revokeInviteLink(request.id),
+                        onManage: () => isOwner
+                            ? _cancelRequest(request.id)
+                            : _leaveRequest(request.id),
+                      ),
                     ],
-                    WaitingRoomActionSections(
-                      inviteToken: _inviteToken,
-                      busy: _busy,
-                      isOwner: isOwner,
-                      onGenerate: () => _getOrCreateInviteLink(request.id),
-                      onCopy: () {
-                        Clipboard.setData(ClipboardData(text: _inviteToken!));
-                        showAppSnackBar(context, '已複製邀請碼');
-                      },
-                      onRevoke: () => _revokeInviteLink(request.id),
-                      onManage: () => isOwner
-                          ? _cancelRequest(request.id)
-                          : _leaveRequest(request.id),
-                    ),
-                  ],
+                  ),
                 );
               },
             );
@@ -353,8 +277,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     if (_busy) return;
     final confirm = await showAppConfirmDialog(
       context,
-      title: '確定要退出房間？',
-      message: '退出後您將離開此配對房間。\n\n此操作不會有冷卻時間或信譽扣分。',
+      title: '確定要退出等待？',
+      message: '取消後將退出本次配對等待，其他等待中的夥伴將繼續等待。\n\n此操作不會有冷卻時間或信譽扣分。',
       cancelLabel: '返回',
       confirmLabel: '確定退出',
     );
@@ -379,8 +303,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
     if (_busy) return;
     final confirm = await showAppConfirmDialog(
       context,
-      title: '確定要取消整個配對？',
-      message: '取消配對後房間將直接關閉，其他成員也會收到取消通知。\n\n此操作不會有冷卻時間或信譽扣分。',
+      title: '確定要取消配對？',
+      message: '取消後將退出本次配對等待，房間將關閉。\n\n此操作不會有冷卻時間或信譽扣分。',
       cancelLabel: '返回',
       confirmLabel: '確定取消',
     );
@@ -402,6 +326,61 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 }
 
+/// 房間成員區塊：呈現總人數並以少量中性匿名頭像 +N 呈現，避免畫滿大量佔位頭像。
+class _RoomMembersSection extends StatelessWidget {
+  const _RoomMembersSection({
+    required this.members,
+    required this.currentUserId,
+  });
+
+  final List<RequestMember> members;
+  final String? currentUserId;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final hasSelf = members.any((m) => m.userId == currentUserId);
+    final countLabel = hasSelf
+        ? '目前 ${members.length} 人（含你）'
+        : '目前 ${members.length} 人';
+
+    const maxVisible = 5;
+    final visibleMembers = members.take(maxVisible).toList();
+    final extraCount = members.length - visibleMembers.length;
+
+    return AppSection(
+      title: '房間成員 · $countLabel',
+      description: '系統將依據校區、時段與各方條件綜合撮合，非單純達到人數即可保證成團。',
+      child: Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final member in visibleMembers)
+            _AnonymousAvatar(
+              key: ValueKey(member.id),
+              isSelf: member.userId == currentUserId,
+              isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
+            ),
+          if (extraCount > 0)
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: scheme.surfaceContainerHighest,
+              child: Text(
+                '+$extraCount',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Testable production actions shared by the live waiting room and widget
 /// regressions. RPC/dialog behavior remains owned by [WaitingRoomScreen].
 class WaitingRoomActionSections extends StatelessWidget {
@@ -414,6 +393,7 @@ class WaitingRoomActionSections extends StatelessWidget {
     required this.onCopy,
     required this.onRevoke,
     required this.onManage,
+    this.onShare,
   });
 
   final String? inviteToken;
@@ -423,9 +403,13 @@ class WaitingRoomActionSections extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onRevoke;
   final VoidCallback onManage;
+  final VoidCallback? onShare;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -437,7 +421,7 @@ class WaitingRoomActionSections extends StatelessWidget {
               '房間可能已經跟別人成團。',
           child: inviteToken == null
               ? AppButton(
-                  label: '邀請朋友',
+                  label: busy ? '準備邀請碼…' : '邀請朋友',
                   loading: busy,
                   onPressed: busy ? null : onGenerate,
                 )
@@ -447,8 +431,8 @@ class WaitingRoomActionSections extends StatelessWidget {
                     children: [
                       Text(
                         '邀請碼（分享給朋友）',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
@@ -459,27 +443,24 @@ class WaitingRoomActionSections extends StatelessWidget {
                           vertical: AppSpacing.sm,
                         ),
                         decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
+                          color: scheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(AppRadius.sm),
                           border: Border.all(
-                            color: Theme.of(context).colorScheme.outlineVariant,
+                            color: scheme.outlineVariant,
                           ),
                         ),
                         child: SelectableText(
                           inviteToken!,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontFamily: 'monospace',
-                                fontFamilyFallback: const [
-                                  'Menlo',
-                                  'Courier New',
-                                  'monospace',
-                                ],
-                                letterSpacing: 1.5,
-                                fontWeight: FontWeight.w700,
-                              ),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontFamily: 'monospace',
+                            fontFamilyFallback: const [
+                              'Menlo',
+                              'Courier New',
+                              'monospace',
+                            ],
+                            letterSpacing: 1.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
@@ -492,6 +473,16 @@ class WaitingRoomActionSections extends StatelessWidget {
                               label: const Text('複製'),
                             ),
                           ),
+                          if (onShare != null) ...[
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: FilledButton.tonalIcon(
+                                onPressed: busy ? null : onShare,
+                                icon: const Icon(Icons.share_rounded, size: 18),
+                                label: const Text('分享邀請'),
+                              ),
+                            ),
+                          ],
                           const SizedBox(width: AppSpacing.sm),
                           Expanded(
                             child: OutlinedButton.icon(
@@ -519,11 +510,14 @@ class WaitingRoomActionSections extends StatelessWidget {
             width: double.infinity,
             child: OutlinedButton(
               onPressed: busy ? null : onManage,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.onSurfaceVariant,
+                side: BorderSide(color: scheme.outlineVariant),
+              ),
               child: Text(isOwner ? '取消整個配對' : '退出房間'),
             ),
           ),
         ),
-
       ],
     );
   }

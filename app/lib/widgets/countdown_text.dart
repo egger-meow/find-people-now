@@ -18,6 +18,7 @@ class CountdownText extends StatefulWidget {
     this.expiredLabel = '已逾時',
     this.urgentColor,
     this.urgentThreshold = const Duration(minutes: 1),
+    this.onExpired,
   });
 
   final DateTime deadline;
@@ -25,24 +26,52 @@ class CountdownText extends StatefulWidget {
   final String expiredLabel;
   final Color? urgentColor;
   final Duration urgentThreshold;
+  final VoidCallback? onExpired;
 
   @override
   State<CountdownText> createState() => _CountdownTextState();
 }
 
-class _CountdownTextState extends State<CountdownText> {
+class _CountdownTextState extends State<CountdownText>
+    with WidgetsBindingObserver {
   late Timer _timer;
+  bool _expiredFired = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkExpiration();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        _checkExpiration();
+        setState(() {});
+      }
     });
+  }
+
+  void _checkExpiration() {
+    if (!_expiredFired && widget.deadline.difference(DateTime.now()).isNegative) {
+      _expiredFired = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onExpired?.call();
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _checkExpiration();
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer.cancel();
     super.dispose();
   }

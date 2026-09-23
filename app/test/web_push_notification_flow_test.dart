@@ -170,7 +170,7 @@ void main() {
       expect(find.text('前往我的活動'), findsOneWidget);
     });
 
-    testWidgets('WaitingRoomScreen 包含背景推播未驗證警語與平靜退出說明', (tester) async {
+    testWidgets('WaitingRoomScreen 精簡資訊呈現且移除技術推播診斷', (tester) async {
       final request = MatchRequest(
         id: 'req-waiting-test',
         ownerId: 'u1',
@@ -237,13 +237,20 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('背景推播功能尚在驗證中，離開 App 可能無法即時收到通知'),
-        findsOneWidget,
+        find.textContaining('背景推播功能尚在驗證中'),
+        findsNothing,
       );
       expect(
-        find.textContaining('退出方式：可隨時取消或離開，無任何冷卻限制與信用扣分。'),
+        find.text('房間成員 · 目前 1 人（含你）'),
         findsOneWidget,
       );
+      final cancelFinder = find.text('取消整個配對');
+      await tester.scrollUntilVisible(
+        cancelFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(cancelFinder, findsOneWidget);
     });
 
     testWidgets('ActivityDetailScreen 找不到活動時呈現平靜空態與返回按鈕', (tester) async {
