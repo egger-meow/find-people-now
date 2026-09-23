@@ -9,6 +9,7 @@ import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/skeleton.dart';
 import '../match_providers.dart';
+import 'aggregated_demands_sheet.dart';
 import 'campus_demand_card_widget.dart';
 
 /// 首頁核心決策專區——「校園即時揪團動態」（v1.43）
@@ -216,7 +217,31 @@ class CampusDemandsSection extends ConsumerWidget {
         const SizedBox(height: AppSpacing.md),
 
         // 四態渲染：Loading / Error / Empty / Data
-        if (demandsAsync.hasError)
+        if (demandsAsync.hasError &&
+            demandsAsync.hasValue &&
+            demandsAsync.value != null &&
+            demandsAsync.value!.isNotEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _StaleDataBanner(
+                onRetry: () {
+                  AppHaptics.tap();
+                  ref.invalidate(campusDemandsProvider((school, campus)));
+                },
+              ),
+              _buildDemandsContent(
+                context,
+                ref,
+                demandsAsync.value!,
+                activeFilter,
+                lastUpdated,
+                scheme,
+                textTheme,
+              ),
+            ],
+          )
+        else if (demandsAsync.hasError)
           AppCard(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -269,98 +294,199 @@ class CampusDemandsSection extends ConsumerWidget {
               ],
             ),
             error: (err, stack) => const SizedBox.shrink(),
-            data: (demands) {
-            final filtered = demands
-                .where((d) => d.matchesFilter(activeFilter, relativeTo: relativeNow))
-                .toList();
-
-            if (filtered.isEmpty) {
-              return AppCard(
-                width: double.infinity,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.explore_outlined,
-                        size: 40,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        '目前$campus還沒有人在揪',
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '當第一個發起的人，或是設定提醒，有人發起時通知你！',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.xs,
-                        children: [
-                          FilledButton(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(120, 44),
-                            ),
-                            onPressed: () {
-                              AppHaptics.tap();
-                              onCreateNewRequest();
-                            },
-                            child: const Text('自己揪一個'),
-                          ),
-                          TextButton.icon(
-                            icon: const Icon(Icons.notifications_active_outlined, size: 16),
-                            label: const Text('設定時效提醒'),
-                            onPressed: () {
-                              AppHaptics.selection();
-                              onSetAlert();
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (lastUpdated != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: Text(
-                      '共 ${filtered.length} 個即時活動等待相容夥伴 · 剛剛更新',
-                      style: textTheme.bodySmall?.copyWith(
-                        fontSize: 11,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                for (final demand in filtered)
-                  CampusDemandCardWidget(
-                    demand: demand,
-                    relativeNow: relativeNow,
-                    onTap: () => onSelectDemand(demand),
-                  ),
-              ],
-            );
-          },
-        ),
+            data: (demands) => _buildDemandsContent(
+              context,
+              ref,
+              demands,
+              activeFilter,
+              lastUpdated,
+              scheme,
+              textTheme,
+            ),
+          ),
       ],
+    );
+  }
+
+  Widget _buildDemandsContent(
+    BuildContext context,
+    WidgetRef ref,
+    List<CampusDemandCard> demands,
+    DemandTimeFilter activeFilter,
+    DateTime? lastUpdated,
+    ColorScheme scheme,
+    TextTheme textTheme,
+  ) {
+    final filtered = demands
+        .where((d) => d.matchesFilter(activeFilter, relativeTo: relativeNow))
+        .toList();
+
+    if (filtered.isEmpty) {
+      return AppCard(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.explore_outlined,
+                size: 40,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '目前$campus還沒有人在揪',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '當第一個發起的人，或是設定提醒，有人發起時通知你！',
+                style: textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(120, 44),
+                    ),
+                    onPressed: () {
+                      AppHaptics.tap();
+                      onCreateNewRequest();
+                    },
+                    child: const Text('自己揪一個'),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.notifications_active_outlined, size: 16),
+                    label: const Text('設定時效提醒'),
+                    onPressed: () {
+                      AppHaptics.selection();
+                      onSetAlert();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final groups = aggregateDemands(filtered);
+    final updatedText = lastUpdated != null
+        ? formatDemandsLastUpdated(lastUpdated, relativeTo: relativeNow)
+        : '剛剛更新';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+          child: Text(
+            '共 ${filtered.length} 個即時活動等待相容夥伴 · $updatedText',
+            style: textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        for (final group in groups)
+          if (group.hasSingleDemand)
+            CampusDemandCardWidget(
+              demand: group.demands.first,
+              summaryHeadline: group.summaryHeadline(
+                activeFilter,
+                relativeNow: relativeNow,
+              ),
+              relativeNow: relativeNow,
+              onTap: () => onSelectDemand(group.demands.first),
+            )
+          else
+            AggregatedDemandCardWidget(
+                group: group,
+                activeFilter: activeFilter,
+                relativeNow: relativeNow,
+                onTap: () => showAggregatedDemandsSheet(
+                  context,
+                  group: group,
+                  onSelectDemand: onSelectDemand,
+                  relativeNow: relativeNow,
+                ),
+              ),
+      ],
+    );
+  }
+}
+
+/// 格式化校園動態最後更新時間（iOS UX 指南 §7）
+String formatDemandsLastUpdated(DateTime lastUpdated, {DateTime? relativeTo}) {
+  final now = relativeTo ?? DateTime.now();
+  final diff = now.difference(lastUpdated);
+  if (diff.isNegative || diff.inMinutes < 1) {
+    return '剛剛更新';
+  } else if (diff.inMinutes < 60) {
+    return '${diff.inMinutes} 分鐘前更新';
+  } else if (diff.inHours < 24) {
+    return '${diff.inHours} 小時前更新';
+  } else {
+    return '${lastUpdated.month}/${lastUpdated.day} 更新';
+  }
+}
+
+class _StaleDataBanner extends StatelessWidget {
+  const _StaleDataBanner({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.sync_problem_rounded, size: 16, color: scheme.error),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              '連線異常，顯示稍早載入的動態（尚未更新）',
+              style: textTheme.bodySmall?.copyWith(
+                color: scheme.onErrorContainer,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+            ),
+            onPressed: onRetry,
+            child: const Text('重試'),
+          ),
+        ],
+      ),
     );
   }
 }

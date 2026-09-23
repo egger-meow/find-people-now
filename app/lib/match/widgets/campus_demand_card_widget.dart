@@ -19,11 +19,13 @@ class CampusDemandCardWidget extends StatelessWidget {
     required this.demand,
     this.onTap,
     this.relativeNow,
+    this.summaryHeadline,
   });
 
   final CampusDemandCard demand;
   final VoidCallback? onTap;
   final DateTime? relativeNow;
+  final String? summaryHeadline;
 
   String _formatLevel(String activityName, String? sportLevel, int? rating) {
     if (sportLevel == null) {
@@ -84,11 +86,29 @@ class CampusDemandCardWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text(
-                    demand.activityTypeName,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (summaryHeadline != null) ...[
+                        Text(
+                          summaryHeadline!,
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      Text(
+                        demand.activityTypeName,
+                        style: summaryHeadline != null
+                            ? textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              )
+                            : textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                      ),
+                    ],
                   ),
                 ),
                 Container(
@@ -221,6 +241,158 @@ class _CriterionChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 多組需求聚合摘要卡元件（iOS UX 指南 §7）
+class AggregatedDemandCardWidget extends StatelessWidget {
+  const AggregatedDemandCardWidget({
+    super.key,
+    required this.group,
+    required this.activeFilter,
+    required this.onTap,
+    this.relativeNow,
+  });
+
+  final AggregatedDemandGroup group;
+  final DemandTimeFilter activeFilter;
+  final VoidCallback onTap;
+  final DateTime? relativeNow;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
+    final headline =
+        group.summaryHeadline(activeFilter, relativeNow: relativeNow);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppCard(
+        onTap: () {
+          AppHaptics.tap();
+          onTap();
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.xs + 2),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Icon(
+                    activityTypeIcon(group.activityTypeName),
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        headline,
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        group.activityTypeName,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                  child: Text(
+                    '${group.demands.length} 組條件',
+                    style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                _CriterionChip(
+                  icon: Icons.location_on_outlined,
+                  label: group.campus,
+                ),
+                const _CriterionChip(
+                  icon: Icons.tune_rounded,
+                  label: '包含多種時段與程度',
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Icon(
+                  Icons.people_outline_rounded,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    '共 ${group.demands.length} 組需求等待相容 · 點擊展開挑選',
+                    style: textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    AppHaptics.tap();
+                    onTap();
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
+                    ),
+                    minimumSize: const Size(44, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('展開選擇'),
+                      SizedBox(width: 2),
+                      Icon(Icons.chevron_right_rounded, size: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

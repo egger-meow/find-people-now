@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:find_people_now/activities/pending_confirmation_card.dart';
 import 'package:find_people_now/auth/auth_providers.dart';
 import 'package:find_people_now/generated/activity_type.dart';
 import 'package:find_people_now/generated/match_request.dart';

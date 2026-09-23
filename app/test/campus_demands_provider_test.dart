@@ -68,7 +68,7 @@ void main() {
         // 監聽需求資料流
         final sub = container.listen(
           campusDemandsProvider((SCHOOL.NYCU, '光復')),
-          (_, __) {},
+          (_, _) {},
         );
 
         // 觸發首次 fetch

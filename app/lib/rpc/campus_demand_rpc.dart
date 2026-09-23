@@ -189,3 +189,80 @@ Future<List<CampusDemandCard>> getCampusDemands(
         .toList(),
   );
 }
+
+/// 依 stable `activityTypeId` 聚合的探索需求群組（UI_PLAN / iOS UX 指南 §7）
+class AggregatedDemandGroup {
+  final String activityTypeId;
+  final String activityTypeName;
+  final String campus;
+  final List<CampusDemandCard> demands;
+
+  const AggregatedDemandGroup({
+    required this.activityTypeId,
+    required this.activityTypeName,
+    required this.campus,
+    required this.demands,
+  });
+
+  bool get hasSingleDemand => demands.length == 1;
+
+  int get totalRequests =>
+      demands.fold<int>(0, (sum, d) => sum + d.requestCount);
+
+  int get singlePersonCount =>
+      hasSingleDemand ? demands.first.personCount : 0;
+
+  String summaryHeadline(DemandTimeFilter filter, {DateTime? relativeNow}) {
+    final prefix = _filterPrefix(filter, relativeNow: relativeNow);
+    if (hasSingleDemand) {
+      return '$prefix $singlePersonCount 人在揪$activityTypeName';
+    }
+    return '$prefix $totalRequests 組需求在揪$activityTypeName';
+  }
+
+  String _filterPrefix(DemandTimeFilter filter, {DateTime? relativeNow}) {
+    switch (filter) {
+      case DemandTimeFilter.now:
+        return '現在';
+      case DemandTimeFilter.today:
+        return '今天';
+      case DemandTimeFilter.tomorrow:
+        return '明天';
+      case DemandTimeFilter.all:
+        final now = relativeNow ?? DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final allToday = demands.every((d) {
+          final start = d.earliestStart;
+          return start.year == today.year &&
+              start.month == today.month &&
+              start.day == today.day;
+        });
+        if (allToday) return '今天';
+        final tomorrow = today.add(const Duration(days: 1));
+        final allTomorrow = demands.every((d) {
+          final start = d.earliestStart;
+          return start.year == tomorrow.year &&
+              start.month == tomorrow.month &&
+              start.day == tomorrow.day;
+        });
+        if (allTomorrow) return '明天';
+        return '近期';
+    }
+  }
+}
+
+/// 將經時間篩選後的需求依 stable `activityTypeId` 聚合成群組。
+List<AggregatedDemandGroup> aggregateDemands(List<CampusDemandCard> demands) {
+  final Map<String, List<CampusDemandCard>> grouped = {};
+  for (final d in demands) {
+    grouped.putIfAbsent(d.activityTypeId, () => []).add(d);
+  }
+  return grouped.entries
+      .map((e) => AggregatedDemandGroup(
+            activityTypeId: e.key,
+            activityTypeName: e.value.first.activityTypeName,
+            campus: e.value.first.campus,
+            demands: e.value,
+          ))
+      .toList();
+}

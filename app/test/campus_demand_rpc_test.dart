@@ -39,7 +39,7 @@ void main() {
     });
 
     test('formats time slot label with friendly bucket prefix', () {
-      final relativeNow = DateTime.utc(2026, 9, 16, 10, 0); // 18:00 UTC+8 today
+      final relativeNow = DateTime(2026, 9, 16, 12, 0);
       final card = CampusDemandCard(
         activityTypeId: '1',
         activityTypeName: '羽球',
@@ -55,7 +55,7 @@ void main() {
         requestCount: 1,
       );
 
-      final label = card.timeSlotLabel(relativeTo: DateTime(2026, 9, 16, 12, 0));
+      final label = card.timeSlotLabel(relativeTo: relativeNow);
       expect(label, contains('今天'));
       expect(label, contains('傍晚'));
       expect(label, contains('18:00'));
