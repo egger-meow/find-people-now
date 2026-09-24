@@ -40,7 +40,7 @@
   1. **資料庫層原子性與並發保證（FOR UPDATE 列鎖）**：
      - 原 `get_or_create_invite_link` RPC 僅使用一般的 `SELECT`，若兩台裝置並發呼叫重生，可能產生不同的邀請碼。
      - 遷移升級為 `SELECT ... FOR UPDATE` 鎖定該筆 `match_request` 列，首個交易取得鎖後產生新 12-byte hex 邀請碼並原子重設 `revoked_at = null`；後續排隊交易在鎖釋放後於 Read Committed 模式下重讀已提交列，直接回傳已產生的有效碼，保證原子性與唯一性。
-     - 新增 [`44_invite_token_lifecycle.test.sql`](file:///c:/IDEA/find-people-now/supabase/tests/database/44_invite_token_lifecycle.test.sql) 完整涵蓋生成、冪等、加入、撤銷阻擋、原子重生與新碼加入之資料庫層回歸測試。
+     - 新增 [`44_invite_token_lifecycle.test.sql`](file:///c:/IDEA/find-people-now/supabase/tests/database/44_invite_token_lifecycle.test.sql) 涵蓋依序生成、冪等、加入、撤銷阻擋、原子重生與新碼加入之單連線資料庫層回歸測試。需特別說明：pgTAP 測試為單交易循序執行，未同時啟動多個資料庫交易並行打擊，因此列鎖設計具備明確資料庫理論依據，但並發實測重現仍待多連線整合測試環境執行。
   2. **跨裝置撤銷與動態推播即時防護**：
      - 原等待室在判斷 `isRevoked` 時混入 `_inviteToken == null`，導致若本機曾快取碼、房主在另一台裝置撤銷時，本機仍會繼續顯示失效碼。
      - 重構判定為 `final isRevoked = request.revokedAt != null;`；並在 Realtime 監聽器中加入：一旦收到 `req.revokedAt != null`，立即執行 `_inviteToken = null`。
@@ -114,6 +114,7 @@
 
 > [!IMPORTANT]
 > **資料庫遷移與環境邊界誠實揭露**：
-> 1. **資料庫遷移套用狀態**：遷移檔 `supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql` 與資料庫測試 `supabase/tests/database/44_invite_token_lifecycle.test.sql` 已編寫並納入 Git 版本庫追蹤。但由於本機 Windows 開發環境未啟動 Docker Engine，因此該遷移尚未由本機 Supabase CLI 實際套用至目標資料庫實例（需由具備 Docker 之環境或遠端 CI/CD / Supabase 控制台執行 `supabase db push` 或遷移套用）。
-> 2. **Flutter 測試狀態**：Flutter 分析器（`flutter analyze`）與所有 Dart 單元/Widget 測試已於 Windows 主機全數執行完畢並取得 PASS 結果。
-> 3. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。
+> 1. **資料庫遷移套用狀態**：遷移檔 `supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql` 與資料庫測試 `supabase/tests/database/44_invite_token_lifecycle.test.sql` 已編寫並納入 Git 版本庫追蹤。但由於本機 Windows 開發環境未啟動 Docker Engine，因此該遷移尚未由本機 Supabase CLI 實際套用至目標資料庫實例（需由具備 Docker 之環境或遠端 CI/CD / Supabase 控制台執行 `supabase db push` 或遷移套用）。在套用遷移至目標資料庫並於資料庫實例執行測試前，當前狀態為「程式碼與測試修復已提交」，而非「線上邀請碼流程已修復」。
+> 2. **並發測試邊界**：`44_invite_token_lifecycle.test.sql` 涵蓋依序產生、撤銷、重生與入房流程，但 pgTAP 在單一資料庫連線與交易內執行，並未模擬多連線同時並發觸發重生。列鎖設計在理論與架構上有明確依據，但並發實測數據仍待具備多連線並發測試工具之環境補齊。
+> 3. **Flutter 測試狀態**：Flutter 分析器（`flutter analyze`）與所有 Dart 單元/Widget 測試已於 Windows 主機全數執行完畢並取得 PASS 結果。此結果屬於提交端之本機驗證紀錄，仍待 CI 或獨立環境重跑重現。
+> 4. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。
