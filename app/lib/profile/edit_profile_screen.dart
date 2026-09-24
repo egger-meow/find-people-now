@@ -201,9 +201,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final isDirty = _initialized && user != null && _isDirty(user);
 
     return PopScope(
-      canPop: _allowPop || !isDirty || _loading,
+      canPop: _allowPop || (!isDirty && !_loading),
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_loading) return;
         final shouldDiscard = await showAppConfirmDialog(
           context,
           title: '捨棄未儲存的變更？',
@@ -251,10 +252,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         children: [
                           CircleAvatar(
                             radius: 40,
-                            backgroundImage: _avatarUrl.isEmpty
+                            backgroundImage: (_avatarUrl.isEmpty || !_avatarUrl.startsWith('http'))
                                 ? null
                                 : NetworkImage(_avatarUrl),
-                            child: _avatarUrl.isEmpty
+                            child: (_avatarUrl.isEmpty || !_avatarUrl.startsWith('http'))
                                 ? const Icon(Icons.person_rounded, size: 40)
                                 : null,
                           ),

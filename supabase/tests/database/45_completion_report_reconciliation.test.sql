@@ -16,15 +16,18 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(8);
+select plan(11);
 
 create temp table fixtures (
   act_type_id    uuid,
   campus         text default '光復',
   u1             uuid,
   u2             uuid,
+  u3             uuid,
+  u4             uuid,
   u_outsider     uuid,
   act_2p         uuid,
+  act_2p_uni     uuid,
   act_matched    uuid,
   act_expired    uuid
 );
@@ -35,26 +38,35 @@ declare
   v_campus      text := '光復';
   v_u1 uuid := gen_random_uuid();
   v_u2 uuid := gen_random_uuid();
+  v_u3 uuid := gen_random_uuid();
+  v_u4 uuid := gen_random_uuid();
   v_outsider uuid := gen_random_uuid();
   v_act_2p activity;
+  v_act_2p_uni activity;
   v_act_matched activity;
   v_act_expired activity;
   v_req1 uuid;
   v_req2 uuid;
+  v_req3 uuid;
+  v_req4 uuid;
 begin
   insert into auth.users (id, email) values
     (v_u1, 'cr_1@nycu.edu.tw'),
     (v_u2, 'cr_2@nycu.edu.tw'),
+    (v_u3, 'cr_3@nycu.edu.tw'),
+    (v_u4, 'cr_4@nycu.edu.tw'),
     (v_outsider, 'cr_outsider@nycu.edu.tw');
 
   insert into app_user (id, email, school, display_name, avatar_url, degree_level, contact_line) values
     (v_u1, 'cr_1@nycu.edu.tw', 'NYCU', 'CR 1', 'https://avatar.cr_1', 'MASTER', 'cr_1_line'),
     (v_u2, 'cr_2@nycu.edu.tw', 'NYCU', 'CR 2', 'https://avatar.cr_2', 'MASTER', 'cr_2_line'),
+    (v_u3, 'cr_3@nycu.edu.tw', 'NYCU', 'CR 3', 'https://avatar.cr_3', 'MASTER', 'cr_3_line'),
+    (v_u4, 'cr_4@nycu.edu.tw', 'NYCU', 'CR 4', 'https://avatar.cr_4', 'MASTER', 'cr_4_line'),
     (v_outsider, 'cr_outsider@nycu.edu.tw', 'NYCU', 'CR Outsider', 'https://avatar.cr_outsider', 'MASTER', 'cr_outsider_line');
 
   select id into v_act_type_id from activity_type where name = '吃飯/咖啡/探店' limit 1;
 
-  -- 1. 兩人進行中活動 (act_2p)
+  -- 1. 兩人互咬活動 (act_2p)
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
   values (v_u1, v_act_type_id, 'NYCU', v_campus, now() - interval '2 hours', now() - interval '1 hour', 2, 2, 'MATCHED')
   returning id into v_req1;
@@ -71,7 +83,24 @@ begin
     (v_act_2p.id, v_u1, v_req1, 'JOINED'),
     (v_act_2p.id, v_u2, v_req2, 'JOINED');
 
-  -- 2. 尚未開始活動 (MATCHED)
+  -- 2. 兩人單向指認活動 (act_2p_uni：u3 指認 u4 缺席，u4 回報一切順利)
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_u3, v_act_type_id, 'NYCU', v_campus, now() - interval '2 hours', now() - interval '1 hour', 2, 2, 'MATCHED')
+  returning id into v_req3;
+
+  insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
+  values (v_u4, v_act_type_id, 'NYCU', v_campus, now() - interval '2 hours', now() - interval '1 hour', 2, 2, 'MATCHED')
+  returning id into v_req4;
+
+  insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status, contact_visible_until)
+  values (v_act_type_id, 'NYCU', v_campus, now() - interval '2 hours', now() - interval '1 hour', 'ONGOING', now() + interval '22 hours')
+  returning * into v_act_2p_uni;
+
+  insert into activity_member (activity_id, user_id, source_request_id, status) values
+    (v_act_2p_uni.id, v_u3, v_req3, 'JOINED'),
+    (v_act_2p_uni.id, v_u4, v_req4, 'JOINED');
+
+  -- 3. 尚未開始活動 (MATCHED)
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
   values (v_act_type_id, 'NYCU', v_campus, now() + interval '2 hours', now() + interval '3 hours', 'MATCHED')
   returning * into v_act_matched;
@@ -79,7 +108,7 @@ begin
   insert into activity_member (activity_id, user_id, source_request_id, status) values
     (v_act_matched.id, v_u1, v_req1, 'JOINED');
 
-  -- 3. 超過 24 小時窗口之已完成活動 (EXPIRED)
+  -- 4. 超過 24 小時窗口之已完成活動 (EXPIRED)
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status, contact_visible_until)
   values (v_act_type_id, 'NYCU', v_campus, now() - interval '30 hours', now() - interval '29 hours', 'COMPLETED', now() - interval '5 hours')
   returning * into v_act_expired;
@@ -87,8 +116,8 @@ begin
   insert into activity_member (activity_id, user_id, source_request_id, status) values
     (v_act_expired.id, v_u1, v_req1, 'JOINED');
 
-  insert into fixtures (act_type_id, campus, u1, u2, u_outsider, act_2p, act_matched, act_expired)
-  values (v_act_type_id, v_campus, v_u1, v_u2, v_outsider, v_act_2p.id, v_act_matched.id, v_act_expired.id);
+  insert into fixtures (act_type_id, campus, u1, u2, u3, u4, u_outsider, act_2p, act_2p_uni, act_matched, act_expired)
+  values (v_act_type_id, v_campus, v_u1, v_u2, v_u3, v_u4, v_outsider, v_act_2p.id, v_act_2p_uni.id, v_act_matched.id, v_act_expired.id);
 end $setup$;
 
 -- -----------------------------------------------------------------------------
@@ -142,8 +171,44 @@ select is_empty(
 );
 
 -- -----------------------------------------------------------------------------
+-- Test 3b: 單向指認（u3 指認 u4 缺席，u4 回報一切順利）：u4 必須維持記 NO_SHOW，不得誤撤銷
+-- -----------------------------------------------------------------------------
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select u3::text from fixtures), true);
+  perform submit_completion_report((select act_2p_uni from fixtures), 'REPORTED_ABSENT', array[(select u4 from fixtures)]::uuid[]);
+
+  perform set_config('request.jwt.claim.sub', (select u4::text from fixtures), true);
+  perform submit_completion_report((select act_2p_uni from fixtures), 'WENT_WELL', '{}');
+end $$;
+
+select results_eq(
+  format($sql$select event_type from user_reliability_event where activity_id = %L and user_id = %L$sql$,
+    (select act_2p_uni from fixtures), (select u4 from fixtures)),
+  array['NO_SHOW'::reliability_event_type],
+  '單向指認且被指認者回報一切順利時，被指認者應維持記 NO_SHOW（互咬不成立）'
+);
+
+select results_eq(
+  format($sql$select event_type from user_reliability_event where activity_id = %L and user_id = %L$sql$,
+    (select act_2p_uni from fixtures), (select u3 from fixtures)),
+  array['ATTENDED'::reliability_event_type],
+  '單向指認中之舉報者應維持記 ATTENDED'
+);
+
+select results_eq(
+  format($sql$select count(*) from completion_report where activity_id = %L$sql$,
+    (select act_2p_uni from fixtures)),
+  array[2::bigint],
+  '兩筆回報序列化完成且完整寫入'
+);
+
+-- -----------------------------------------------------------------------------
 -- Test 4: 重複回報應拋出 ALREADY_REPORTED
 -- -----------------------------------------------------------------------------
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select u2::text from fixtures), true);
+end $$;
+
 select throws_ok(
   format($sql$select submit_completion_report(%L, 'WENT_WELL', '{}')$sql$, (select act_2p from fixtures)),
   'ALREADY_REPORTED',

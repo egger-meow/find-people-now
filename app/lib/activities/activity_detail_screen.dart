@@ -317,6 +317,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                       activityId: activity.id,
                       activityStatus: activity.status,
                       contactVisibleUntil: activity.contactVisibleUntil,
+                      startTime: activity.startTime,
                     )
                   : null,
               navigation: _ActivityDetailNavigation(
@@ -802,11 +803,13 @@ class _CompletionReportBanner extends ConsumerWidget {
     required this.activityId,
     required this.activityStatus,
     required this.contactVisibleUntil,
+    required this.startTime,
   });
 
   final String activityId;
   final ACTIVITY_STATUS activityStatus;
   final DateTime contactVisibleUntil;
+  final DateTime startTime;
 
   Future<void> _openRematchSheet(
     BuildContext context,
@@ -876,8 +879,12 @@ class _CompletionReportBanner extends ConsumerWidget {
               activityStatus != ACTIVITY_STATUS.COMPLETED) {
             return const SizedBox.shrink();
           }
+          final fallbackWindowEnd = startTime.add(const Duration(hours: 24));
+          final windowEnd = contactVisibleUntil.isAfter(fallbackWindowEnd)
+              ? contactVisibleUntil
+              : fallbackWindowEnd;
           if (activityStatus == ACTIVITY_STATUS.COMPLETED &&
-              !contactVisibleUntil.isAfter(DateTime.now())) {
+              !windowEnd.isAfter(DateTime.now())) {
             return const SizedBox.shrink();
           }
           final isCompleted = activityStatus == ACTIVITY_STATUS.COMPLETED;

@@ -182,6 +182,26 @@ void main() {
       expect(find.text('開始回報'), findsOneWidget);
     });
 
+    testWidgets('shows start report button on COMPLETED activity when contactVisibleUntil is past but startTime + 24h is still valid', (tester) async {
+      final activityWithValidStartTimeWindow = testActivity.copyWith(
+        status: ACTIVITY_STATUS.COMPLETED,
+        startTime: DateTime.now().subtract(const Duration(hours: 2)),
+        contactVisibleUntil: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+
+      await tester.pumpWidget(
+        createSubject(
+          activity: activityWithValidStartTimeWindow,
+          ownReport: null,
+          roster: [myMember],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('活動完成回報'), findsOneWidget);
+      expect(find.text('開始回報'), findsOneWidget);
+    });
+
     testWidgets('hides start report button on COMPLETED activity when reporting window expired', (tester) async {
       final expiredCompletedActivity = testActivity.copyWith(
         status: ACTIVITY_STATUS.COMPLETED,
