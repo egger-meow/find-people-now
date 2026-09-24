@@ -1,23 +1,5 @@
--- =============================================================================
--- Migration: 20260925003800_fix_completion_report_settlement_reconciliation.sql
---
--- 解決 P1：部分成員可能永遠無法回報活動（尤其是 2 人場次第一人回報即結算封死第二人）
---
--- 1. 24 小時回報窗口：
---    - 活動即使轉為 COMPLETED，只要在 24 小時回報窗口內
---      (now() <= greatest(contact_visible_until, start_time + 24 hours))，
---      尚未回報過的 JOINED 成員依然可以提交完成回報。
---    - 超過 24 小時窗口後才禁止回報（回 ACTIVITY_NOT_ACTIVE）。
---    - MATCHED（尚未開始）回 ACTIVITY_NOT_ENDED。
---    - CANCELLED 回 ACTIVITY_NOT_ACTIVE。
---
--- 2. 冪等結算與互咬校正（Reconciliation）：
---    - 達法定人數門檻 (>= 50%) 即將活動推進為 COMPLETED（不卡開新團）。
---    - 結算時清理該 activity_id 舊有的 ATTENDED / NO_SHOW 事件並重新依所有現有回報評估。
---    - 2 人互咬特例 (v_total_members = 2 and v_report_count = 2 and v_no_show_cnt = 1)：
---      雙方互相指認缺席時，不判定 No-show，不記事件，並撤銷先前因單方回報誤判的停權。
--- =============================================================================
-
+-- Apply the corrected settlement function to databases that already ran 20260925003800.
+-- The prior migration was edited after release; migration history does not reapply it.
 create or replace function submit_completion_report(
   p_activity_id     uuid,
   p_result          completion_result,
@@ -38,6 +20,7 @@ declare
   v_quorum                int;
   v_rec                   record;
   v_no_show_cnt           int;
+  v_is_mutual_accusation  boolean;
 begin
   if v_user_id is null then
     raise exception using message = 'UNAUTHORIZED';
@@ -47,10 +30,12 @@ begin
     raise exception using message = 'ACCOUNT_DELETED';
   end if;
 
+  -- 讀取活動資訊並加排他鎖，確保同活動的完成回報與結算序列化執行 (Concurrency control)
   select status, start_time, contact_visible_until
     into v_activity_status, v_start_time, v_contact_visible_until
     from activity
-   where id = p_activity_id;
+   where id = p_activity_id
+     for update;
 
   if not found then
     raise exception using message = 'NOT_FOUND';
@@ -74,6 +59,17 @@ begin
     raise exception using message = 'ACTIVITY_NOT_ACTIVE';
   end if;
 
+  -- A repeated ID must not count as multiple independent no-show votes.
+  if coalesce(cardinality(p_absent_user_ids), 0) <>
+     (select count(distinct uid) from unnest(coalesce(p_absent_user_ids, '{}')) as uid) then
+    raise exception using message = 'INVALID_ABSENT_TARGET';
+  end if;
+
+  if (p_result = 'REPORTED_ABSENT' and coalesce(cardinality(p_absent_user_ids), 0) = 0)
+     or (p_result <> 'REPORTED_ABSENT' and coalesce(cardinality(p_absent_user_ids), 0) > 0) then
+    raise exception using message = 'INVALID_ABSENT_TARGET';
+  end if;
+
   -- 2. 指認對象必須限定在該活動的成員名單內 (SPEC §10)，且不能指認自己
   if p_absent_user_ids is not null and array_length(p_absent_user_ids, 1) > 0 then
     if v_user_id = any(p_absent_user_ids) then
@@ -82,7 +78,7 @@ begin
 
     if exists (
       select 1 from unnest(p_absent_user_ids) as uid
-       where not exists (
+       where uid is null or not exists (
          select 1 from activity_member
           where activity_id = p_activity_id and user_id = uid and status = 'JOINED'
        )
@@ -122,6 +118,27 @@ begin
      where activity_id = p_activity_id
        and event_type in ('ATTENDED', 'NO_SHOW');
 
+    -- 2 人互咬判定 (SPEC §10)：僅當 2 人場次且 2 人均回報，且彼此互相指認對方缺席時才成立
+    v_is_mutual_accusation := false;
+    if v_total_members = 2 and v_report_count = 2 then
+      select count(*) = 2 into v_is_mutual_accusation
+        from activity_member am
+       where am.activity_id = p_activity_id
+         and am.status = 'JOINED'
+         and exists (
+           select 1 from completion_report cr
+            where cr.activity_id = p_activity_id
+              and cr.reporter_id = am.user_id
+              and exists (
+                select 1 from activity_member other
+                 where other.activity_id = p_activity_id
+                   and other.status = 'JOINED'
+                   and other.user_id <> am.user_id
+                   and other.user_id = any(cr.absent_user_ids)
+              )
+         );
+    end if;
+
     -- 重新依所有已提交之回報結算全體成員
     for v_rec in (
       select user_id from activity_member where activity_id = p_activity_id and status = 'JOINED'
@@ -133,7 +150,7 @@ begin
          and uid = v_rec.user_id;
 
       -- 2 人互咬特例與多數決判定 (SPEC §10)
-      if v_total_members = 2 and v_report_count = 2 and v_no_show_cnt = 1 then
+      if v_is_mutual_accusation then
         -- 2 人互相指認缺席 → 不判定 No-show，不記事件
         -- 若先前因第一人回報誤判造成停權，即時撤回
         update app_user

@@ -18,7 +18,7 @@ import 'package:find_people_now/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
-  final now = DateTime.utc(2026, 9, 23, 14, 0);
+  final now = DateTime.now();
 
   final testActivity = Activity(
     id: 'act-test-1',
@@ -178,7 +178,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('活動完成回報'), findsOneWidget);
-      expect(find.text('活動已順利結束！花 10 秒回報出席狀況以維護信譽'), findsOneWidget);
+      expect(find.text('活動已結束，花 10 秒回報出席狀況'), findsOneWidget);
       expect(find.text('開始回報'), findsOneWidget);
     });
 
@@ -205,6 +205,7 @@ void main() {
     testWidgets('hides start report button on COMPLETED activity when reporting window expired', (tester) async {
       final expiredCompletedActivity = testActivity.copyWith(
         status: ACTIVITY_STATUS.COMPLETED,
+        startTime: DateTime.now().subtract(const Duration(hours: 30)),
         contactVisibleUntil: DateTime.now().subtract(const Duration(hours: 1)),
       );
 
@@ -218,6 +219,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('活動完成回報'), findsNothing);
+      expect(find.text('開始回報'), findsNothing);
+    });
+
+    testWidgets('hides expired report action even if activity still says ONGOING', (tester) async {
+      final expiredOngoingActivity = testActivity.copyWith(
+        startTime: DateTime.now().subtract(const Duration(hours: 30)),
+        contactVisibleUntil: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+
+      await tester.pumpWidget(
+        createSubject(
+          activity: expiredOngoingActivity,
+          ownReport: null,
+          roster: [myMember],
+        ),
+      );
+      await tester.pumpAndSettle();
+
       expect(find.text('開始回報'), findsNothing);
     });
   });
@@ -331,4 +350,3 @@ void main() {
     });
   });
 }
-

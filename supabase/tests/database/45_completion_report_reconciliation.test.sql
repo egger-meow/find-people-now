@@ -16,7 +16,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(11);
+select plan(14);
 
 create temp table fixtures (
   act_type_id    uuid,
@@ -208,6 +208,27 @@ select results_eq(
 do $$ begin
   perform set_config('request.jwt.claim.sub', (select u2::text from fixtures), true);
 end $$;
+
+select throws_ok(
+  format($sql$select submit_completion_report(%L, 'REPORTED_ABSENT', array[%L, %L]::uuid[])$sql$,
+    (select act_2p from fixtures), (select u1 from fixtures), (select u1 from fixtures)),
+  'INVALID_ABSENT_TARGET',
+  '同一名缺席成員不能在一份回報內重複計票'
+);
+
+select throws_ok(
+  format($sql$select submit_completion_report(%L, 'WENT_WELL', array[%L]::uuid[])$sql$,
+    (select act_2p from fixtures), (select u1 from fixtures)),
+  'INVALID_ABSENT_TARGET',
+  '一切順利回報不能夾帶缺席指認'
+);
+
+select throws_ok(
+  format($sql$select submit_completion_report(%L, 'REPORTED_ABSENT', array[null]::uuid[])$sql$,
+    (select act_2p from fixtures)),
+  'INVALID_ABSENT_TARGET',
+  '缺席名單不得含空值'
+);
 
 select throws_ok(
   format($sql$select submit_completion_report(%L, 'WENT_WELL', '{}')$sql$, (select act_2p from fixtures)),

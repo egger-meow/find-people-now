@@ -883,8 +883,7 @@ class _CompletionReportBanner extends ConsumerWidget {
           final windowEnd = contactVisibleUntil.isAfter(fallbackWindowEnd)
               ? contactVisibleUntil
               : fallbackWindowEnd;
-          if (activityStatus == ACTIVITY_STATUS.COMPLETED &&
-              !windowEnd.isAfter(DateTime.now())) {
+          if (!windowEnd.isAfter(DateTime.now())) {
             return const SizedBox.shrink();
           }
           final isCompleted = activityStatus == ACTIVITY_STATUS.COMPLETED;
@@ -895,7 +894,7 @@ class _CompletionReportBanner extends ConsumerWidget {
               child: AppSection(
                 title: '活動完成回報',
                 description: isCompleted
-                    ? '活動已順利結束！花 10 秒回報出席狀況以維護信譽'
+                    ? '活動已結束，花 10 秒回報出席狀況'
                     : '活動結束了嗎？花 10 秒回報一下',
                 child: AppButton(
                   label: '開始回報',
@@ -1132,17 +1131,17 @@ class _CompletionReportSheetState
           ],
           ListTile(
             leading: const Icon(Icons.check_circle_outline_rounded),
-            title: const Text('✅ 順利進行'),
+            title: const Text('順利進行'),
             onTap: _busy ? null : () => _submit(COMPLETION_RESULT.WENT_WELL),
           ),
           ListTile(
             leading: const Icon(Icons.cancel_outlined),
-            title: const Text('❌ 對方沒來'),
+            title: const Text('對方沒來'),
             onTap: _busy ? null : () => setState(() => _pickingAbsent = true),
           ),
           ListTile(
             leading: const Icon(Icons.remove_circle_outline_rounded),
-            title: const Text('⚪ 我自己取消了'),
+            title: const Text('我自己取消了'),
             onTap: _busy
                 ? null
                 : () => _submit(COMPLETION_RESULT.SELF_CANCELLED),
