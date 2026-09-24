@@ -15,6 +15,7 @@ import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/match/match_providers.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart' show ReliabilityTier;
 import 'package:find_people_now/theme/app_theme.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
   final now = DateTime.utc(2026, 9, 23, 14, 0);
@@ -100,6 +101,13 @@ void main() {
           (ref) => Stream.value(const []),
         ),
         activityTypesProvider.overrideWith((ref) async => [testType]),
+        supabaseClientProvider.overrideWithValue(
+          SupabaseClient(
+            'http://127.0.0.1:65535',
+            'test-anon-key',
+            authOptions: const FlutterAuthClientOptions(autoRefreshToken: false),
+          ),
+        ),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
@@ -151,6 +159,45 @@ void main() {
 
       expect(find.text('已完成活動回報'), findsOneWidget);
       expect(find.text('想再約其他成員'), findsOneWidget);
+      expect(find.text('開始回報'), findsNothing);
+    });
+
+    testWidgets('shows start report button on COMPLETED activity when within reporting window', (tester) async {
+      final completedActivityWithinWindow = testActivity.copyWith(
+        status: ACTIVITY_STATUS.COMPLETED,
+        contactVisibleUntil: DateTime.now().add(const Duration(hours: 12)),
+      );
+
+      await tester.pumpWidget(
+        createSubject(
+          activity: completedActivityWithinWindow,
+          ownReport: null,
+          roster: [myMember],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('活動完成回報'), findsOneWidget);
+      expect(find.text('活動已順利結束！花 10 秒回報出席狀況以維護信譽'), findsOneWidget);
+      expect(find.text('開始回報'), findsOneWidget);
+    });
+
+    testWidgets('hides start report button on COMPLETED activity when reporting window expired', (tester) async {
+      final expiredCompletedActivity = testActivity.copyWith(
+        status: ACTIVITY_STATUS.COMPLETED,
+        contactVisibleUntil: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+
+      await tester.pumpWidget(
+        createSubject(
+          activity: expiredCompletedActivity,
+          ownReport: null,
+          roster: [myMember],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('活動完成回報'), findsNothing);
       expect(find.text('開始回報'), findsNothing);
     });
   });

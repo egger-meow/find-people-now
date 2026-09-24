@@ -316,6 +316,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                   ? _CompletionReportBanner(
                       activityId: activity.id,
                       activityStatus: activity.status,
+                      contactVisibleUntil: activity.contactVisibleUntil,
                     )
                   : null,
               navigation: _ActivityDetailNavigation(
@@ -800,10 +801,12 @@ class _CompletionReportBanner extends ConsumerWidget {
   const _CompletionReportBanner({
     required this.activityId,
     required this.activityStatus,
+    required this.contactVisibleUntil,
   });
 
   final String activityId;
   final ACTIVITY_STATUS activityStatus;
+  final DateTime contactVisibleUntil;
 
   Future<void> _openRematchSheet(
     BuildContext context,
@@ -869,16 +872,24 @@ class _CompletionReportBanner extends ConsumerWidget {
       ),
       data: (report) {
         if (report == null) {
-          if (activityStatus != ACTIVITY_STATUS.ONGOING) {
+          if (activityStatus != ACTIVITY_STATUS.ONGOING &&
+              activityStatus != ACTIVITY_STATUS.COMPLETED) {
             return const SizedBox.shrink();
           }
+          if (activityStatus == ACTIVITY_STATUS.COMPLETED &&
+              !contactVisibleUntil.isAfter(DateTime.now())) {
+            return const SizedBox.shrink();
+          }
+          final isCompleted = activityStatus == ACTIVITY_STATUS.COMPLETED;
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: AppGlassSurface(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: AppSection(
                 title: '活動完成回報',
-                description: '活動結束了嗎？花 10 秒回報一下',
+                description: isCompleted
+                    ? '活動已順利結束！花 10 秒回報出席狀況以維護信譽'
+                    : '活動結束了嗎？花 10 秒回報一下',
                 child: AppButton(
                   label: '開始回報',
                   icon: Icons.fact_check_outlined,
@@ -1903,18 +1914,26 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
       if (mounted) setState(() => _loading = false);
       return;
     }
-    final client = ref.read(supabaseClientProvider);
-    final row = await client
-        .from('activity_member')
-        .select()
-        .eq('activity_id', widget.activityId)
-        .eq('user_id', userId)
-        .maybeSingle();
-    if (!mounted) return;
-    setState(() {
-      _controller.text = (row?['meeting_hint'] as String?) ?? '';
-      _loading = false;
-    });
+    try {
+      final client = ref.read(supabaseClientProvider);
+      final row = await client
+          .from('activity_member')
+          .select()
+          .eq('activity_id', widget.activityId)
+          .eq('user_id', userId)
+          .maybeSingle();
+      if (!mounted) return;
+      setState(() {
+        _controller.text = (row?['meeting_hint'] as String?) ?? '';
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = '無法載入見面提示';
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _submit() async {

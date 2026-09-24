@@ -105,12 +105,12 @@ begin
   returning * into v_act3;
   insert into activity_member (activity_id, user_id, source_request_id, status) values (v_act3.id, v_u3, v_req_id, 'JOINED');
 
-  -- act4：COMPLETED，u4 呼叫 submit_completion_report 應被 ACTIVITY_NOT_ENDED 擋下
+  -- act4：COMPLETED，已超過 24 小時回報窗口，u4 呼叫 submit_completion_report 應被 ACTIVITY_NOT_ACTIVE 擋下
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_u4, v_act_type_id, 'NYCU', v_campus, now() - interval '3 hours', now() - interval '2 hours', 2, 2, 'MATCHED')
+  values (v_u4, v_act_type_id, 'NYCU', v_campus, now() - interval '30 hours', now() - interval '29 hours', 2, 2, 'MATCHED')
   returning id into v_req_id;
-  insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
-  values (v_act_type_id, 'NYCU', v_campus, now() - interval '2 hours', now() - interval '1 hour', 'COMPLETED')
+  insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status, contact_visible_until)
+  values (v_act_type_id, 'NYCU', v_campus, now() - interval '28 hours', now() - interval '27 hours', 'COMPLETED', now() - interval '4 hours')
   returning * into v_act4;
   insert into activity_member (activity_id, user_id, source_request_id, status) values (v_act4.id, v_u4, v_req_id, 'JOINED');
 
@@ -188,7 +188,7 @@ select throws_ok(
 );
 
 -- -----------------------------------------------------------------------------
--- 4. submit_completion_report 對已 COMPLETED 的活動應被 ACTIVITY_NOT_ENDED 擋下
+-- 4. submit_completion_report 對已超過 24 小時窗口之 COMPLETED 活動應被 ACTIVITY_NOT_ACTIVE 擋下
 -- -----------------------------------------------------------------------------
 
 do $$ begin
@@ -197,8 +197,8 @@ end $$;
 
 select throws_ok(
   format($sql$select submit_completion_report(%L, 'WENT_WELL', '{}')$sql$, (select act_report_completed from fixtures)),
-  'ACTIVITY_NOT_ENDED',
-  'submit_completion_report 對已 COMPLETED 的活動應被 ACTIVITY_NOT_ENDED 擋下'
+  'ACTIVITY_NOT_ACTIVE',
+  'submit_completion_report 對已超過 24 小時窗口之 COMPLETED 活動應被 ACTIVITY_NOT_ACTIVE 擋下'
 );
 
 -- -----------------------------------------------------------------------------
