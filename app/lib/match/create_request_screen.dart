@@ -1899,6 +1899,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                         minPossible: 2,
                                         maxPossible: 20,
                                         step: step,
+                                        stepBase:
+                                            _selectedType
+                                                ?.defaultMinParticipants ??
+                                            2,
                                         isNewUser: reliability.isNewUser,
                                         onRangeChanged: (min, max) {
                                           setState(() {
@@ -2182,6 +2186,7 @@ class _HeadcountRangeSlider extends StatelessWidget {
     this.minPossible = 2,
     this.maxPossible = 20,
     this.step = 1,
+    this.stepBase,
   });
 
   final int minCount;
@@ -2191,6 +2196,132 @@ class _HeadcountRangeSlider extends StatelessWidget {
   final int minPossible;
   final int maxPossible;
   final int step;
+  final int? stepBase;
+
+  void _showFineAdjustment(
+    BuildContext context,
+    int min,
+    int max,
+    int first,
+    int last,
+    int effectiveStep,
+  ) {
+    var selectedMin = min;
+    var selectedMax = max;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: StatefulBuilder(
+          builder: (sheetContext, updateSheet) {
+            void select(int newMin, int newMax) {
+              updateSheet(() {
+                selectedMin = newMin;
+                selectedMax = newMax;
+              });
+              AppHaptics.selection();
+              onRangeChanged(newMin, newMax);
+            }
+
+            Widget adjustmentRow(
+              String label,
+              int value,
+              VoidCallback? decrease,
+              VoidCallback? increase,
+            ) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(sheetContext).textTheme.titleSmall,
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        tooltip: '減少$label',
+                        onPressed: decrease,
+                        icon: const Icon(Icons.remove_rounded),
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                        ),
+                        child: Text(
+                          '$value 人',
+                          style: Theme.of(sheetContext).textTheme.titleLarge,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '增加$label',
+                        onPressed: increase,
+                        icon: const Icon(Icons.add_rounded),
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.lg,
+                AppSpacing.lg,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '微調人數',
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  adjustmentRow(
+                    '最少人數',
+                    selectedMin,
+                    selectedMin > first
+                        ? () => select(selectedMin - effectiveStep, selectedMax)
+                        : null,
+                    selectedMin < selectedMax
+                        ? () => select(selectedMin + effectiveStep, selectedMax)
+                        : null,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  adjustmentRow(
+                    '最多人數',
+                    selectedMax,
+                    selectedMax > selectedMin
+                        ? () => select(selectedMin, selectedMax - effectiveStep)
+                        : null,
+                    selectedMax < last
+                        ? () => select(selectedMin, selectedMax + effectiveStep)
+                        : null,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  FilledButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text('完成'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2198,13 +2329,26 @@ class _HeadcountRangeSlider extends StatelessWidget {
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final effectiveMinPossible = (isNewUser && minPossible < 3)
-        ? 3
-        : minPossible;
-    final clampedMin = minCount.clamp(effectiveMinPossible, maxPossible);
-    final clampedMax = maxCount.clamp(clampedMin, maxPossible);
+    final effectiveStep = step > 0 ? step : 1;
+    final base = stepBase ?? minPossible;
+    var firstAllowed = isNewUser && minPossible < 3 ? 3 : minPossible;
+    while (firstAllowed <= maxPossible &&
+        (firstAllowed - base) % effectiveStep != 0) {
+      firstAllowed++;
+    }
+    if (firstAllowed > maxPossible) firstAllowed = maxPossible;
+    final lastAllowed =
+        firstAllowed +
+        ((maxPossible - firstAllowed) ~/ effectiveStep) * effectiveStep;
+    int snap(int value) {
+      final bounded = value.clamp(firstAllowed, lastAllowed);
+      return firstAllowed +
+          (((bounded - firstAllowed) / effectiveStep).round() * effectiveStep);
+    }
 
-    final divisions = ((maxPossible - minPossible) ~/ (step > 0 ? step : 1));
+    final clampedMin = snap(minCount);
+    final clampedMax = snap(maxCount.clamp(clampedMin, lastAllowed));
+    final divisions = (lastAllowed - firstAllowed) ~/ effectiveStep;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -2290,30 +2434,24 @@ class _HeadcountRangeSlider extends StatelessWidget {
             label: '人數規模滑桿，最少 $clampedMin 人，最多 $clampedMax 人',
             child: RangeSlider(
               values: RangeValues(clampedMin.toDouble(), clampedMax.toDouble()),
-              min: minPossible.toDouble(),
-              max: maxPossible.toDouble(),
+              min: firstAllowed.toDouble(),
+              max: lastAllowed.toDouble(),
               divisions: divisions > 0 ? divisions : null,
               labels: RangeLabels('$clampedMin 人', '$clampedMax 人'),
               semanticFormatterCallback: (value) => '${value.round()} 人',
-              onChanged: (values) {
-                var newStart = values.start.round();
-                var newEnd = values.end.round();
-                if (step > 1) {
-                  newStart =
-                      ((newStart - minPossible) ~/ step) * step + minPossible;
-                  newEnd =
-                      ((newEnd - minPossible) ~/ step) * step + minPossible;
-                }
-                if (isNewUser && newStart < 3) {
-                  newStart = 3;
-                }
-                if (newEnd < newStart) {
-                  newEnd = newStart;
-                }
-                if (newStart == clampedMin && newEnd == clampedMax) return;
-                AppHaptics.selection();
-                onRangeChanged(newStart, newEnd);
-              },
+              onChanged: divisions == 0
+                  ? null
+                  : (values) {
+                      final newStart = snap(values.start.round());
+                      final newEnd = snap(
+                        values.end.round(),
+                      ).clamp(newStart, lastAllowed);
+                      if (newStart == clampedMin && newEnd == clampedMax) {
+                        return;
+                      }
+                      AppHaptics.selection();
+                      onRangeChanged(newStart, newEnd);
+                    },
             ),
           ),
           Padding(
@@ -2322,20 +2460,34 @@ class _HeadcountRangeSlider extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '$minPossible 人',
+                  '$firstAllowed 人',
                   style: textTheme.bodySmall?.copyWith(
-                    color: (isNewUser && minPossible < 3)
-                        ? scheme.onSurfaceVariant.withValues(alpha: 0.4)
-                        : scheme.onSurfaceVariant,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
                 Text(
-                  '$maxPossible 人',
+                  '$lastAllowed 人',
                   style: textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
               ],
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const Key('headcount_precision_button'),
+              onPressed: () => _showFineAdjustment(
+                context,
+                clampedMin,
+                clampedMax,
+                firstAllowed,
+                lastAllowed,
+                effectiveStep,
+              ),
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('微調人數'),
             ),
           ),
           if (isNewUser && minPossible <= 2) ...[

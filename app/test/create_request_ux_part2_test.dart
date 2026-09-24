@@ -52,6 +52,19 @@ final _testTypes = [
     levelSystem: LEVEL_SYSTEM.BASKETBALL_INTENSITY,
     aliases: const [],
   ),
+  ActivityType(
+    id: 'board-game',
+    name: '桌遊',
+    status: ACTIVITY_TYPE_STATUS.APPROVED,
+    createdAt: DateTime(2026),
+    defaultMinParticipants: 3,
+    defaultMaxParticipants: 7,
+    groupSizeStep: 2,
+    skillLevelEnabled: false,
+    sortOrder: 3,
+    levelSystem: LEVEL_SYSTEM.NONE,
+    aliases: const [],
+  ),
 ];
 
 final _fixedNow = DateTime(2026, 9, 23, 14, 0);
@@ -247,5 +260,84 @@ void main() {
     final slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
     expect(slider.values.start, greaterThanOrEqualTo(3.0));
     expect(slider.semanticFormatterCallback?.call(4), '4 人');
+  });
+
+  testWidgets('活動步距以後端預設下限為起點，並能用按鈕微調', (tester) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(_buildTestApp(gateway: _MockSubmissionGateway()));
+    await tester.pumpAndSettle();
+
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('桌遊'),
+      150,
+      scrollable: scrollable,
+    );
+    await Scrollable.ensureVisible(
+      tester.element(find.text('桌遊')),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('桌遊'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('headcount_precision_button')),
+      200,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+
+    var slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.min, 3);
+    expect(slider.max, 19);
+    expect(slider.values, const RangeValues(3, 7));
+
+    await tester.tap(find.byKey(const Key('headcount_precision_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('增加最多人數'));
+    await tester.pumpAndSettle();
+    slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.values, const RangeValues(3, 9));
+  });
+
+  testWidgets('新用戶在雙人步距活動只能選合法的 4、6… 人數', (tester) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      _buildTestApp(gateway: _MockSubmissionGateway(), isNewUser: true),
+    );
+    await tester.pumpAndSettle();
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('籃球'),
+      150,
+      scrollable: scrollable,
+    );
+    await Scrollable.ensureVisible(
+      tester.element(find.text('籃球')),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('籃球'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('headcount_precision_button')),
+      200,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+
+    var slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.min, 4);
+    expect(slider.values.start, 4);
+    slider.onChanged?.call(const RangeValues(2, 10));
+    await tester.pumpAndSettle();
+    slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.values.start, 4);
   });
 }
