@@ -63,7 +63,7 @@ begin
     (v_stranger_id, 'token_stranger@nycu.edu.tw', 'NYCU', 'Token Stranger', 'https://avatar/stranger', 'UNDERGRAD', 'stranger_line');
 
   insert into match_request (owner_id, activity_type_id, school, campus, earliest_start, latest_start, min_participants, max_participants, status)
-  values (v_owner_id, v_act_type_id, 'NYCU', v_campus, v_now + interval '1 hour', v_now + interval '3 hours', 2, 8, 'REQUESTING')
+  values (v_owner_id, v_act_type_id, 'NYCU', v_campus, v_now + interval '1 hour', v_now + interval '3 hours', 3, 8, 'REQUESTING')
   returning * into v_req;
 
   insert into request_member (request_id, user_id, role, status) values

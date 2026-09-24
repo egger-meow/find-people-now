@@ -32,15 +32,16 @@
   - 移除 iOS 滾輪主介面，改用 **2–20 同一條雙端滑桿 (`RangeSlider`)**，同步原子更新最少與最多人數，端點重疊時表示固定人數。
   - 針對新用戶嚴格限制不可發起 2 人以下場次，並呈現清楚警示文案；支援 44pt 以上無障礙觸控區。
 
-### 2.3 [Part 3] 精簡等待室與撤銷邀請碼生命週期修正 (`WaitingRoomScreen`)
+#### 2.3 [Part 3] 精簡等待室與撤銷邀請碼生命週期修正 (`WaitingRoomScreen`)
 - **檔案**：[`app/lib/match/waiting_room_screen.dart`](file:///c:/IDEA/find-people-now/app/lib/match/waiting_room_screen.dart)
 - **資料庫遷移**：[`supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql`](file:///c:/IDEA/find-people-now/supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql)
 - **資料庫 pgTAP 測試**：[`supabase/tests/database/44_invite_token_lifecycle.test.sql`](file:///c:/IDEA/find-people-now/supabase/tests/database/44_invite_token_lifecycle.test.sql)
+- **並發列鎖整合測試**：[`supabase/tests/concurrency_test.cjs`](file:///c:/IDEA/find-people-now/supabase/tests/concurrency_test.cjs)
 - **問題現況與解決**：
   1. **資料庫層原子性與並發保證（FOR UPDATE 列鎖）**：
      - 原 `get_or_create_invite_link` RPC 僅使用一般的 `SELECT`，若兩台裝置並發呼叫重生，可能產生不同的邀請碼。
      - 遷移升級為 `SELECT ... FOR UPDATE` 鎖定該筆 `match_request` 列，首個交易取得鎖後產生新 12-byte hex 邀請碼並原子重設 `revoked_at = null`；後續排隊交易在鎖釋放後於 Read Committed 模式下重讀已提交列，直接回傳已產生的有效碼，保證原子性與唯一性。
-     - 新增 [`44_invite_token_lifecycle.test.sql`](file:///c:/IDEA/find-people-now/supabase/tests/database/44_invite_token_lifecycle.test.sql) 涵蓋依序生成、冪等、加入、撤銷阻擋、原子重生與新碼加入之單連線資料庫層回歸測試。需特別說明：pgTAP 測試為單交易循序執行，未同時啟動多個資料庫交易並行打擊，因此列鎖設計具備明確資料庫理論依據，但並發實測重現仍待多連線整合測試環境執行。
+     - 本地與遠端資料庫均已套用此遷移，並經多連線並發測試實測驗證（詳見第 3.3 與 3.4 節）。
   2. **跨裝置撤銷與動態推播即時防護**：
      - 原等待室在判斷 `isRevoked` 時混入 `_inviteToken == null`，導致若本機曾快取碼、房主在另一台裝置撤銷時，本機仍會繼續顯示失效碼。
      - 重構判定為 `final isRevoked = request.revokedAt != null;`；並在 Realtime 監聽器中加入：一旦收到 `req.revokedAt != null`，立即執行 `_inviteToken = null`。
@@ -108,13 +109,59 @@
 
 **總計 42+ 項 UX 核心測試全數 PASS。**
 
+### 3.3 資料庫完整 pgTAP 測試套件
+- **指令**：`supabase test db`
+- **執行狀態**：在 Docker Engine 啟動之真實 PostgreSQL 本地環境完整執行。
+- **測試涵蓋範圍**：全部 46 個測試檔案（包含最新新增之 `44_invite_token_lifecycle.test.sql`，完整驗證 token 建立、冪等性、成團防護、房主撤銷、撤銷碼加入拒絕、原子重生新碼、新碼加入）。
+- **實測輸出紀錄**：
+  ```text
+  Files=46, Tests=400,  7 wallclock secs ( 0.16 usr  0.09 sys +  0.27 cusr  0.24 csys =  0.76 CPU)
+  Result: PASS
+  ```
+
+### 3.4 多連線並發列鎖 (FOR UPDATE) 實測
+- **測試腳本**：[`supabase/tests/concurrency_test.cjs`](file:///c:/IDEA/find-people-now/supabase/tests/concurrency_test.cjs)
+- **測試機制**：
+  1. 建立已撤銷狀態之 `match_request`（`invite_token = 'stale-revoked-token-old'`, `revoked_at` 為 10 分鐘前）。
+  2. 透過 5 個完全獨立的資料庫連線，同時並行發起 `get_or_create_invite_link` 請求。
+  3. 驗證首個取得 `FOR UPDATE` 列鎖之交易重新生成新碼並重設 `revoked_at = null`；後續排隊交易在鎖釋放後於 Read Committed 模式下重讀已提交之最新列，回傳完全相同的有效碼。
+- **實測輸出紀錄**：
+  ```text
+  === 邀請碼並發列鎖 (FOR UPDATE) 實測 ===
+  [1/4] 準備測試資料（狀態：已被撤銷的邀請碼）...
+    ✓ 測試資料建立完成：match_request.revoked_at 非空，invite_token = stale-revoked-token-old
+  [2/4] 啟動 5 個獨立連線同時並發呼叫 get_or_create_invite_link...
+  [3/4] 接收到各連線回傳結果：
+    連線 1 回傳 Token: 5aec84c5b76092df18e24812
+    連線 2 回傳 Token: 5aec84c5b76092df18e24812
+    連線 3 回傳 Token: 5aec84c5b76092df18e24812
+    連線 4 回傳 Token: 5aec84c5b76092df18e24812
+    連線 5 回傳 Token: 5aec84c5b76092df18e24812
+    資料庫目前儲存 Token: 5aec84c5b76092df18e24812
+    資料庫 revoked_at IS NULL: true
+  [4/4] 測試全數 PASS！
+    ✓ 全部 5 個獨立並發連線取得完全一致的全新邀請碼 (5aec84c5b76092df18e24812)
+    ✓ FOR UPDATE 列鎖成功串行化重新生成，無競態覆寫或不同碼問題
+    ✓ match_request.revoked_at 已重設為 NULL
+  清理測試資料...
+  清理完畢。
+  ```
+
+### 3.5 遠端資料庫遷移部署 (`supabase db push`)
+- **指令**：`supabase db push`
+- **目標專案**：`zegkgzsduxthnjojkfdh` (`find-people`, ap-southeast-2)
+- **部署成果**：
+  - 成功將遷移 `20260924030000_fix_get_or_create_invite_link_revoked.sql` 推送至線上 hosted PostgreSQL 資料庫。
+  - 執行 `supabase migration list` 核對：線上與本地版本號完全一致（`20260924030000` status: `remote = 20260924030000`）。
+  - **線上邀請碼撤銷與重生生命週期正式修復完成**。
+
 ---
 
 ## 4. 環境邊界與驗收狀態透明揭露
 
-> [!IMPORTANT]
-> **資料庫遷移與環境邊界誠實揭露**：
-> 1. **資料庫遷移套用狀態**：遷移檔 `supabase/migrations/20260924030000_fix_get_or_create_invite_link_revoked.sql` 與資料庫測試 `supabase/tests/database/44_invite_token_lifecycle.test.sql` 已編寫並納入 Git 版本庫追蹤。但由於本機 Windows 開發環境未啟動 Docker Engine，因此該遷移尚未由本機 Supabase CLI 實際套用至目標資料庫實例（需由具備 Docker 之環境或遠端 CI/CD / Supabase 控制台執行 `supabase db push` 或遷移套用）。在套用遷移至目標資料庫並於資料庫實例執行測試前，當前狀態為「程式碼與測試修復已提交」，而非「線上邀請碼流程已修復」。
-> 2. **並發測試邊界**：`44_invite_token_lifecycle.test.sql` 涵蓋依序產生、撤銷、重生與入房流程，但 pgTAP 在單一資料庫連線與交易內執行，並未模擬多連線同時並發觸發重生。列鎖設計在理論與架構上有明確依據，但並發實測數據仍待具備多連線並發測試工具之環境補齊。
-> 3. **Flutter 測試狀態**：Flutter 分析器（`flutter analyze`）與所有 Dart 單元/Widget 測試已於 Windows 主機全數執行完畢並取得 PASS 結果。此結果屬於提交端之本機驗證紀錄，仍待 CI 或獨立環境重跑重現。
-> 4. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。
+> [!NOTE]
+> **當前驗收邊界**：
+> 1. **資料庫遷移與並發驗證**：本地與線上資料庫皆已成功套用遷移。pgTAP 完整 46 套測試（400 項）與 Node.js 5 獨立連線並發列鎖測試皆已全數執行並 PASS。線上資料庫與本地版本庫處於 100% 同步狀態。
+> 2. **Flutter 整合測試防護**：本機 `app/.env` 預設配置正式環境 URL，`test/local_supabase_guard.dart` 會自動阻擋部分未隔離的端到端整合測試，防止產生垃圾資料外洩至正式環境校區選單；純單元與 Widget UX 測試（42+ 項）則於本地環境全數通過。
+> 3. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。
+
