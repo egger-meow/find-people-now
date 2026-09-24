@@ -119,12 +119,13 @@
   Result: PASS
   ```
 
-### 3.4 多連線並發列鎖 (FOR UPDATE) 實測
+### 3.4 多連線並發發起結果一致性測試
 - **測試腳本**：[`supabase/tests/concurrency_test.cjs`](file:///c:/IDEA/find-people-now/supabase/tests/concurrency_test.cjs)
 - **測試機制**：
   1. 建立已撤銷狀態之 `match_request`（`invite_token = 'stale-revoked-token-old'`, `revoked_at` 為 10 分鐘前）。
-  2. 透過 5 個完全獨立的資料庫連線，同時並行發起 `get_or_create_invite_link` 請求。
-  3. 驗證首個取得 `FOR UPDATE` 列鎖之交易重新生成新碼並重設 `revoked_at = null`；後續排隊交易在鎖釋放後於 Read Committed 模式下重讀已提交之最新列，回傳完全相同的有效碼。
+  2. 透過 5 個獨立資料庫連線同時並發呼叫 `get_or_create_invite_link`。
+  3. 驗證所有連線回傳之 Token 均非舊碼，且各連線回傳值完全一致。
+- **措辭邊界說明**：此測試證明「五連線並發發起下回傳結果一致、未發生覆寫互異碼」；由於腳本未強制交易在時間軸上長時重疊或觀測鎖等待，單憑此輸出尚不能宣稱「已實測證明 FOR UPDATE 串行化」（嚴格串行化觀測由第 3.5 節提供）。
 - **實測輸出紀錄**：
   ```text
   === 邀請碼並發列鎖 (FOR UPDATE) 實測 ===
@@ -140,20 +141,64 @@
     資料庫目前儲存 Token: 5aec84c5b76092df18e24812
     資料庫 revoked_at IS NULL: true
   [4/4] 測試全數 PASS！
-    ✓ 全部 5 個獨立並發連線取得完全一致的全新邀請碼 (5aec84c5b76092df18e24812)
-    ✓ FOR UPDATE 列鎖成功串行化重新生成，無競態覆寫或不同碼問題
-    ✓ match_request.revoked_at 已重設為 NULL
-  清理測試資料...
-  清理完畢。
   ```
 
-### 3.5 遠端資料庫遷移部署 (`supabase db push`)
-- **指令**：`supabase db push`
+### 3.5 FOR UPDATE 列鎖等待與交易重疊觀測實測
+- **測試腳本**：[`supabase/tests/verify_lock_contention.cjs`](file:///c:/IDEA/find-people-now/supabase/tests/verify_lock_contention.cjs)
+- **實測機制**：
+  1. 連線 A 開啟交易（`BEGIN`），執行 `SELECT ... FOR UPDATE` 鎖定目標 `match_request` 列，並注入 `pg_sleep(2.5)` 保持持鎖狀態 2.5 秒，強制製造時間軸重疊。
+  2. 連線 B 於連線 A 持鎖期間發起 `get_or_create_invite_link`，因嘗試獲取同列 `FOR UPDATE` 而被資料庫排隊阻塞。
+  3. 獨立觀察者查詢 `pg_locks` 與 `pg_stat_activity`，直接捕捉連線 B 之鎖等待狀態。
+  4. 連線 A 更新 token 並執行 `COMMIT`；連線 B 立即解除阻塞，在 Read Committed 模式下重讀已提交之列，直接回傳連線 A 產生之有效碼。
+- **實測輸出紀錄**：
+  ```text
+  === FOR UPDATE 列鎖等待與交易重疊觀測實測 ===
+
+  [1/5] 建立初始資料（狀態：已被撤銷的邀請碼）...
+    ✓ 初始資料建立完成：match_request.revoked_at 非空，invite_token = stale-revoked-token
+
+  [2/5] 連線 A 啟動：開啟交易並鎖定目標列 (SELECT ... FOR UPDATE)，保持鎖定 2.5 秒後才提交...
+    ✓ 連線 A 已進入交易並持有 FOR UPDATE 列鎖（休眠中）
+
+  [3/5] 連線 B 同步發起呼叫 get_or_create_invite_link（遭遇連線 A 之列鎖，應被阻塞排隊）...
+  [4/5] 觀測資料庫即時鎖與等待狀態 (pg_locks / pg_stat_activity)...
+    -- 鎖等待查詢輸出 (granted = false) --
+    29620|transactionid|ShareLock|f|Lock|transactionid|
+          SET ROLE authenticated;
+          SELECT set_config('requ
+    ✓ 實測捕捉到連線 B (PID: 29620) 處於 Lock 等待狀態（granted = false / wait_event_type = Lock / wait_event = transactionid）！
+
+  [5/5] 等待連線 A 提交與連線 B 解除阻塞完成...
+    連線 A 耗時: 2658ms，輸出: SESSION_A_COMMITTED
+    連線 B 耗時: 2325ms，回傳 Token: token-locked-by-session-a
+    資料庫目前儲存 Token: token-locked-by-session-a
+    資料庫 revoked_at IS NULL: true
+
+  === 實測驗證結論 ===
+    ✓ 連線 A 在未 COMMIT 期間持有 FOR UPDATE 列鎖
+    ✓ 連線 B 在呼叫 get_or_create_invite_link 時發生實體排隊阻塞（耗時 2325ms，等待連線 A 釋放鎖）
+    ✓ 具體觀測到 pg_locks 中 granted = false 與 pg_stat_activity 之 wait_event_type = Lock
+    ✓ 連線 A COMMIT 後，連線 B 在 Read Committed 模式下解除阻塞並直接回傳連線 A 生成之 Token
+    ✓ 確鑿實測證明：FOR UPDATE 列鎖能於交易重疊時實體串行化並杜絕競態重生！
+  ```
+
+### 3.6 遠端資料庫遷移部署與 Schema 差分比對
 - **目標專案**：`zegkgzsduxthnjojkfdh` (`find-people`, ap-southeast-2)
-- **部署成果**：
-  - 成功將遷移 `20260924030000_fix_get_or_create_invite_link_revoked.sql` 推送至線上 hosted PostgreSQL 資料庫。
-  - 執行 `supabase migration list` 核對：線上與本地版本號完全一致（`20260924030000` status: `remote = 20260924030000`）。
-  - **線上邀請碼撤銷與重生生命週期正式修復完成**。
+- **遷移推送 (`supabase db push`)**：
+  - 成功將遷移 `20260924030000_fix_get_or_create_invite_link_revoked.sql` 套用至線上 hosted PostgreSQL 資料庫。
+  - 執行 `supabase migration list` 核對：線上與本地遷移歷程版本號完全對齊（`local: 20260924030000, remote: 20260924030000`）。
+- **Schema 實體差分比對 (`supabase db diff --linked`)**：
+  - 指令：`supabase db diff --linked`
+  - 比對引擎：`pg-delta`（比對本地所有 migration 檔案產生之 shadow database 與線上 linked project 之實體 schema、函式定義、RLS 策略與 trigger）
+  - 實測結果：
+    ```text
+    Diffing schemas...
+    Finished supabase db diff on branch main.
+
+    No schema changes found
+    {"diff":"","file":null,"schemas":[],"engine":"pg-delta","dropStatements":[],"message":"Diff complete."}
+    ```
+  - **佐證效力**：實體比對確認線上資料庫之 schema 與函式定義與本地 migration 產物無漂移（No schema changes found）。
 
 ---
 
@@ -161,7 +206,10 @@
 
 > [!NOTE]
 > **當前驗收邊界**：
-> 1. **資料庫遷移與並發驗證**：本地與線上資料庫皆已成功套用遷移。pgTAP 完整 46 套測試（400 項）與 Node.js 5 獨立連線並發列鎖測試皆已全數執行並 PASS。線上資料庫與本地版本庫處於 100% 同步狀態。
-> 2. **Flutter 整合測試防護**：本機 `app/.env` 預設配置正式環境 URL，`test/local_supabase_guard.dart` 會自動阻擋部分未隔離的端到端整合測試，防止產生垃圾資料外洩至正式環境校區選單；純單元與 Widget UX 測試（42+ 項）則於本地環境全數通過。
-> 3. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。
+> 1. **資料庫遷移與結構對齊**：本地與線上資料庫之遷移歷史已對齊至 `20260924030000`；經 `supabase db diff --linked` 實體比對，schema 與函式定義無漂移（No schema changes found）。需說明的是：此比對確認的是資料庫 DDL 結構與函式一致，不涵蓋環境變數、第三方程式資料或 Vault 密鑰等非 schema 範疇。
+> 2. **並發列鎖驗證邊界**：
+>    - `concurrency_test.cjs` 證明了五連線並行發起下回傳結果一致，未出現衝突碼。
+>    - `verify_lock_contention.cjs` 則透過刻意注入之未提交長交易，於 `pg_locks` 中直接觀測到 `granted = false` 與 `wait_event_type = Lock` 的排隊阻塞，並於提交後正常解除阻塞與讀取最新資料，完成了強制交易重疊之串行化實測。
+> 3. **Flutter 整合測試防護**：本機 `app/.env` 預設配置正式環境 URL，`test/local_supabase_guard.dart` 會自動阻擋部分未隔離的端到端整合測試，防止產生垃圾資料外洩至正式環境校區選單；純單元與 Widget UX 測試（42+ 項）則於本地環境全數通過。
+> 4. **iOS 真機與模擬器限制**：依據 Apple 規範，iOS 原生封裝與 Xcode Simulator 真機模擬驗收必須在具備 macOS 與 Xcode 之工作站或 CI 環境中執行。
 
