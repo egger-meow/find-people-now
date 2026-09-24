@@ -1,4 +1,3 @@
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -363,10 +362,7 @@ Future<void> _showSubscribeAlertDialog({
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '活動類型',
-              style: Theme.of(dialogContext).textTheme.labelMedium,
-            ),
+            Text('活動類型', style: Theme.of(dialogContext).textTheme.labelMedium),
             const SizedBox(height: AppSpacing.xs),
             DropdownButton<ActivityType>(
               isExpanded: true,
@@ -508,7 +504,6 @@ class _AlertSubscriptionSection extends ConsumerWidget {
     );
   }
 }
-
 
 /// 讀書「同伴目標」熱門科目下拉（v1.35）——目前是合理猜測的通識/必修科目
 /// 佔位清單，之後再依實際選課資料調整。純粹是輔助輸入，選了就是把文字帶進
@@ -926,8 +921,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       disabledReason: activeRequest != null
           ? '你已在配對等待室中，無法同時加入其他活動'
           : (activeActivity != null
-              ? '你目前有進行中的活動，活動結束前無法加入'
-              : (isCooldown ? '配對冷卻中，暫時無法加入' : null)),
+                ? '你目前有進行中的活動，活動結束前無法加入'
+                : (isCooldown ? '配對冷卻中，暫時無法加入' : null)),
       relativeNow: widget.now(),
       onParticipate: () async {
         await _participateDemand(demand, types);
@@ -942,7 +937,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     CampusDemandCard demand,
     List<ActivityType> types,
   ) async {
-    final type = types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
+    final type =
+        types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
         types.where((t) => t.name == demand.activityTypeName).firstOrNull;
     if (type == null) {
       showAppSnackBar(context, '找不到對應的活動類型', kind: AppSnackKind.error);
@@ -950,7 +946,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     }
 
     final now = widget.now();
-    final effectiveEarliest = demand.earliestStart.isBefore(now) ? now : demand.earliestStart;
+    final effectiveEarliest = demand.earliestStart.isBefore(now)
+        ? now
+        : demand.earliestStart;
     if (!effectiveEarliest.isBefore(demand.latestStart)) {
       showAppSnackBar(context, '此需求的時間區間已過期，無法加入', kind: AppSnackKind.error);
       return;
@@ -971,17 +969,19 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     await _submit(snapshot);
   }
 
-  void _applyDemandToForm(
-    CampusDemandCard demand,
-    List<ActivityType> types,
-  ) {
-    final type = types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
+  void _applyDemandToForm(CampusDemandCard demand, List<ActivityType> types) {
+    final type =
+        types.where((t) => t.id == demand.activityTypeId).firstOrNull ??
         types.where((t) => t.name == demand.activityTypeName).firstOrNull;
 
     final now = widget.now();
     final isExpired = !now.isBefore(demand.latestStart);
-    final effectiveEarliest = isExpired ? now : (demand.earliestStart.isBefore(now) ? now : demand.earliestStart);
-    final effectiveLatest = isExpired ? now.add(const Duration(hours: 2)) : demand.latestStart;
+    final effectiveEarliest = isExpired
+        ? now
+        : (demand.earliestStart.isBefore(now) ? now : demand.earliestStart);
+    final effectiveLatest = isExpired
+        ? now.add(const Duration(hours: 2))
+        : demand.latestStart;
 
     setState(() {
       if (type != null) {
@@ -1064,10 +1064,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
       if (sportConfig != null)
         AppSelectionSummaryItem(
           label: sportConfig.fieldLabel,
-          value: sportConfig.formatLevel(
-            sportLevel,
-            rating: sportLevelRating,
-          ),
+          value: sportConfig.formatLevel(sportLevel, rating: sportLevelRating),
         ),
       if (type?.name == '讀書')
         AppSelectionSummaryItem(
@@ -1221,7 +1218,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
           final globalCampus = ref.watch(selectedCampusProvider);
           final campusAsync = ref.watch(campusOptionsProvider(user.school));
           final campuses = campusAsync.value ?? const [];
-          final effectiveCampus = globalCampus ??
+          final effectiveCampus =
+              globalCampus ??
               _selectedCampus ??
               user.defaultCampus ??
               (campuses.isNotEmpty ? campuses.first : '光復校區');
@@ -1248,10 +1246,13 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         request: activeRequest,
                         activity: activeActivity,
                         onOpenWaitingRoom: activeRequest != null
-                            ? () => context.push('/waiting-room/${activeRequest.id}')
+                            ? () => context.push(
+                                '/waiting-room/${activeRequest.id}',
+                              )
                             : null,
                         onOpenActivity: activeActivity != null
-                            ? () => context.push('/activity/${activeActivity.id}')
+                            ? () =>
+                                  context.push('/activity/${activeActivity.id}')
                             : null,
                       ),
                       const SizedBox(height: AppSpacing.sm),
@@ -1332,8 +1333,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       disabledReason: activeRequest != null
                           ? '你已在配對等待室中，無法同時加入其他活動'
                           : (activeActivity != null
-                              ? '你目前有進行中的活動，活動結束前無法加入'
-                              : (isCooldown ? '配對冷卻中，暫時無法加入' : null)),
+                                ? '你目前有進行中的活動，活動結束前無法加入'
+                                : (isCooldown ? '配對冷卻中，暫時無法加入' : null)),
                       relativeNow: widget.now(),
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -1359,7 +1360,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                               mainAxisSpacing: AppSpacing.sm,
                               crossAxisSpacing: AppSpacing.sm,
                               mainAxisExtent:
-                                  72 + MediaQuery.textScalerOf(context).scale(24),
+                                  72 +
+                                  MediaQuery.textScalerOf(context).scale(24),
                               children: [
                                 for (final type in types)
                                   _OptionCard(
@@ -1367,25 +1369,32 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                     label: type.name,
                                     selected: _selectedType?.id == type.id,
                                     onTap: () {
-                                      final reliability =
-                                          ref.read(myReliabilityProvider).value;
+                                      final reliability = ref
+                                          .read(myReliabilityProvider)
+                                          .value;
                                       final isNew =
                                           reliability?.isNewUser ?? false;
                                       var defaultMin =
                                           type.defaultMinParticipants ?? 3;
-                                      final step = (type.groupSizeStep != null && type.groupSizeStep! > 0)
+                                      final step =
+                                          (type.groupSizeStep != null &&
+                                              type.groupSizeStep! > 0)
                                           ? type.groupSizeStep!
                                           : 1;
                                       if (isNew && defaultMin <= 2) {
-                                        defaultMin = step > 1 ? (2 ~/ step + 1) * step : 3;
+                                        defaultMin = step > 1
+                                            ? (2 ~/ step + 1) * step
+                                            : 3;
                                       }
                                       var defaultMax =
-                                          type.defaultMaxParticipants ?? defaultMin;
+                                          type.defaultMaxParticipants ??
+                                          defaultMin;
                                       if (defaultMax > 20) {
                                         defaultMax = 20;
                                       }
                                       if (step > 1) {
-                                        final remainder = (defaultMax - defaultMin) % step;
+                                        final remainder =
+                                            (defaultMax - defaultMin) % step;
                                         if (remainder != 0) {
                                           defaultMax -= remainder;
                                         }
@@ -1436,7 +1445,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            const SizedBox(height: AppSpacing.lg),
+                                            const SizedBox(
+                                              height: AppSpacing.lg,
+                                            ),
                                             Text(
                                               sportConfig.sectionTitle,
                                               style: textTheme.titleSmall,
@@ -1448,13 +1459,15 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                 sportConfig.helperText!,
                                                 style: textTheme.bodySmall
                                                     ?.copyWith(
-                                                      color: Theme.of(
-                                                        context,
-                                                      ).colorScheme.onSurfaceVariant,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
                                                     ),
                                               ),
                                             ],
-                                            const SizedBox(height: AppSpacing.xs),
+                                            const SizedBox(
+                                              height: AppSpacing.xs,
+                                            ),
                                             Wrap(
                                               spacing: AppSpacing.sm,
                                               runSpacing: AppSpacing.xs,
@@ -1464,16 +1477,17 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                     sportConfig.wildcardLabel,
                                                   ),
                                                   selected:
-                                                      _selectedSportLevel == null,
-                                                  onSelected: AppHaptics.select(
-                                                    (_) {
-                                                      setState(
-                                                        () =>
-                                                            _selectedSportLevel =
-                                                                null,
-                                                      );
-                                                    },
-                                                  ),
+                                                      _selectedSportLevel ==
+                                                      null,
+                                                  onSelected: AppHaptics.select((
+                                                    _,
+                                                  ) {
+                                                    setState(
+                                                      () =>
+                                                          _selectedSportLevel =
+                                                              null,
+                                                    );
+                                                  }),
                                                 ),
                                                 for (final opt
                                                     in sportConfig.options)
@@ -1484,15 +1498,15 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                     selected:
                                                         _selectedSportLevel ==
                                                         opt.value,
-                                                    onSelected: AppHaptics.select(
-                                                      (_) {
-                                                        setState(
-                                                          () =>
-                                                              _selectedSportLevel =
-                                                                  opt.value,
-                                                        );
-                                                      },
-                                                    ),
+                                                    onSelected: AppHaptics.select((
+                                                      _,
+                                                    ) {
+                                                      setState(
+                                                        () =>
+                                                            _selectedSportLevel =
+                                                                opt.value,
+                                                      );
+                                                    }),
                                                   ),
                                               ],
                                             ),
@@ -1510,7 +1524,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                     '例如：約 1450',
                                                 keyboardType:
                                                     TextInputType.number,
-                                                onChanged: (_) => setState(() {}),
+                                                onChanged: (_) =>
+                                                    setState(() {}),
                                               ),
                                             ],
                                           ],
@@ -1537,7 +1552,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                 setState(
                                                   () =>
                                                       _studyTargetController
-                                                          .text = subject,
+                                                              .text =
+                                                          subject,
                                                 );
                                               },
                                             ),
@@ -1578,9 +1594,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                                   : '將以「$normalized」進行比對',
                                               style: textTheme.bodySmall
                                                   ?.copyWith(
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.onSurfaceVariant,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
                                                   ),
                                             );
                                           },
@@ -1649,15 +1665,16 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       _TimeChip(
                                         icon: _buckets[i].icon,
                                         label: _buckets[i].displayLabel,
-                                        selected: _selectedBucketIndices.contains(
-                                          i,
-                                        ),
+                                        selected: _selectedBucketIndices
+                                            .contains(i),
                                         onTap: () => _toggleBucket(i),
                                       ),
                                   ],
                                 ),
                                 secondChild: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
                                   child: Row(
                                     children: [
                                       Expanded(
@@ -1673,8 +1690,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                         child: _CustomTimeTile(
                                           label: '最晚開始時間',
                                           time: _customLatest,
-                                          onTap: () =>
-                                              _pickCustomTime(isEarliest: false),
+                                          onTap: () => _pickCustomTime(
+                                            isEarliest: false,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -1692,12 +1710,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       .colorScheme
                                       .primaryContainer
                                       .withValues(alpha: 0.25),
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadius.sm),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
                                   border: Border.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primary
+                                    color: Theme.of(context).colorScheme.primary
                                         .withValues(alpha: 0.3),
                                   ),
                                 ),
@@ -1709,7 +1726,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       child: Icon(
                                         Icons.schedule_rounded,
                                         size: 16,
-                                        color: Theme.of(context).colorScheme.primary,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
                                       ),
                                     ),
                                     const SizedBox(width: AppSpacing.xs),
@@ -1720,18 +1739,24 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                         children: [
                                           Text(
                                             '可開始時段：${_timeWindowLabel(window)}',
-                                            style: textTheme.bodySmall?.copyWith(
-                                              color: Theme.of(context).colorScheme.primary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
                                             '配對截止：最晚於 ${_formatDeadline(window.$2)} 前完成配對',
-                                            style: textTheme.bodySmall?.copyWith(
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                              fontSize: 11,
-                                            ),
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                  fontSize: 11,
+                                                ),
                                           ),
                                         ],
                                       ),
@@ -1847,7 +1872,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                 error: (error, stack) => const AppErrorState(),
                                 data: (reliability) {
                                   final scheme = Theme.of(context).colorScheme;
-                                  final step = (_selectedType?.groupSizeStep != null &&
+                                  final step =
+                                      (_selectedType?.groupSizeStep != null &&
                                           _selectedType!.groupSizeStep! > 0)
                                       ? _selectedType!.groupSizeStep!
                                       : 1;
@@ -1923,8 +1949,8 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     final missing = _missingRequiredChoice(window);
                     final actionHint = hasActiveState
                         ? (activeRequest != null
-                            ? '你已有進行中的配對，請先前往等待室或取消後再發起新配對'
-                            : '你目前有進行中的活動，請先前往活動或結束後再發起新配對')
+                              ? '你已有進行中的配對，請先前往等待室或取消後再發起新配對'
+                              : '你目前有進行中的活動，請先前往活動或結束後再發起新配對')
                         : (isCooldown ? '配對冷卻中，暫時無法送出' : missing);
                     return Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1959,26 +1985,25 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                               ? (activeRequest != null ? '前往等待室' : '查看活動')
                               : (isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人'),
                           loading: isActiveLoading || _submitting,
-                          onPressed: isActiveLoading || _submitting || _confirming
+                          onPressed:
+                              isActiveLoading || _submitting || _confirming
                               ? null
                               : hasActiveState
-                                  ? (activeRequest != null
-                                      ? () => context.push(
-                                          '/waiting-room/${activeRequest.id}',
-                                        )
-                                      : () => context.push(
-                                          '/activity/${activeActivity!.id}',
-                                        ))
-                                  : isCooldown
-                                      ? null
-                                      : missing != null
-                                          ? () {
-                                              setState(() => _error =
-                                                  '請完成所有選擇：$missing');
-                                              _scrollToFirstMissingField(
-                                                  missing);
-                                            }
-                                          : _confirmAndSubmit,
+                              ? (activeRequest != null
+                                    ? () => context.push(
+                                        '/waiting-room/${activeRequest.id}',
+                                      )
+                                    : () => context.push(
+                                        '/activity/${activeActivity!.id}',
+                                      ))
+                              : isCooldown
+                              ? null
+                              : missing != null
+                              ? () {
+                                  setState(() => _error = '請完成所有選擇：$missing');
+                                  _scrollToFirstMissingField(missing);
+                                }
+                              : _confirmAndSubmit,
                         ),
                       ],
                     );
@@ -2173,7 +2198,9 @@ class _HeadcountRangeSlider extends StatelessWidget {
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final effectiveMinPossible = (isNewUser && minPossible < 3) ? 3 : minPossible;
+    final effectiveMinPossible = (isNewUser && minPossible < 3)
+        ? 3
+        : minPossible;
     final clampedMin = minCount.clamp(effectiveMinPossible, maxPossible);
     final clampedMax = maxCount.clamp(clampedMin, maxPossible);
 
@@ -2184,9 +2211,7 @@ class _HeadcountRangeSlider extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2264,21 +2289,20 @@ class _HeadcountRangeSlider extends StatelessWidget {
           Semantics(
             label: '人數規模滑桿，最少 $clampedMin 人，最多 $clampedMax 人',
             child: RangeSlider(
-              values: RangeValues(
-                clampedMin.toDouble(),
-                clampedMax.toDouble(),
-              ),
+              values: RangeValues(clampedMin.toDouble(), clampedMax.toDouble()),
               min: minPossible.toDouble(),
               max: maxPossible.toDouble(),
               divisions: divisions > 0 ? divisions : null,
               labels: RangeLabels('$clampedMin 人', '$clampedMax 人'),
+              semanticFormatterCallback: (value) => '${value.round()} 人',
               onChanged: (values) {
-                AppHaptics.selection();
                 var newStart = values.start.round();
                 var newEnd = values.end.round();
                 if (step > 1) {
-                  newStart = ((newStart - minPossible) ~/ step) * step + minPossible;
-                  newEnd = ((newEnd - minPossible) ~/ step) * step + minPossible;
+                  newStart =
+                      ((newStart - minPossible) ~/ step) * step + minPossible;
+                  newEnd =
+                      ((newEnd - minPossible) ~/ step) * step + minPossible;
                 }
                 if (isNewUser && newStart < 3) {
                   newStart = 3;
@@ -2286,6 +2310,8 @@ class _HeadcountRangeSlider extends StatelessWidget {
                 if (newEnd < newStart) {
                   newEnd = newStart;
                 }
+                if (newStart == clampedMin && newEnd == clampedMax) return;
+                AppHaptics.selection();
                 onRangeChanged(newStart, newEnd);
               },
             ),

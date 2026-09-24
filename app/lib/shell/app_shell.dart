@@ -40,8 +40,8 @@ class AppShell extends ConsumerWidget {
       );
     }
 
-    // iOS 浮動玻璃膠囊規格：內容高 56 + 內距 12 + 底部間距 8 = 76
-    const floatingBarHeight = 76.0;
+    // iOS 膠囊：圖示與常駐文字標籤共 64 + 內距 12 + 底部間距 8。
+    const floatingBarHeight = 84.0;
     final effectivePadding = isCupertino && !isKeyboardOpen
         ? mediaQuery.padding.copyWith(
             bottom: mediaQuery.padding.bottom + floatingBarHeight,
@@ -58,12 +58,12 @@ class AppShell extends ConsumerWidget {
           ),
           bottomNavigationBar: isCupertino
               ? (isKeyboardOpen
-                  ? null
-                  : _IosBottomNavigation(
-                      currentIndex: navigationShell.currentIndex,
-                      unreadCount: unreadCount,
-                      onDestinationSelected: onDestinationSelected,
-                    ))
+                    ? null
+                    : _IosBottomNavigation(
+                        currentIndex: navigationShell.currentIndex,
+                        unreadCount: unreadCount,
+                        onDestinationSelected: onDestinationSelected,
+                      ))
               : NavigationBar(
                   selectedIndex: navigationShell.currentIndex,
                   onDestinationSelected: onDestinationSelected,
@@ -134,7 +134,7 @@ class _IosBottomNavigation extends StatelessWidget {
         padding: const EdgeInsets.all(6),
         borderRadius: BorderRadius.circular(AppRadius.glass),
         child: SizedBox(
-          height: 56,
+          height: 64,
           child: Row(
             children: [
               for (var index = 0; index < items.length; index++)
@@ -158,35 +158,54 @@ class _IosBottomNavigation extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: currentIndex == index
                                 ? (isDark
-                                    ? scheme.surfaceContainerHighest
-                                        .withValues(alpha: 0.85)
-                                    : scheme.primary.withValues(alpha: 0.14))
+                                      ? scheme.surfaceContainerHighest
+                                            .withValues(alpha: 0.85)
+                                      : scheme.primary.withValues(alpha: 0.14))
                                 : Colors.transparent,
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.pill),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
                             border: currentIndex == index
                                 ? Border.all(
                                     color: isDark
-                                        ? scheme.outlineVariant
-                                            .withValues(alpha: 0.4)
-                                        : scheme.primary
-                                            .withValues(alpha: 0.25),
+                                        ? scheme.outlineVariant.withValues(
+                                            alpha: 0.4,
+                                          )
+                                        : scheme.primary.withValues(
+                                            alpha: 0.25,
+                                          ),
                                     width: 1,
                                   )
                                 : null,
                           ),
                           child: Center(
-                            child: _CupertinoBadgeIcon(
-                              count: index == 2 ? unreadCount : 0,
-                              icon: Icon(
-                                currentIndex == index
-                                    ? items[index].$2
-                                    : items[index].$1,
-                                size: 26,
-                                color: currentIndex == index
-                                    ? scheme.primary
-                                    : scheme.onSurfaceVariant,
-                              ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _CupertinoBadgeIcon(
+                                  count: index == 2 ? unreadCount : 0,
+                                  icon: Icon(
+                                    currentIndex == index
+                                        ? items[index].$2
+                                        : items[index].$1,
+                                    size: 24,
+                                    color: currentIndex == index
+                                        ? scheme.primary
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  index == 1 ? '活動' : items[index].$3,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontSize: 11,
+                                    height: 1.1,
+                                    color: currentIndex == index
+                                        ? scheme.primary
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

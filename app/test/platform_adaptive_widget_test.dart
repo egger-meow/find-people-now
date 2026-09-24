@@ -130,10 +130,7 @@ Widget _shellHost(
       if (viewInsets != null) {
         media = media.copyWith(viewInsets: viewInsets);
       }
-      return MediaQuery(
-        data: media,
-        child: child!,
-      );
+      return MediaQuery(data: media, child: child!);
     },
   ),
 );
@@ -266,6 +263,9 @@ void main() {
         expect(find.bySemanticsLabel('我的活動'), findsOneWidget);
         expect(find.bySemanticsLabel('通知'), findsOneWidget);
         expect(find.bySemanticsLabel('個人'), findsOneWidget);
+        for (final label in ['探索', '活動', '通知', '個人']) {
+          expect(find.text(label), findsWidgets);
+        }
         expect(find.text('3'), findsOneWidget);
         expect(find.byType(AppGlassSurface), findsOneWidget);
         expect(find.byType(CupertinoTabBar), findsNothing);

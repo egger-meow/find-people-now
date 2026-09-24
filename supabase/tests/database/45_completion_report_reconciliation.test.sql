@@ -2,9 +2,9 @@
 -- pgTAP Test 45 — Completion Report Settlement Reconciliation & Mutual Accusation
 --
 -- 涵蓋：
--- 1. 兩人活動 u1 先回報 u2 缺席：活動轉 COMPLETED，u2 暫記 NO_SHOW。
--- 2. 活動已 COMPLETED 狀態下，u2 仍可在 24 小時窗口內提交回報。
--- 3. u2 指認 u1 缺席後，觸發二人互咬特例：u2 的 NO_SHOW 被撤銷，雙方均不被判 NO_SHOW。
+-- 1. 兩人活動 u1 先回報 u2 缺席：暫不結算或處分。
+-- 2. u2 在 24 小時窗口內提交回報後才結算。
+-- 3. u2 指認 u1 缺席後，互咬特例不處分任一方，且不清除無來源的其他停權。
 -- 4. 同一人重複回報拋出 ALREADY_REPORTED。
 -- 5. 非活動成員回報拋出 NOT_ACTIVITY_MEMBER。
 -- 6. MATCHED 活動回報拋出 ACTIVITY_NOT_ENDED。
@@ -16,7 +16,12 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(14);
+select plan(21);
+
+select ok(
+  not has_function_privilege('authenticated', 'public.fn_reconcile_completion_report(uuid, boolean)', 'execute'),
+  '內部結算函式不可由一般登入者直接呼叫'
+);
 
 create temp table fixtures (
   act_type_id    uuid,
@@ -28,6 +33,7 @@ create temp table fixtures (
   u_outsider     uuid,
   act_2p         uuid,
   act_2p_uni     uuid,
+  act_2p_timeout uuid,
   act_matched    uuid,
   act_expired    uuid
 );
@@ -43,6 +49,7 @@ declare
   v_outsider uuid := gen_random_uuid();
   v_act_2p activity;
   v_act_2p_uni activity;
+  v_act_2p_timeout activity;
   v_act_matched activity;
   v_act_expired activity;
   v_req1 uuid;
@@ -100,6 +107,14 @@ begin
     (v_act_2p_uni.id, v_u3, v_req3, 'JOINED'),
     (v_act_2p_uni.id, v_u4, v_req4, 'JOINED');
 
+  -- 3. 僅一人回報，供 24 小時窗口屆滿時的 cron 結算測試
+  insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status, contact_visible_until)
+  values (v_act_type_id, 'NYCU', v_campus, now() - interval '2 hours', now() - interval '1 hour', 'ONGOING', now() + interval '22 hours')
+  returning * into v_act_2p_timeout;
+  insert into activity_member (activity_id, user_id, source_request_id, status) values
+    (v_act_2p_timeout.id, v_u3, v_req3, 'JOINED'),
+    (v_act_2p_timeout.id, v_u4, v_req4, 'JOINED');
+
   -- 3. 尚未開始活動 (MATCHED)
   insert into activity (activity_type_id, school, campus, start_time, estimated_end_time, status)
   values (v_act_type_id, 'NYCU', v_campus, now() + interval '2 hours', now() + interval '3 hours', 'MATCHED')
@@ -116,12 +131,12 @@ begin
   insert into activity_member (activity_id, user_id, source_request_id, status) values
     (v_act_expired.id, v_u1, v_req1, 'JOINED');
 
-  insert into fixtures (act_type_id, campus, u1, u2, u3, u4, u_outsider, act_2p, act_2p_uni, act_matched, act_expired)
-  values (v_act_type_id, v_campus, v_u1, v_u2, v_u3, v_u4, v_outsider, v_act_2p.id, v_act_2p_uni.id, v_act_matched.id, v_act_expired.id);
+  insert into fixtures (act_type_id, campus, u1, u2, u3, u4, u_outsider, act_2p, act_2p_uni, act_2p_timeout, act_matched, act_expired)
+  values (v_act_type_id, v_campus, v_u1, v_u2, v_u3, v_u4, v_outsider, v_act_2p.id, v_act_2p_uni.id, v_act_2p_timeout.id, v_act_matched.id, v_act_expired.id);
 end $setup$;
 
 -- -----------------------------------------------------------------------------
--- Test 1: u1 回報 u2 缺席，法定人數 1 人達成，活動轉 COMPLETED，u2 記 NO_SHOW
+-- Test 1: u1 回報 u2 缺席，兩人活動等待另一方或期限屆滿
 -- -----------------------------------------------------------------------------
 do $$ begin
   perform set_config('request.jwt.claim.sub', (select u1::text from fixtures), true);
@@ -136,19 +151,23 @@ select lives_ok(
 
 select results_eq(
   format($sql$select status from activity where id = %L$sql$, (select act_2p from fixtures)),
-  array['COMPLETED'::activity_status],
-  '活動達法定人數後應更新為 COMPLETED'
+  array['ONGOING'::activity_status],
+  '兩人活動第一人回報後應維持 ONGOING'
 );
 
 select results_eq(
   format($sql$select event_type from user_reliability_event where activity_id = %L and user_id = %L$sql$,
     (select act_2p from fixtures), (select u2 from fixtures)),
-  array['NO_SHOW'::reliability_event_type],
-  '第一人回報後 u2 應先被記 NO_SHOW'
+  '{}'::reliability_event_type[],
+  '第一人回報後不得先對 u2 記 NO_SHOW'
 );
 
+-- 模擬與本活動無關的既有停權；互咬對帳不可清除它。
+update app_user set suspended_until = now() + interval '5 days'
+ where id = (select u2 from fixtures);
+
 -- -----------------------------------------------------------------------------
--- Test 2: 活動已是 COMPLETED，u2 在 24h 窗口內仍可回報，並指認 u1 缺席
+-- Test 2: u2 在 24h 窗口內回報，並指認 u1 缺席
 -- -----------------------------------------------------------------------------
 do $$ begin
   perform set_config('request.jwt.claim.sub', (select u2::text from fixtures), true);
@@ -158,7 +177,13 @@ select lives_ok(
   format($sql$select submit_completion_report(%L, 'REPORTED_ABSENT', array[%L]::uuid[])$sql$,
     (select act_2p from fixtures),
     (select u1 from fixtures)),
-  '已 COMPLETED 的活動在 24 小時窗口內仍放行第二人回報'
+  '第二人在 24 小時窗口內仍可回報'
+);
+
+select results_eq(
+  format($sql$select status from activity where id = %L$sql$, (select act_2p from fixtures)),
+  array['COMPLETED'::activity_status],
+  '雙方都回報後活動才結算為 COMPLETED'
 );
 
 -- -----------------------------------------------------------------------------
@@ -167,7 +192,14 @@ select lives_ok(
 select is_empty(
   format($sql$select 1 from user_reliability_event where activity_id = %L and event_type = 'NO_SHOW'$sql$,
     (select act_2p from fixtures)),
-  '兩人互咬特例生效，原本的 NO_SHOW 應被撤銷，雙方均不記 NO_SHOW'
+  '兩人互咬特例生效，雙方均不記 NO_SHOW'
+);
+
+select results_eq(
+  format($sql$select suspended_until > now() from app_user where id = %L$sql$,
+    (select u2 from fixtures)),
+  array[true],
+  '互咬結算不得清除來源不明的其他停權'
 );
 
 -- -----------------------------------------------------------------------------
@@ -260,6 +292,48 @@ select throws_ok(
   format($sql$select submit_completion_report(%L, 'WENT_WELL', '{}')$sql$, (select act_expired from fixtures)),
   'ACTIVITY_NOT_ACTIVE',
   '超過 24 小時窗口之已完成活動應拋出 ACTIVITY_NOT_ACTIVE'
+);
+
+-- 期滿結算：第一人回報後沒有 NO_SHOW，時間窗結束由既有 cron 補結算。
+do $$ begin
+  perform set_config('request.jwt.claim.sub', (select u3::text from fixtures), true);
+  perform submit_completion_report(
+    (select act_2p_timeout from fixtures), 'REPORTED_ABSENT',
+    array[(select u4 from fixtures)]::uuid[]
+  );
+end $$;
+
+select is_empty(
+  format($sql$select 1 from user_reliability_event where activity_id = %L$sql$,
+    (select act_2p_timeout from fixtures)),
+  '兩人場次單人回報期間不產生信譽事件'
+);
+
+update activity set start_time = now() - interval '26 hours',
+                    contact_visible_until = now() - interval '1 hour'
+ where id = (select act_2p_timeout from fixtures);
+do $$ begin perform fn_complete_activities(); end $$;
+
+select results_eq(
+  format($sql$select event_type from user_reliability_event where activity_id = %L and user_id = %L$sql$,
+    (select act_2p_timeout from fixtures), (select u4 from fixtures)),
+  array['NO_SHOW'::reliability_event_type],
+  '期滿時既有背景工作替單人回報場次完成缺席結算'
+);
+
+select results_eq(
+  format($sql$select status from activity where id = %L$sql$,
+    (select act_2p_timeout from fixtures)),
+  array['COMPLETED'::activity_status],
+  '期滿結算後活動狀態為 COMPLETED'
+);
+
+do $$ begin perform fn_complete_activities(); end $$;
+select results_eq(
+  format($sql$select count(*) from user_reliability_event where activity_id = %L$sql$,
+    (select act_2p_timeout from fixtures)),
+  array[2::bigint],
+  '背景工作重跑不重複插入信譽事件'
 );
 
 rollback;

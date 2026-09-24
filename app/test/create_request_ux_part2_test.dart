@@ -127,10 +127,8 @@ Widget _buildTestApp({
       myAppUserProvider.overrideWith((ref) async => _testUser),
       campusOptionsProvider.overrideWith((ref, school) async => ['光復', '交大博愛']),
       myReliabilityProvider.overrideWith(
-        (ref) async => MyReliability(
-          tier: ReliabilityTier.normal,
-          isNewUser: isNewUser,
-        ),
+        (ref) async =>
+            MyReliability(tier: ReliabilityTier.normal, isNewUser: isNewUser),
       ),
       campusDemandsProvider.overrideWith(
         (ref, key) => Stream.value(const <CampusDemandCard>[]),
@@ -162,14 +160,24 @@ void main() {
     await tester.pumpAndSettle();
 
     final scrollable = find.byType(Scrollable).first;
-    await tester.scrollUntilVisible(find.text('羽球'), 150, scrollable: scrollable);
-    final initialOffset = tester.state<ScrollableState>(scrollable).position.pixels;
+    await tester.scrollUntilVisible(
+      find.text('羽球'),
+      150,
+      scrollable: scrollable,
+    );
+    final initialOffset = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
 
     // 點選羽球
     await tester.tap(find.text('羽球'));
     await tester.pumpAndSettle();
 
-    final afterTapOffset = tester.state<ScrollableState>(scrollable).position.pixels;
+    final afterTapOffset = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
     expect(afterTapOffset, equals(initialOffset));
   });
 
@@ -184,12 +192,20 @@ void main() {
 
     final scrollable = find.byType(Scrollable).first;
     // 滾動並點選羽球
-    await tester.scrollUntilVisible(find.text('羽球'), 150, scrollable: scrollable);
+    await tester.scrollUntilVisible(
+      find.text('羽球'),
+      150,
+      scrollable: scrollable,
+    );
     await tester.tap(find.text('羽球'), warnIfMissed: false);
     await tester.pumpAndSettle();
 
     // 滾動並點選「現在」時段
-    await tester.scrollUntilVisible(find.text('現在'), 150, scrollable: scrollable);
+    await tester.scrollUntilVisible(
+      find.text('現在'),
+      150,
+      scrollable: scrollable,
+    );
     await tester.tap(find.text('現在'));
     await tester.pumpAndSettle();
 
@@ -212,7 +228,11 @@ void main() {
 
     final scrollable = find.byType(Scrollable).first;
     // 滾動並點選羽球
-    await tester.scrollUntilVisible(find.text('羽球'), 150, scrollable: scrollable);
+    await tester.scrollUntilVisible(
+      find.text('羽球'),
+      150,
+      scrollable: scrollable,
+    );
     await tester.tap(find.text('羽球'));
     await tester.pumpAndSettle();
 
@@ -226,5 +246,6 @@ void main() {
 
     final slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
     expect(slider.values.start, greaterThanOrEqualTo(3.0));
+    expect(slider.semanticFormatterCallback?.call(4), '4 人');
   });
 }

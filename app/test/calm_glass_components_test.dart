@@ -9,6 +9,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('high contrast glass surface uses an opaque fill without blur', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: const MediaQuery(
+          data: MediaQueryData(highContrast: true),
+          child: Scaffold(body: AppGlassSurface(child: Text('內容'))),
+        ),
+      ),
+    );
+
+    expect(find.byType(BackdropFilter), findsNothing);
+    final box = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byType(AppGlassSurface),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    expect((box.decoration as BoxDecoration).color?.a, 1);
+  });
+
   // A missing title, primary action, or accessible target would make this fail.
   for (final themeMode in [ThemeMode.light, ThemeMode.dark]) {
     testWidgets(

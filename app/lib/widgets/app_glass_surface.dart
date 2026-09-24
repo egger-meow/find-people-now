@@ -22,23 +22,35 @@ class AppGlassSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = Theme.of(context).extension<AppSurfaceColors>()!;
     final radius = borderRadius ?? BorderRadius.circular(AppRadius.glass);
+    final highContrast = MediaQuery.highContrastOf(context);
+    final fill = highContrast
+        ? Theme.of(context).colorScheme.surface
+        : surface.glass;
+
+    final content = DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: radius,
+        border: Border.all(
+          color: highContrast
+              ? Theme.of(context).colorScheme.outline
+              : surface.glassBorder,
+        ),
+      ),
+      child: Padding(
+        padding: padding ?? const EdgeInsets.all(AppSpacing.lg),
+        child: child,
+      ),
+    );
 
     return ClipRRect(
       borderRadius: radius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: surface.glass,
-            borderRadius: radius,
-            border: Border.all(color: surface.glassBorder),
-          ),
-          child: Padding(
-            padding: padding ?? const EdgeInsets.all(AppSpacing.lg),
-            child: child,
-          ),
-        ),
-      ),
+      child: highContrast
+          ? content
+          : BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: content,
+            ),
     );
   }
 }
