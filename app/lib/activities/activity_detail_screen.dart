@@ -1160,7 +1160,8 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
   final Set<String> _busy = {};
 
   Future<void> _vote(String toUserId) async {
-    if (_busy.contains(toUserId) || _voted.contains(toUserId)) return;
+    final persistedVotes = ref.read(ownRematchVotesProvider(widget.activityId)).value ?? const <String>{};
+    if (_busy.contains(toUserId) || _voted.contains(toUserId) || persistedVotes.contains(toUserId)) return;
     setState(() => _busy.add(toUserId));
     try {
       final result = await rematchVote(
@@ -1193,6 +1194,8 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final persistedVotes = ref.watch(ownRematchVotesProvider(widget.activityId)).value ?? const <String>{};
+
     return Padding(
       padding: EdgeInsets.only(
         left: AppSpacing.lg,
@@ -1242,10 +1245,17 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
                           minimumSize: const Size(64, 44),
                         ),
                         onPressed:
-                            _voted.contains(m.userId) || _busy.contains(m.userId)
+                            _voted.contains(m.userId) ||
+                                    persistedVotes.contains(m.userId) ||
+                                    _busy.contains(m.userId)
                                 ? null
                                 : () => _vote(m.userId),
-                        child: Text(_voted.contains(m.userId) ? '已按讚' : '👍 再約'),
+                        child: Text(
+                          _voted.contains(m.userId) ||
+                                  persistedVotes.contains(m.userId)
+                              ? '已再約'
+                              : '👍 再約',
+                        ),
                       ),
                     ),
                 ],

@@ -13,6 +13,7 @@ import '../rpc/api_exception.dart';
 import '../rpc/auth_profile_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_dialog.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/degree_level_field.dart';
 import '../widgets/department_field.dart';
@@ -48,10 +49,58 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   bool _initialized = false;
   bool _loading = false;
   bool _uploadingAvatar = false;
+  bool _allowPop = false;
   String? _error;
+
+  bool _isDirty(dynamic user) {
+    if (_displayNameController.text.trim() != user.displayName.trim()) return true;
+    final currentDept = _departmentController.text.trim();
+    final initialDept = (user.department ?? '').trim();
+    if (currentDept != initialDept) return true;
+
+    if (_gender != GenderOptions.normalize(user.gender)) return true;
+    if (_bioController.text.trim() != user.bio.trim()) return true;
+
+    final currentIg = _contactIgController.text.trim();
+    final initialIg = (user.contactIg ?? '').trim();
+    if (currentIg != initialIg) return true;
+
+    final currentLine = _contactLineController.text.trim();
+    final initialLine = (user.contactLine ?? '').trim();
+    if (currentLine != initialLine) return true;
+
+    final currentDiscord = _contactDiscordController.text.trim();
+    final initialDiscord = (user.contactDiscord ?? '').trim();
+    if (currentDiscord != initialDiscord) return true;
+
+    if (_degreeLevel != user.degreeLevel) return true;
+    if (_avatarUrl != user.avatarUrl) return true;
+    return false;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _displayNameController.addListener(_onFieldChanged);
+    _departmentController.addListener(_onFieldChanged);
+    _bioController.addListener(_onFieldChanged);
+    _contactIgController.addListener(_onFieldChanged);
+    _contactLineController.addListener(_onFieldChanged);
+    _contactDiscordController.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
+    _displayNameController.removeListener(_onFieldChanged);
+    _departmentController.removeListener(_onFieldChanged);
+    _bioController.removeListener(_onFieldChanged);
+    _contactIgController.removeListener(_onFieldChanged);
+    _contactLineController.removeListener(_onFieldChanged);
+    _contactDiscordController.removeListener(_onFieldChanged);
     _displayNameController.dispose();
     _departmentController.dispose();
     _bioController.dispose();
@@ -133,7 +182,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         contactDiscord: contactDiscord.isEmpty ? null : contactDiscord,
       );
       ref.invalidate(myAppUserProvider);
-      if (mounted) context.pop();
+      if (mounted) {
+        setState(() => _allowPop = true);
+        context.pop();
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = userErrorMessage(e));
@@ -145,15 +197,36 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(myAppUserProvider);
+    final user = userAsync.value;
+    final isDirty = _initialized && user != null && _isDirty(user);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('編輯個人資料')),
-      body: SafeArea(
-        child: userAsync.when(
-          loading: () => const LoadingIndicator(),
-          error: (error, stack) => const AppErrorState(),
-          data: (user) {
-            if (user == null) return const LoadingIndicator();
+    return PopScope(
+      canPop: _allowPop || !isDirty || _loading,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldDiscard = await showAppConfirmDialog(
+          context,
+          title: '捨棄未儲存的變更？',
+          message: '你有尚未儲存的修改，離開將不會保留。',
+          confirmLabel: '捨棄',
+          cancelLabel: '繼續編輯',
+          isDestructive: true,
+        );
+        if (shouldDiscard && mounted) {
+          setState(() => _allowPop = true);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) context.pop();
+          });
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('編輯個人資料')),
+        body: SafeArea(
+          child: userAsync.when(
+            loading: () => const LoadingIndicator(),
+            error: (error, stack) => const AppErrorState(),
+            data: (user) {
+              if (user == null) return const LoadingIndicator();
             if (!_initialized) {
               _initialized = true;
               _displayNameController.text = user.displayName;
@@ -281,6 +354,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           },
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

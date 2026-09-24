@@ -503,29 +503,63 @@ class WaitingRoomActionSections extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: busy ? null : onCopy,
-                        icon: const Icon(Icons.copy_rounded, size: 18),
-                        label: const Text('複製邀請碼'),
-                      ),
-                    ),
-                    if (onShare != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: FilledButton.tonalIcon(
-                          onPressed: busy ? null : onShare,
-                          icon: const Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 18,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final textScale =
+                        MediaQuery.textScalerOf(context).scale(1.0);
+                    // 當可用寬度小於 330 或字級放大超過 1.15 時，自動轉為垂直堆疊以確保無障礙 Dynamic Type 不破版
+                    final isNarrowOrLargeFont =
+                        constraints.maxWidth < 330 || textScale > 1.15;
+
+                    if (isNarrowOrLargeFont) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: busy ? null : onCopy,
+                            icon: const Icon(Icons.copy_rounded, size: 18),
+                            label: const Text('複製邀請碼'),
                           ),
-                          label: const Text('複製邀請訊息'),
+                          if (onShare != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            FilledButton.tonalIcon(
+                              onPressed: busy ? null : onShare,
+                              icon: const Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('複製邀請訊息'),
+                            ),
+                          ],
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: busy ? null : onCopy,
+                            icon: const Icon(Icons.copy_rounded, size: 18),
+                            label: const Text('複製邀請碼'),
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
+                        if (onShare != null) ...[
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: FilledButton.tonalIcon(
+                              onPressed: busy ? null : onShare,
+                              icon: const Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('複製邀請訊息'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
                 if (isOwner && onRevoke != null) ...[
                   const SizedBox(height: AppSpacing.xs),
