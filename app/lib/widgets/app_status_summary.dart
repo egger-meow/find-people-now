@@ -32,7 +32,12 @@ class AppStatusSummary extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
+      padding: compact
+          ? const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            )
+          : const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(AppRadius.md),

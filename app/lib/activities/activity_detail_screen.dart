@@ -1336,8 +1336,8 @@ class _LocationTab extends ConsumerWidget {
               AppGlassSurface(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: AppSection(
-                  title: '我的見面提示',
-                  description: '讓對方認出你；同組成員都看得到，只有你能修改自己的提示。',
+                  title: '給同伴的話',
+                  description: '可以說明穿著、帶了什麼或有沒有場地；同組成員都看得到，只有你能修改。',
                   child: _MeetingHintSection(
                     activityId: activity.id,
                     editable: canEdit,
@@ -1936,7 +1936,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = '無法載入見面提示';
+        _error = '無法載入給同伴的話';
         _loading = false;
       });
     }
@@ -1955,7 +1955,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
         hint: _controller.text.trim(),
       );
       if (!mounted) return;
-      showAppSnackBar(context, '已更新見面提示', kind: AppSnackKind.success);
+      showAppSnackBar(context, '已更新給同伴的話', kind: AppSnackKind.success);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = userErrorMessage(e));
@@ -1972,7 +1972,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
     if (!widget.editable) {
       return AppCard(
         child: Text(
-          _controller.text.isEmpty ? '（沒有填見面提示）' : _controller.text,
+          _controller.text.isEmpty ? '（沒有留下訊息）' : _controller.text,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
@@ -1983,7 +1983,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
         children: [
           AppTextField(
             controller: _controller,
-            hint: '例如：我會戴紅色棒球帽',
+            hint: '例如：我有場地、會帶球；穿紅衣',
             maxLength: 30,
           ),
           if (_error != null) ...[
@@ -1994,7 +1994,7 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
             ),
           ],
           const SizedBox(height: AppSpacing.sm),
-          AppButton(label: '更新見面提示', loading: _busy, onPressed: _submit),
+          AppButton(label: '更新給同伴的話', loading: _busy, onPressed: _submit),
         ],
       ),
     );
@@ -2282,10 +2282,8 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
   Future<void> _editVibeTags() async {
     if (_vibeBusy) return;
     final options = _vibeTagOptionsFor(widget.activityTypeName);
-    // 反饋：tag 也可以用來溝通（例如籃球「#有帶球」讓其他人知道不用帶），
-    // 所以除了預設選項，使用者要能自己打字新增——後端 update_vibe_tags 本來
-    // 就沒有白名單限制（只驗證數量 ≤3、單則 ≤20 字，見遷移檔註解），這裡補上
-    // 前端缺的自由輸入欄位即可，不算新開放什麼。
+    // Tag 描述參與風格；裝備、場地等即時資訊由「給同伴的話」傳達。
+    // 保留自訂風格標籤，後端仍只驗證數量與長度。
     final selected = <String>[...widget.member.vibeTags];
     final textController = TextEditingController();
 
@@ -2304,13 +2302,13 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
           }
 
           return AppAdaptiveDialog(
-            title: '這場你想怎麼參與？',
+            title: '你的參與風格',
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '最多 3 個，可以自己打字（例如 #有帶球），讓其他人即時看到',
+                  '最多 3 個，可自訂風格；裝備、場地資訊請寫在「給同伴的話」。',
                   style: Theme.of(dialogContext).textTheme.bodySmall,
                 ),
                 const SizedBox(height: AppSpacing.xs),
@@ -2348,7 +2346,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                   maxLength: 20,
                   enabled: selected.length < 3,
                   decoration: InputDecoration(
-                    hintText: selected.length >= 3 ? '最多 3 個標籤' : '輸入自訂標籤',
+                    hintText: selected.length >= 3 ? '最多 3 個標籤' : '例如：慢步調',
                     isDense: true,
                     counterText: '',
                     suffixIcon: IconButton(
@@ -2543,7 +2541,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                             ActionChip(
                               avatar: const Icon(Icons.add_rounded, size: 14),
                               label: Text(
-                                member.vibeTags.isEmpty ? '設定參與方式' : '編輯',
+                                member.vibeTags.isEmpty ? '設定參與風格' : '編輯',
                                 style: const TextStyle(fontSize: 11),
                               ),
                               visualDensity: const VisualDensity(

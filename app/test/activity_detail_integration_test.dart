@@ -438,7 +438,7 @@ void main() {
     );
 
     final meetingPointOffset = scrollPosition.pixels;
-    final meetingHintInput = find.text('例如：我會戴紅色棒球帽');
+    final meetingHintInput = find.text('例如：我有場地、會帶球；穿紅衣');
     await tester.scrollUntilVisible(
       meetingHintInput,
       120,
