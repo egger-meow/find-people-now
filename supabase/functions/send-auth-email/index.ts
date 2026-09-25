@@ -106,8 +106,8 @@ Deno.serve(async (req: Request) => {
   const isTestAccount = testAccountEmails.has(user.email.toLowerCase());
   const recipient = isTestAccount ? testAccountAdminEmail : user.email;
   const subject = isTestAccount
-    ? `你的驗證碼（${user.email.toLowerCase()}）`
-    : "你的驗證碼";
+    ? `Your verification code (${user.email.toLowerCase()})`
+    : "Your verification code";
   const html = `
     <h2>你的驗證碼</h2>
     ${isTestAccount ? `<p>測試帳號：${user.email.toLowerCase()}</p>` : ""}

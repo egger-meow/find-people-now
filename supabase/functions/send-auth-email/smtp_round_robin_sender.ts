@@ -94,23 +94,14 @@ export class SmtpRoundRobinSender implements EmailSender {
         // RFC 5322 "Display Name <address>" — uses account.from (which equals
         // account.user unless SMTP_ACCOUNT_N_FROM is set) so the display
         // sender can differ from the SMTP auth credential without code changes.
-        from: `敢不敢揪 <${account.from}>`,
+        from: `Find People Now <${account.from}>`,
         to: message.to,
         subject: message.subject,
-        // Not `html: message.html` — denomailer's own html/text path always
-        // picks Content-Transfer-Encoding: quoted-printable (config/mail/
-        // content.ts, no way to override it from SendConfig), and its
-        // quoted-printable line-folder wraps at a fixed 74-char offset with
-        // no regard for where CJK characters' multi-byte "=XX=XX=XX" escape
-        // sequences fall — confirmed corrupting exactly one character
-        // ("信" -> "äf<47>") in a real received email. mimeContent is the
-        // escape hatch: base64 has no such boundary to get wrong, so this
-        // builds the HTML part manually as base64 instead.
-        mimeContent: [{
-          mimeType: 'text/html; charset="utf-8"',
-          content: toBase64(message.html),
-          transferEncoding: "base64",
-        }],
+        // Let denomailer build the MIME structure. Its quoted-printable
+        // encoder previously split a multi-byte Chinese character, so make
+        // the HTML source ASCII before it reaches that encoder. Numeric HTML
+        // entities still render as the original characters in mail clients.
+        html: toAsciiHtml(message.html),
       });
       console.log("send-auth-email: email sent successfully");
     } finally {
@@ -119,13 +110,8 @@ export class SmtpRoundRobinSender implements EmailSender {
   }
 }
 
-// MIME base64 body lines are conventionally wrapped at 76 chars — not
-// strictly required for a message this small (well under SMTP's 998-char
-// line limit unwrapped), but cheap to do properly.
-function toBase64(input: string): string {
-  const bytes = new TextEncoder().encode(input);
-  let binary = "";
-  bytes.forEach((b) => (binary += String.fromCharCode(b)));
-  const encoded = btoa(binary);
-  return encoded.match(/.{1,76}/g)?.join("\r\n") ?? encoded;
+function toAsciiHtml(input: string): string {
+  return input.replace(/[^\x00-\x7F]/gu, (character) =>
+    `&#${character.codePointAt(0)};`
+  );
 }
