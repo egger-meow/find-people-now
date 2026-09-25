@@ -34,6 +34,15 @@ import { SmtpRoundRobinSender } from "./smtp_round_robin_sender.ts"; // TEMPORAR
 // v-- the one line that changes when migrating providers
 const emailSender: EmailSender = new SmtpRoundRobinSender();
 
+// These three shared test identities are controlled through the admin mailbox.
+// Keep the exception exact so ordinary school accounts receive their own OTPs.
+const testAccountEmails = new Set([
+  "test1@nycu.edu.tw",
+  "test2@nycu.edu.tw",
+  "test3@nycu.edu.tw",
+]);
+const testAccountAdminEmail = "inpire.mg09@nycu.edu.tw";
+
 // The secret is stored as `v1,whsec_<base64>` (matches GoTrue's own hook
 // secret format — confirmed by reading standardwebhooks@1.0.0's source:
 // `dist/index.js` only strips a bare `Webhook.prefix = "whsec_"`, nothing
@@ -94,16 +103,21 @@ Deno.serve(async (req: Request) => {
 
   // 內容對齊 supabase/templates/magic_link.html（該檔在這支 hook 啟用期間
   // 不會被 GoTrue 使用，但刻意保留不動，hook 停用時它會自動重新生效）。
-  const subject = "你的驗證碼";
+  const isTestAccount = testAccountEmails.has(user.email.toLowerCase());
+  const recipient = isTestAccount ? testAccountAdminEmail : user.email;
+  const subject = isTestAccount
+    ? `你的驗證碼（${user.email.toLowerCase()}）`
+    : "你的驗證碼";
   const html = `
     <h2>你的驗證碼</h2>
+    ${isTestAccount ? `<p>測試帳號：${user.email.toLowerCase()}</p>` : ""}
     <p>請在 App 內輸入以下驗證碼完成登入：</p>
     <h1>${emailData.token}</h1>
     <p>如果你沒有嘗試登入，請忽略此信件。</p>
   `;
 
   try {
-    await emailSender.send({ to: user.email, subject, html });
+    await emailSender.send({ to: recipient, subject, html });
   } catch (err) {
     console.error(
       "send-auth-email: send failed:",
