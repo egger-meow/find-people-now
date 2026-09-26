@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_theme.dart';
+import '../legal/legal_links.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_snack_bar.dart';
 import '../widgets/app_text_field.dart';
@@ -24,7 +25,10 @@ const _resendCooldown = Duration(seconds: 30);
 /// `complete_profile`（20260724120200_rpc_profile_and_auth.sql:69-75）——這裡
 /// 允許任何格式正確的 email 送出 OTP，讓伺服器端的 `INVALID_EMAIL_DOMAIN`
 /// 保留為最終防線，不重複兩套判斷邏輯。
-final _schoolDomainPattern = RegExp(r'^[^@\s]+@(nycu|nthu)\.edu\.tw$', caseSensitive: false);
+final _schoolDomainPattern = RegExp(
+  r'^[^@\s]+@(nycu|nthu)\.edu\.tw$',
+  caseSensitive: false,
+);
 
 class OtpLoginScreen extends ConsumerStatefulWidget {
   const OtpLoginScreen({super.key});
@@ -127,11 +131,10 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
       _error = null;
     });
     try {
-      await ref.read(supabaseClientProvider).auth.verifyOTP(
-            email: email,
-            token: code,
-            type: OtpType.email,
-          );
+      await ref
+          .read(supabaseClientProvider)
+          .auth
+          .verifyOTP(email: email, token: code, type: OtpType.email);
       // Successful verifyOTP updates the session; authStateProvider (watched
       // by go_router's redirect) picks this up on its own — no manual nav.
     } catch (e) {
@@ -164,18 +167,24 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.groups_2_rounded, size: 56, color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  Icons.groups_2_rounded,
+                  size: 56,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
                   '敢不敢揪',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   '找到現在也想一起的人。',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 AppTextField(
@@ -199,7 +208,12 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                 ],
                 if (_error != null) ...[
                   const SizedBox(height: AppSpacing.sm),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: AppSpacing.lg),
                 AppButton(
@@ -207,21 +221,53 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                   loading: _loading,
                   onPressed: _otpSent ? _verifyOtp : _sendOtp,
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '繼續即表示你同意',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          LegalLinks.open(context, LegalDocument.terms),
+                      child: const Text('《服務條款》'),
+                    ),
+                    Text(
+                      '，並確認已閱讀',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          LegalLinks.open(context, LegalDocument.privacy),
+                      child: const Text('《隱私權政策》'),
+                    ),
+                    Text('。', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
                 if (_otpSent) ...[
                   TextButton(
-                    onPressed: (_loading || _resending || _cooldownSeconds > 0) ? null : _resendOtp,
-                    child: Text(_cooldownSeconds > 0 ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）' : '重新傳送驗證碼'),
+                    onPressed: (_loading || _resending || _cooldownSeconds > 0)
+                        ? null
+                        : _resendOtp,
+                    child: Text(
+                      _cooldownSeconds > 0
+                          ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）'
+                          : '重新傳送驗證碼',
+                    ),
                   ),
                   TextButton(
                     onPressed: _loading
                         ? null
                         : () => setState(() {
-                              _otpSent = false;
-                              _codeController.clear();
-                              _error = null;
-                              _cooldownTimer?.cancel();
-                              _cooldownSeconds = 0;
-                            }),
+                            _otpSent = false;
+                            _codeController.clear();
+                            _error = null;
+                            _cooldownTimer?.cancel();
+                            _cooldownSeconds = 0;
+                          }),
                     child: const Text('重新輸入信箱'),
                   ),
                 ],

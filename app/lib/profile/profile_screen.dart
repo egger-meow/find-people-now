@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../account_deletion.dart';
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
+import '../legal/legal_links.dart';
 import '../errors/user_error_message.dart';
 import '../widgets/app_error_state.dart';
 import '../generated/app_user.dart';
@@ -226,6 +227,50 @@ class ProfileScreen extends ConsumerWidget {
                                   Icons.chevron_right_rounded,
                                 ),
                                 onTap: () => context.push('/help'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      const _SectionLabel('法律與帳號'),
+                      AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: Column(
+                            children: [
+                              ListTile(
+                                title: const Text('服務條款'),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: () => LegalLinks.open(
+                                  context,
+                                  LegalDocument.terms,
+                                ),
+                              ),
+                              const Divider(height: 1),
+                              ListTile(
+                                title: const Text('隱私權政策'),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: () => LegalLinks.open(
+                                  context,
+                                  LegalDocument.privacy,
+                                ),
+                              ),
+                              const Divider(height: 1),
+                              ListTile(
+                                title: const Text('帳號與資料處理資訊'),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: () => LegalLinks.open(
+                                  context,
+                                  LegalDocument.accountDeletion,
+                                ),
                               ),
                             ],
                           ),
