@@ -311,7 +311,8 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 approvedLocationsAsync.hasError;
             return ActivityDetailBodyLayout(
               summary: ActivityDetailStatusSummary(activity: activity),
-              completionBanner: (activity.status == ACTIVITY_STATUS.ONGOING ||
+              completionBanner:
+                  (activity.status == ACTIVITY_STATUS.ONGOING ||
                       activity.status == ACTIVITY_STATUS.COMPLETED)
                   ? _CompletionReportBanner(
                       activityId: activity.id,
@@ -640,7 +641,8 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) => AppStatusSummary(
         title: _activityStatusLabel(activity.status),
-        message: '活動時間：${_activityTimeLabel(activity)}\n$locationSummary',
+        message:
+            '活動時間：${_activityTimeLabel(activity)}\n$locationSummary\n想說的話請到「成員與聯絡」查看。',
         deadline: _nextActionDescription(
           activity.status,
           hasLocationOptions: hasLocationOptions,
@@ -835,10 +837,8 @@ class _CompletionReportBanner extends ConsumerWidget {
     }
     await showAppSheet<void>(
       context,
-      builder: (context) => _RematchSheet(
-        activityId: activityId,
-        targets: rematchTargets,
-      ),
+      builder: (context) =>
+          _RematchSheet(activityId: activityId, targets: rematchTargets),
     );
   }
 
@@ -937,9 +937,9 @@ class _CompletionReportBanner extends ConsumerWidget {
                     Text(
                       '已完成活動回報',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -947,8 +947,8 @@ class _CompletionReportBanner extends ConsumerWidget {
                 Text(
                   '回報狀態已同步。想繼續保持聯繫嗎？雙方都點選「想再約」後將永久保留聯絡方式。',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 AppButton(
@@ -1177,8 +1177,14 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
   final Set<String> _busy = {};
 
   Future<void> _vote(String toUserId) async {
-    final persistedVotes = ref.read(ownRematchVotesProvider(widget.activityId)).value ?? const <String>{};
-    if (_busy.contains(toUserId) || _voted.contains(toUserId) || persistedVotes.contains(toUserId)) return;
+    final persistedVotes =
+        ref.read(ownRematchVotesProvider(widget.activityId)).value ??
+        const <String>{};
+    if (_busy.contains(toUserId) ||
+        _voted.contains(toUserId) ||
+        persistedVotes.contains(toUserId)) {
+      return;
+    }
     setState(() => _busy.add(toUserId));
     try {
       final result = await rematchVote(
@@ -1198,11 +1204,7 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
       }
     } on ApiException catch (e) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          userErrorMessage(e),
-          kind: AppSnackKind.error,
-        );
+        showAppSnackBar(context, userErrorMessage(e), kind: AppSnackKind.error);
       }
     } finally {
       if (mounted) setState(() => _busy.remove(toUserId));
@@ -1211,7 +1213,9 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final persistedVotes = ref.watch(ownRematchVotesProvider(widget.activityId)).value ?? const <String>{};
+    final persistedVotes =
+        ref.watch(ownRematchVotesProvider(widget.activityId)).value ??
+        const <String>{};
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1263,10 +1267,10 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
                         ),
                         onPressed:
                             _voted.contains(m.userId) ||
-                                    persistedVotes.contains(m.userId) ||
-                                    _busy.contains(m.userId)
-                                ? null
-                                : () => _vote(m.userId),
+                                persistedVotes.contains(m.userId) ||
+                                _busy.contains(m.userId)
+                            ? null
+                            : () => _vote(m.userId),
                         child: Text(
                           _voted.contains(m.userId) ||
                                   persistedVotes.contains(m.userId)
@@ -2078,7 +2082,8 @@ class _MembersTab extends ConsumerWidget {
             )
             .length;
         final myMember = roster.where((m) => m.userId == myId).firstOrNull;
-        final isMyMemberJoined = myMember != null &&
+        final isMyMemberJoined =
+            myMember != null &&
             myMember.status == ACTIVITY_MEMBER_STATUS.JOINED;
         final hasMyArrived = myMember?.arrivedAt != null;
 
@@ -2097,8 +2102,8 @@ class _MembersTab extends ConsumerWidget {
                         title: '報到狀態',
                         description: isMyMemberJoined
                             ? (hasMyArrived
-                                ? '你已完成報到，請在集合點與夥伴會合。'
-                                : '抵達集合地點後，請點擊「我到了」完成報到。')
+                                  ? '你已完成報到，請在集合點與夥伴會合。'
+                                  : '抵達集合地點後，請點擊「我到了」完成報到。')
                             : '抵達集合地點後，完成報到即可讓夥伴知道你已到達。',
                         child: AppCard(
                           child: Column(
@@ -2108,13 +2113,17 @@ class _MembersTab extends ConsumerWidget {
                                 children: [
                                   Icon(
                                     Icons.flag_circle_rounded,
-                                    color: Theme.of(context).colorScheme.primary,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
                                   ),
                                   const SizedBox(width: AppSpacing.sm),
                                   Expanded(
                                     child: Text(
                                       '已抵達 $arrivedCount / $joinedCount',
-                                      style: Theme.of(context).textTheme.titleSmall,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
                                     ),
                                   ),
                                   if (isMyMemberJoined && !hasMyArrived)
@@ -2130,7 +2139,9 @@ class _MembersTab extends ConsumerWidget {
                                     Icon(
                                       Icons.check_circle_rounded,
                                       size: 16,
-                                      color: Theme.of(context).colorScheme.primary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
                                     ),
                                     const SizedBox(width: AppSpacing.xs),
                                     Expanded(
@@ -2140,9 +2151,9 @@ class _MembersTab extends ConsumerWidget {
                                             .textTheme
                                             .bodySmall
                                             ?.copyWith(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .primary,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
                                               fontWeight: FontWeight.w600,
                                             ),
                                       ),
@@ -2161,7 +2172,7 @@ class _MembersTab extends ConsumerWidget {
                     padding: const EdgeInsets.all(AppSpacing.md),
                     child: AppSection(
                       title: '活動成員',
-                      description: '點選其他成員可查看聯絡方式、個人資料與安全操作。',
+                      description: '每個人的想說的話都顯示在卡片上；點選卡片可查看更多資料。',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2406,15 +2417,17 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
         widget.activityStatus == ACTIVITY_STATUS.ONGOING;
 
     return AppCard(
-      onTap: isSelf ? null : () => setState(() => _expanded = !_expanded),
+      onTap: isSelf
+          ? () => showAppSheet<void>(
+              context,
+              builder: (context) => _ProfileCardSheet(member: member),
+            )
+          : () => setState(() => _expanded = !_expanded),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 反饋：「見面提示我怎麼沒看到別人的更新」——原本只在展開卡片後才顯示
-          // 一行小字，且對方不設定就完全看不到「這功能存在」的痕跡。改成不用
-          // 展開就看得到、貼在頭像旁邊的漫畫講話框，非本人且有填才顯示。
-          if (!isSelf &&
-              member.meetingHint != null &&
+          // 見面提示（「想說的話」）對本人與其他成員都可見。
+          if (member.meetingHint != null &&
               member.meetingHint!.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(left: 8, bottom: 2),
@@ -2432,12 +2445,10 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
               // null）。
               InkWell(
                 borderRadius: BorderRadius.circular(24),
-                onTap: isSelf
-                    ? null
-                    : () => showAppSheet<void>(
-                        context,
-                        builder: (context) => _ProfileCardSheet(member: member),
-                      ),
+                onTap: () => showAppSheet<void>(
+                  context,
+                  builder: (context) => _ProfileCardSheet(member: member),
+                ),
                 child: CircleAvatar(
                   radius: 22,
                   backgroundImage: member.avatarUrl.isEmpty
@@ -2457,6 +2468,11 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                       isSelf ? '${member.displayName}（你）' : member.displayName,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
+                    if (isSelf)
+                      Text(
+                        '你的想說的話：${member.meetingHint?.isNotEmpty == true ? member.meetingHint : '尚未填寫'}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     Text(
                       '${schoolLabel(member.school)} · ${member.department ?? '未填科系'} · ${_degreeLabel(member.degreeLevel)}',
                       style: Theme.of(context).textTheme.bodySmall,
@@ -3026,9 +3042,9 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
           Text(
             '檢舉類別',
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Wrap(

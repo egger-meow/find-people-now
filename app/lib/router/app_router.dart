@@ -12,6 +12,7 @@ import '../auth/otp_login_screen.dart';
 import '../match/create_request_screen.dart';
 import '../match/match_providers.dart';
 import '../match/waiting_room_screen.dart';
+import '../match/invite_friends_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../onboarding/help_screen.dart';
 import '../profile/edit_profile_screen.dart';
@@ -79,16 +80,23 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/login', builder: (context, state) => const OtpLoginScreen()),
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const OtpLoginScreen(),
+      ),
       GoRoute(
         path: '/complete-profile',
         builder: (context, state) => const CompleteProfileScreen(),
       ),
       GoRoute(
         path: '/waiting-room/:requestId',
-        builder: (context, state) => WaitingRoomScreen(
-          requestId: state.pathParameters['requestId']!,
-        ),
+        builder: (context, state) =>
+            WaitingRoomScreen(requestId: state.pathParameters['requestId']!),
+      ),
+      GoRoute(
+        path: '/invite-friends/:requestId',
+        builder: (context, state) =>
+            InviteFriendsScreen(requestId: state.pathParameters['requestId']!),
       ),
       GoRoute(
         path: '/activity/:activityId',
@@ -96,23 +104,50 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           activityId: state.pathParameters['activityId']!,
         ),
       ),
-      GoRoute(path: '/profile/edit', builder: (context, state) => const EditProfileScreen()),
-      GoRoute(path: '/profile/feedback', builder: (context, state) => const FeedbackScreen()),
+      GoRoute(
+        path: '/profile/edit',
+        builder: (context, state) => const EditProfileScreen(),
+      ),
+      GoRoute(
+        path: '/profile/feedback',
+        builder: (context, state) => const FeedbackScreen(),
+      ),
       GoRoute(path: '/help', builder: (context, state) => const HelpScreen()),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) => AppShell(navigationShell: navigationShell),
+        builder: (context, state, navigationShell) =>
+            AppShell(navigationShell: navigationShell),
         branches: [
           StatefulShellBranch(
-            routes: [GoRoute(path: '/match', builder: (context, state) => const CreateRequestScreen())],
+            routes: [
+              GoRoute(
+                path: '/match',
+                builder: (context, state) => const CreateRequestScreen(),
+              ),
+            ],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/my-activities', builder: (context, state) => const MyActivitiesScreen())],
+            routes: [
+              GoRoute(
+                path: '/my-activities',
+                builder: (context, state) => const MyActivitiesScreen(),
+              ),
+            ],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen())],
+            routes: [
+              GoRoute(
+                path: '/notifications',
+                builder: (context, state) => const NotificationsScreen(),
+              ),
+            ],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen())],
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+            ],
           ),
         ],
       ),

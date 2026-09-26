@@ -20,6 +20,7 @@ import 'package:find_people_now/match/widgets/pinned_active_status_card.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/campus_demand_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
+import 'package:find_people_now/widgets/app_button.dart';
 
 final _testUser = AppUser(
   id: 'user-home-1',
@@ -167,10 +168,8 @@ List<Override> _overrides({
   myAppUserProvider.overrideWith((ref) async => _testUser),
   campusOptionsProvider.overrideWith((ref, school) async => ['光復', '博愛']),
   myReliabilityProvider.overrideWith(
-    (ref) async => MyReliability(
-      tier: ReliabilityTier.normal,
-      isNewUser: false,
-    ),
+    (ref) async =>
+        MyReliability(tier: ReliabilityTier.normal, isNewUser: false),
   ),
   campusDemandsProvider.overrideWith(
     (ref, key) => Stream.value(demands ?? [_testDemand]),
@@ -197,10 +196,7 @@ Widget _buildHome({
   if (router != null) {
     return ProviderScope(
       overrides: overrides,
-      child: MaterialApp.router(
-        theme: AppTheme.light,
-        routerConfig: router,
-      ),
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     );
   }
 
@@ -254,7 +250,9 @@ void main() {
       campus: '光復',
     );
 
-    await tester.pumpWidget(_buildHome(gateway: gateway, activeRequest: activeRequest));
+    await tester.pumpWidget(
+      _buildHome(gateway: gateway, activeRequest: activeRequest),
+    );
     await tester.pumpAndSettle();
 
     // 置頂狀態卡顯示
@@ -297,7 +295,9 @@ void main() {
       campus: '光復',
     );
 
-    await tester.pumpWidget(_buildHome(gateway: gateway, activeActivity: activeActivity));
+    await tester.pumpWidget(
+      _buildHome(gateway: gateway, activeActivity: activeActivity),
+    );
     await tester.pumpAndSettle();
 
     // 置頂狀態卡顯示活動中
@@ -340,7 +340,9 @@ void main() {
     expect(find.text('8–10 級'), findsWidgets);
   });
 
-  testWidgets('場景 5：點擊需求卡「以相容條件加入配對」，直接呼叫 gateway.create 與 submit 建立配對並導航', (tester) async {
+  testWidgets('場景 5：點擊需求卡「以相容條件加入配對」，直接呼叫 gateway.create 與 submit 建立配對並導航', (
+    tester,
+  ) async {
     final gateway = _TestSubmissionGateway();
     final router = GoRouter(
       initialLocation: '/',
@@ -370,7 +372,6 @@ void main() {
     // 點擊「以相容條件加入配對」
     await tester.tap(find.text('以相容條件加入配對'));
     await tester.pumpAndSettle();
-
 
     // 驗證 gateway 呼叫
     expect(gateway.calls, ['create', 'submit']);
@@ -407,11 +408,9 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(_buildHome(
-      gateway: gateway,
-      router: router,
-      now: () => currentNow,
-    ));
+    await tester.pumpWidget(
+      _buildHome(gateway: gateway, router: router, now: () => currentNow),
+    );
     await tester.pumpAndSettle();
 
     // 點擊需求卡彈出 Sheet
@@ -434,10 +433,9 @@ void main() {
     // 需求區間：18:00–20:00，當前時間：20:30（已完全過期）
     final expiredNow = DateTime(2026, 9, 16, 20, 30);
 
-    await tester.pumpWidget(_buildHome(
-      gateway: gateway,
-      now: () => expiredNow,
-    ));
+    await tester.pumpWidget(
+      _buildHome(gateway: gateway, now: () => expiredNow),
+    );
     await tester.pumpAndSettle();
 
     // 點擊需求卡彈出 Sheet
@@ -448,10 +446,54 @@ void main() {
     await tester.tap(find.text('以相容條件加入配對'));
     await tester.pumpAndSettle();
 
-
     // 驗證未呼叫 gateway 且出現錯誤提示
     expect(gateway.calls, isEmpty);
     expect(find.textContaining('此需求的時間區間已過期，無法加入'), findsOneWidget);
   });
-}
 
+  testWidgets('先邀請朋友只建立草稿，進等待室前才送出', (tester) async {
+    final gateway = _TestSubmissionGateway();
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => CreateRequestScreen(
+            submissionGateway: gateway,
+            now: () => _fixedNow,
+          ),
+        ),
+        GoRoute(
+          path: '/invite-friends/:id',
+          builder: (context, state) =>
+              Scaffold(body: Text('邀請朋友：${state.pathParameters['id']}')),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_buildHome(gateway: gateway, router: router));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CampusDemandCardWidget));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('調整條件後發起'));
+    await tester.pumpAndSettle();
+
+    final inviteSwitch = find.widgetWithText(SwitchListTile, '先邀請朋友加入');
+    await tester.scrollUntilVisible(
+      inviteSwitch,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(inviteSwitch);
+    await tester.pumpAndSettle();
+    final submit = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, '下一步：邀請朋友'),
+    );
+    submit.onPressed!();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('確認送出'));
+    await tester.pumpAndSettle();
+
+    expect(gateway.calls, ['create']);
+    expect(find.text('邀請朋友：req-new-123'), findsOneWidget);
+  });
+}

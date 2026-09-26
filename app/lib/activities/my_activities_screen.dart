@@ -19,7 +19,7 @@ import 'my_activities_providers.dart';
 import 'pending_confirmation_card.dart';
 
 String _requestStatusLabel(REQUEST_STATUS status) => switch (status) {
-  REQUEST_STATUS.DRAFT => '草稿',
+  REQUEST_STATUS.DRAFT => '邀請朋友中',
   REQUEST_STATUS.REQUESTING => '等待配對中',
   REQUEST_STATUS.PENDING_CONFIRMATION => '小人數確認中',
   REQUEST_STATUS.MATCHED => '已成團',
@@ -418,6 +418,7 @@ class _ActivityListEntry extends StatelessWidget {
     if (item.kind == MyActivityKind.request) {
       final request = item.request!;
       switch (request.status) {
+        case REQUEST_STATUS.DRAFT:
         case REQUEST_STATUS.REQUESTING:
           return _ActivityRow(
             icon: activityTypeIcon(typeName),
@@ -429,7 +430,11 @@ class _ActivityListEntry extends StatelessWidget {
             campusLabel: '${schoolLabel(request.school)} ${request.campus}',
             statusLabel: _requestStatusLabel(request.status),
             tone: _CardTone.active,
-            onTap: () => context.push('/waiting-room/${request.id}'),
+            onTap: () => context.push(
+              request.status == REQUEST_STATUS.DRAFT
+                  ? '/invite-friends/${request.id}'
+                  : '/waiting-room/${request.id}',
+            ),
           );
         case REQUEST_STATUS.PENDING_CONFIRMATION:
           return PendingConfirmationCard(requestId: request.id);
@@ -446,7 +451,6 @@ class _ActivityListEntry extends StatelessWidget {
             statusLabel: _requestStatusLabel(request.status),
             tone: _CardTone.muted,
           );
-        case REQUEST_STATUS.DRAFT:
         case REQUEST_STATUS.MATCHED:
           // 不應出現：myMatchRequestsProvider 的查詢已排除這兩個狀態。
           return const SizedBox.shrink();

@@ -9,8 +9,10 @@ import 'package:find_people_now/activities/pending_confirmation_card.dart';
 import 'package:find_people_now/auth/auth_providers.dart';
 import 'package:find_people_now/generated/activity_type.dart';
 import 'package:find_people_now/generated/match_request.dart';
+import 'package:find_people_now/generated/request_member.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/match/match_providers.dart';
+import 'package:find_people_now/match/invite_friends_screen.dart';
 import 'package:find_people_now/match/waiting_room_screen.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/confirmation_rpc.dart';
@@ -221,35 +223,36 @@ void main() {
     },
   );
 
-  testWidgets('waiting room production actions keep copy and leave for members without unauthorized revoke', (
-    tester,
-  ) async {
-    var copied = 0;
-    var left = 0;
-    await tester.pumpWidget(
-      _host(
-        WaitingRoomActionSections(
-          inviteToken: 'invite-token-123',
-          busy: false,
-          isOwner: false,
-          onGenerate: () {},
-          onCopy: () => copied++,
-          onRevoke: () {},
-          onManage: () => left++,
+  testWidgets(
+    'waiting room production actions keep copy and leave for members without unauthorized revoke',
+    (tester) async {
+      var copied = 0;
+      var left = 0;
+      await tester.pumpWidget(
+        _host(
+          WaitingRoomActionSections(
+            inviteToken: 'invite-token-123',
+            busy: false,
+            isOwner: false,
+            onGenerate: () {},
+            onCopy: () => copied++,
+            onRevoke: () {},
+            onManage: () => left++,
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('invite-token-123'), findsOneWidget);
-    expect(find.text('複製邀請碼'), findsOneWidget);
-    expect(find.text('撤銷'), findsNothing);
-    expect(find.text('退出房間'), findsOneWidget);
-    await tester.tap(find.widgetWithText(OutlinedButton, '複製邀請碼'));
-    await tester.tap(find.widgetWithText(OutlinedButton, '退出房間'));
-    expect(copied, 1);
-    expect(left, 1);
-  });
+      expect(find.text('invite-token-123'), findsOneWidget);
+      expect(find.text('複製邀請碼'), findsOneWidget);
+      expect(find.text('撤銷'), findsNothing);
+      expect(find.text('退出房間'), findsOneWidget);
+      await tester.tap(find.widgetWithText(OutlinedButton, '複製邀請碼'));
+      await tester.tap(find.widgetWithText(OutlinedButton, '退出房間'));
+      expect(copied, 1);
+      expect(left, 1);
+    },
+  );
 
   testWidgets(
     'pending confirmation buttons are 44pt and single-flight while busy',
@@ -309,4 +312,89 @@ void main() {
       expect(rejects, 1);
     },
   );
+
+  testWidgets('an accepted two-person confirmation cannot be submitted again', (
+    tester,
+  ) async {
+    var repeated = 0;
+    await tester.pumpWidget(
+      _host(
+        PendingConfirmationStatusView(
+          status: PendingConfirmationStatus(
+            pendingConfirmationId: 'pending-accepted',
+            status: PENDING_CONFIRMATION_STATUS.PENDING,
+            confirmWindowExpireAt: DateTime.now().add(
+              const Duration(minutes: 5),
+            ),
+            hasConfirmed: true,
+          ),
+          candidate: _candidate(),
+          busy: false,
+          onConfirm: () async => repeated++,
+          onReject: () async {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('已同意，等待對方確認'), findsOneWidget);
+    expect(find.text('已確認參加'), findsOneWidget);
+    final button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(button.onPressed, isNull);
+    expect(repeated, 0);
+  });
+
+  testWidgets('invited friend waits outside matching until owner confirms', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final draft = MatchRequest(
+      id: 'draft-invite',
+      ownerId: 'owner',
+      activityTypeId: 'running',
+      earliestStart: now,
+      latestStart: now.add(const Duration(hours: 1)),
+      flexibleMinutes: 15,
+      minParticipants: 3,
+      maxParticipants: 4,
+      allowDowngrade: false,
+      status: REQUEST_STATUS.DRAFT,
+      createdAt: now,
+      inviteToken: 'invite-123',
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
+    final members = [
+      for (final id in ['owner', 'friend'])
+        RequestMember(
+          id: id,
+          requestId: draft.id,
+          userId: id,
+          role: id == 'owner'
+              ? REQUEST_MEMBER_ROLE.OWNER
+              : REQUEST_MEMBER_ROLE.MEMBER,
+          status: REQUEST_MEMBER_STATUS.JOINED,
+          createdAt: now,
+        ),
+    ];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          matchRequestStreamProvider(
+            draft.id,
+          ).overrideWith((ref) => Stream.value(draft)),
+          requestMembersStreamProvider(
+            draft.id,
+          ).overrideWith((ref) => Stream.value(members)),
+          currentUserIdProvider.overrideWith((ref) => 'friend'),
+        ],
+        child: MaterialApp(home: InviteFriendsScreen(requestId: draft.id)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('目前 2 人（含發起人）'), findsOneWidget);
+    expect(find.text('等待發起人確認人都進來後開始配對。'), findsOneWidget);
+    expect(find.text('人都進來了，開始配對'), findsNothing);
+  });
 }

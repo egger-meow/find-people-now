@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../auth/auth_providers.dart';
 import '../data/school_labels.dart';
@@ -78,8 +81,10 @@ class _PendingConfirmationCardState
   PendingConfirmationStatus? _status;
   PendingConfirmationCandidateInfo? _candidate;
   bool _loading = true;
+  bool _refreshing = false;
   bool _busy = false;
   bool _decisionDialogOpen = false;
+  Timer? _refreshTimer;
   String? _error;
   final _responseGuard = PendingConfirmationActionGuard();
 
@@ -87,24 +92,43 @@ class _PendingConfirmationCardState
   void initState() {
     super.initState();
     _load();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted &&
+          !_loading &&
+          !_busy &&
+          _status?.status == PENDING_CONFIRMATION_STATUS.PENDING) {
+        _load(silent: true);
+      }
+    });
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (_refreshing) return;
+    _refreshing = true;
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final client = ref.read(supabaseClientProvider);
     try {
       final status = await getPendingConfirmationStatus(
         client,
         widget.requestId,
       );
-      PendingConfirmationCandidateInfo? candidate;
+      PendingConfirmationCandidateInfo? candidate = _candidate;
       // 對稱不歸因原則（SPEC §12.1.2）只保留在「誰確認/誰拒絕」這件事上——
       // 只要還在 PENDING，雙方都有權看到對方的安全資訊卡；狀態離開 PENDING
       // 之後不再需要，也不再顯示。
-      if (status.status == PENDING_CONFIRMATION_STATUS.PENDING) {
+      if (status.status == PENDING_CONFIRMATION_STATUS.PENDING &&
+          candidate == null) {
         candidate = await getPendingConfirmationCandidateInfo(
           client,
           status.pendingConfirmationId,
@@ -116,12 +140,19 @@ class _PendingConfirmationCardState
         _candidate = candidate;
         _loading = false;
       });
+      if (status.status == PENDING_CONFIRMATION_STATUS.CONFIRMED) {
+        invalidateMyActivityList(ref);
+        ref.invalidate(myActiveActivityProvider);
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
+      if (silent) return;
       setState(() {
         _error = userErrorMessage(e);
         _loading = false;
       });
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -158,6 +189,33 @@ class _PendingConfirmationCardState
     });
   }
 
+  Future<void> _openConfirmedActivity() async {
+    final userId = ref.read(currentUserIdProvider);
+    if (userId == null) return;
+    try {
+      final row = await ref
+          .read(supabaseClientProvider)
+          .from('activity_member')
+          .select('activity_id')
+          .eq('source_request_id', widget.requestId)
+          .eq('user_id', userId)
+          .maybeSingle();
+      if (!mounted) return;
+      invalidateMyActivityList(ref);
+      ref.invalidate(myActiveActivityProvider);
+      final activityId = row?['activity_id'];
+      if (activityId is String) {
+        context.push('/activity/$activityId');
+        return;
+      }
+    } catch (_) {
+      if (!mounted) return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('活動正在同步，請稍後再試一次')));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -173,6 +231,20 @@ class _PendingConfirmationCardState
     }
 
     final status = _status!;
+    if (status.status == PENDING_CONFIRMATION_STATUS.CONFIRMED) {
+      return AppStatusSummary(
+        title: '配對已成立',
+        message: '雙方已確認，活動已建立。請前往活動查看成員與集合資訊。',
+        leading: Icon(
+          Icons.check_circle_outline,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        action: SizedBox(
+          width: double.infinity,
+          child: AppButton(label: '進入活動', onPressed: _openConfirmedActivity),
+        ),
+      );
+    }
     if (status.status != PENDING_CONFIRMATION_STATUS.PENDING) {
       // SPEC §12.1.2 不歸因原則：不透露是誰、超時還是拒絕。
       return AppStatusSummary(
@@ -195,7 +267,7 @@ class _PendingConfirmationCardState
       candidate: candidate,
       busy: _busy || _decisionDialogOpen,
       error: _error,
-      onConfirm: () => _respond(true),
+      onConfirm: status.hasConfirmed ? () async {} : () => _respond(true),
       onReject: () async {
         if (_busy || _decisionDialogOpen) return;
         setState(() => _decisionDialogOpen = true);
@@ -265,6 +337,7 @@ class _PendingConfirmationStatusViewState
     final status = widget.status;
     final candidate = widget.candidate;
     final busy = widget.busy || _locallyBusy;
+    final hasConfirmed = status.hasConfirmed;
     final deadline = status.confirmWindowExpireAt.toLocal();
     final deadlineLabel =
         '${deadline.month}/${deadline.day} '
@@ -275,8 +348,10 @@ class _PendingConfirmationStatusViewState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppStatusSummary(
-          title: PendingConfirmationCopy.title,
-          message: PendingConfirmationCopy.message,
+          title: hasConfirmed ? '已同意，等待對方確認' : PendingConfirmationCopy.title,
+          message: hasConfirmed
+              ? '你已確認參加。對方完成確認後，活動會出現在「我的活動」。'
+              : PendingConfirmationCopy.message,
           leading: Icon(
             Icons.verified_user_outlined,
             color: Theme.of(context).colorScheme.primary,
@@ -352,9 +427,13 @@ class _PendingConfirmationStatusViewState
                 width: double.infinity,
                 height: pendingConfirmationMinimumActionExtent,
                 child: AppButton(
-                  label: PendingConfirmationCopy.confirm,
+                  label: hasConfirmed
+                      ? '已確認參加'
+                      : PendingConfirmationCopy.confirm,
                   loading: busy,
-                  onPressed: busy ? null : () => _run(widget.onConfirm),
+                  onPressed: busy || hasConfirmed
+                      ? null
+                      : () => _run(widget.onConfirm),
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),

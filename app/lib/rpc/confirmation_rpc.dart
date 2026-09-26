@@ -9,11 +9,13 @@ class PendingConfirmationStatus {
   final String pendingConfirmationId;
   final PENDING_CONFIRMATION_STATUS status;
   final DateTime confirmWindowExpireAt;
+  final bool hasConfirmed;
 
   PendingConfirmationStatus({
     required this.pendingConfirmationId,
     required this.status,
     required this.confirmWindowExpireAt,
+    this.hasConfirmed = false,
   });
 }
 
@@ -46,6 +48,7 @@ Future<PendingConfirmationStatus> getPendingConfirmationStatus(
         confirmWindowExpireAt: DateTime.parse(
           json['confirm_window_expire_at'] as String,
         ),
+        hasConfirmed: json['own_response'] == 'CONFIRMED',
       );
     },
   );

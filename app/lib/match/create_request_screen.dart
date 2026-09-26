@@ -12,7 +12,7 @@ import '../generated/activity.dart';
 import '../generated/activity_type.dart';
 import '../generated/app_user.dart';
 import '../generated/match_request.dart';
-import '../generated/supadart_header.dart' show SCHOOL;
+import '../generated/supadart_header.dart' show SCHOOL, REQUEST_STATUS;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/alert_subscription_rpc.dart';
 import '../rpc/api_exception.dart';
@@ -196,7 +196,13 @@ class CreateRequestScreen extends ConsumerWidget {
         );
         if (!dialogContext.mounted) return;
         Navigator.of(dialogContext).pop(true);
-        if (context.mounted) context.push('/waiting-room/${request.id}');
+        if (context.mounted) {
+          context.push(
+            request.status == REQUEST_STATUS.DRAFT
+                ? '/invite-friends/${request.id}'
+                : '/waiting-room/${request.id}',
+          );
+        }
       } on ApiException catch (e) {
         final message = switch (e.code) {
           ApiErrorCode.inviteLinkExpired => '邀請碼不存在或已失效，請向朋友要一個新的',
@@ -585,6 +591,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   int? _selectedMinHeadcount;
   int? _selectedMaxHeadcount;
   bool _allowDowngrade = false;
+  bool _inviteFriendsBeforeMatching = false;
   bool _submitting = false;
   bool _confirming = false;
   String? _error;
@@ -817,7 +824,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     return (earliest, latest.isAfter(cap) ? cap : latest);
   }
 
-  Future<void> _submit(_RequestSubmissionSnapshot snapshot) async {
+  Future<void> _submit(
+    _RequestSubmissionSnapshot snapshot, {
+    bool inviteFriends = false,
+  }) async {
     if (_submitting) return;
     setState(() {
       _submitting = true;
@@ -877,7 +887,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         sportLevelRating: snapshot.sportLevelRating,
         studyTarget: snapshot.studyTarget,
       );
-      await submission.submit(request.id);
+      if (!inviteFriends) await submission.submit(request.id);
       // The request now exists and is submitted. Invalidate immediately, even
       // if this screen was removed while create was in flight, so another
       // consumer cannot keep serving the pre-submit null cache.
@@ -895,7 +905,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         } catch (_) {}
       }
       if (!mounted) return;
-      context.push('/waiting-room/${request.id}');
+      context.push(
+        inviteFriends
+            ? '/invite-friends/${request.id}'
+            : '/waiting-room/${request.id}',
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = userErrorMessage(e));
@@ -1136,7 +1150,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     } finally {
       if (mounted) setState(() => _confirming = false);
     }
-    if (confirmed && mounted) await _submit(snapshot);
+    if (confirmed && mounted) {
+      await _submit(snapshot, inviteFriends: _inviteFriendsBeforeMatching);
+    }
   }
 
   /// 反饋：現有活動類型只有官方預設的固定清單可選，使用者想新增卻找不到入口
@@ -1247,7 +1263,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         activity: activeActivity,
                         onOpenWaitingRoom: activeRequest != null
                             ? () => context.push(
-                                '/waiting-room/${activeRequest.id}',
+                                activeRequest.status == REQUEST_STATUS.DRAFT
+                                    ? '/invite-friends/${activeRequest.id}'
+                                    : '/waiting-room/${activeRequest.id}',
                               )
                             : null,
                         onOpenActivity: activeActivity != null
@@ -1937,8 +1955,27 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     const SizedBox(height: AppSpacing.md),
                     _FormCardSection(
                       stepNumber: 6,
+                      title: '邀請朋友',
+                      description: '如果要先揪朋友，會先建立邀請，等人到齊才開始自動配對。',
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _inviteFriendsBeforeMatching,
+                          onChanged: (value) => setState(
+                            () => _inviteFriendsBeforeMatching = value,
+                          ),
+                          title: const Text('先邀請朋友加入'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _FormCardSection(
+                      stepNumber: 7,
                       title: '送出前確認',
-                      description: '請確認目前選擇；送出後會開始尋找符合條件的人。',
+                      description: _inviteFriendsBeforeMatching
+                          ? '確認後先取得邀請碼；人到齊後再開始配對。'
+                          : '請確認目前選擇；送出後會開始尋找符合條件的人。',
                       child: AppSelectionSummary(
                         items: _selectionSummaryItems(window),
                       ),
@@ -1987,7 +2024,11 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                         AppButton(
                           label: hasActiveState
                               ? (activeRequest != null ? '前往等待室' : '查看活動')
-                              : (isCooldown ? '配對冷卻中，暫時無法送出' : '送出，開始找人'),
+                              : (isCooldown
+                                    ? '配對冷卻中，暫時無法送出'
+                                    : (_inviteFriendsBeforeMatching
+                                          ? '下一步：邀請朋友'
+                                          : '送出，開始找人')),
                           loading: isActiveLoading || _submitting,
                           onPressed:
                               isActiveLoading || _submitting || _confirming
@@ -1995,7 +2036,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                               : hasActiveState
                               ? (activeRequest != null
                                     ? () => context.push(
-                                        '/waiting-room/${activeRequest.id}',
+                                        activeRequest.status ==
+                                                REQUEST_STATUS.DRAFT
+                                            ? '/invite-friends/${activeRequest.id}'
+                                            : '/waiting-room/${activeRequest.id}',
                                       )
                                     : () => context.push(
                                         '/activity/${activeActivity!.id}',

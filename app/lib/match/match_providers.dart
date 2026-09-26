@@ -10,7 +10,8 @@ import '../generated/activity_type.dart';
 import '../generated/app_user.dart';
 import '../generated/match_request.dart';
 import '../generated/request_member.dart';
-import '../generated/supadart_header.dart' show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
+import '../generated/supadart_header.dart'
+    show ACTIVITY_STATUS, REQUEST_STATUS, SCHOOL;
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/auth_profile_rpc.dart';
 import '../rpc/campus_demand_rpc.dart';
@@ -24,7 +25,11 @@ final hasProfileProvider = FutureProvider<bool>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return false;
   final client = ref.watch(supabaseClientProvider);
-  final row = await client.from('app_user').select('id').eq('id', userId).maybeSingle();
+  final row = await client
+      .from('app_user')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
   return row != null;
 });
 
@@ -39,7 +44,11 @@ final myAppUserProvider = FutureProvider<AppUser?>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return null;
   final client = ref.watch(supabaseClientProvider);
-  final row = await client.from('app_user').select().eq('id', userId).maybeSingle();
+  final row = await client
+      .from('app_user')
+      .select()
+      .eq('id', userId)
+      .maybeSingle();
   return row == null ? null : AppUser.fromJson(row);
 });
 
@@ -52,27 +61,28 @@ final myAppUserProvider = FutureProvider<AppUser?>((ref) async {
 /// 之間取中間值，不是精確調校過的數字。
 final campusPulseProvider =
     StreamProvider.family<List<CampusPulseEntry>, (SCHOOL, String)>((ref, key) {
-  final (school, campus) = key;
-  final client = ref.watch(supabaseClientProvider);
-  Future<List<CampusPulseEntry>> fetch() => getCampusPulse(client, school: school, campus: campus);
+      final (school, campus) = key;
+      final client = ref.watch(supabaseClientProvider);
+      Future<List<CampusPulseEntry>> fetch() =>
+          getCampusPulse(client, school: school, campus: campus);
 
-  late final StreamController<List<CampusPulseEntry>> controller;
-  Timer? timer;
-  controller = StreamController<List<CampusPulseEntry>>(
-    onListen: () {
-      fetch().then(controller.add).catchError(controller.addError);
-      timer = Timer.periodic(const Duration(seconds: 30), (_) {
-        fetch().then(controller.add).catchError(controller.addError);
+      late final StreamController<List<CampusPulseEntry>> controller;
+      Timer? timer;
+      controller = StreamController<List<CampusPulseEntry>>(
+        onListen: () {
+          fetch().then(controller.add).catchError(controller.addError);
+          timer = Timer.periodic(const Duration(seconds: 30), (_) {
+            fetch().then(controller.add).catchError(controller.addError);
+          });
+        },
+        onCancel: () => timer?.cancel(),
+      );
+      ref.onDispose(() {
+        timer?.cancel();
+        controller.close();
       });
-    },
-    onCancel: () => timer?.cancel(),
-  );
-  ref.onDispose(() {
-    timer?.cancel();
-    controller.close();
-  });
-  return controller.stream;
-});
+      return controller.stream;
+    });
 
 /// 使用者目前選定的校區（null 代表尚未手動變更，fallback 優先使用
 /// app_user.default_campus 或 campusOptions.first）。
@@ -85,7 +95,9 @@ class SelectedCampusNotifier extends Notifier<String?> {
 }
 
 final selectedCampusProvider =
-    NotifierProvider<SelectedCampusNotifier, String?>(SelectedCampusNotifier.new);
+    NotifierProvider<SelectedCampusNotifier, String?>(
+      SelectedCampusNotifier.new,
+    );
 
 /// 首頁需求卡的時間篩選器（全部/現在/今天/明天）
 class SelectedTimeFilterNotifier extends Notifier<DemandTimeFilter> {
@@ -113,60 +125,72 @@ final campusDemandsLastUpdatedProvider =
       CampusDemandsLastUpdatedNotifier.new,
     );
 
-typedef CampusDemandsFetcher = Future<List<CampusDemandCard>> Function({
-  required SupabaseClient client,
-  required SCHOOL school,
-  required String campus,
-});
+typedef CampusDemandsFetcher =
+    Future<List<CampusDemandCard>> Function({
+      required SupabaseClient client,
+      required SCHOOL school,
+      required String campus,
+    });
 
 final campusDemandsFetcherProvider = Provider<CampusDemandsFetcher>(
-  (ref) => ({required client, required school, required campus}) =>
-      getCampusDemands(client, school: school, campus: campus),
+  (ref) =>
+      ({required client, required school, required campus}) =>
+          getCampusDemands(client, school: school, campus: campus),
 );
 
 /// 匿名活動需求卡（v1.43）——首頁核心決策介面的資料流：
 /// 採 30 秒輪詢機制，每次刷新成功即更新 [campusDemandsLastUpdatedProvider]。
-final campusDemandsProvider = StreamProvider.family<List<CampusDemandCard>, (SCHOOL, String)>((ref, key) {
-  final (school, campus) = key;
-  final client = ref.watch(supabaseClientProvider);
-  final fetcher = ref.watch(campusDemandsFetcherProvider);
-  Future<List<CampusDemandCard>> fetch() async {
-    final results = await fetcher(client: client, school: school, campus: campus);
-    ref.read(campusDemandsLastUpdatedProvider.notifier).setTimestamp(DateTime.now());
-    return results;
-  }
+final campusDemandsProvider =
+    StreamProvider.family<List<CampusDemandCard>, (SCHOOL, String)>((ref, key) {
+      final (school, campus) = key;
+      final client = ref.watch(supabaseClientProvider);
+      final fetcher = ref.watch(campusDemandsFetcherProvider);
+      Future<List<CampusDemandCard>> fetch() async {
+        final results = await fetcher(
+          client: client,
+          school: school,
+          campus: campus,
+        );
+        ref
+            .read(campusDemandsLastUpdatedProvider.notifier)
+            .setTimestamp(DateTime.now());
+        return results;
+      }
 
-  late final StreamController<List<CampusDemandCard>> controller;
-  Timer? timer;
-  controller = StreamController<List<CampusDemandCard>>(
-    onListen: () {
-      fetch().then(controller.add).catchError(controller.addError);
-      timer = Timer.periodic(const Duration(seconds: 30), (_) {
-        fetch().then(controller.add).catchError(controller.addError);
+      late final StreamController<List<CampusDemandCard>> controller;
+      Timer? timer;
+      controller = StreamController<List<CampusDemandCard>>(
+        onListen: () {
+          fetch().then(controller.add).catchError(controller.addError);
+          timer = Timer.periodic(const Duration(seconds: 30), (_) {
+            fetch().then(controller.add).catchError(controller.addError);
+          });
+        },
+        onCancel: () => timer?.cancel(),
+      );
+      ref.onDispose(() {
+        timer?.cancel();
+        controller.close();
       });
-    },
-    onCancel: () => timer?.cancel(),
-  );
-  ref.onDispose(() {
-    timer?.cancel();
-    controller.close();
-  });
-  return controller.stream;
-});
+      return controller.stream;
+    });
 
 /// Alert Subscription（v1.27）——自己目前仍有效（`expires_at > now()`）的
 /// 訂閱清單，給 `create_request_screen.dart` 顯示「你正在等的通知」+ 取消
 /// 入口。RLS 本身已限定只回自己的列，這裡另外加 `expires_at` 篩選純粹是
 /// 不想把已過期、不再有意義的舊列顯示出來（表本身不清，見
 /// `activity_alert_subscription` schema 遷移檔的既有慣例說明）。
-final myActiveAlertSubscriptionsProvider = FutureProvider<List<ActivityAlertSubscription>>((ref) async {
-  final client = ref.watch(supabaseClientProvider);
-  final rows = await client
-      .from('activity_alert_subscription')
-      .select()
-      .gt('expires_at', DateTime.now().toUtc().toIso8601String());
-  return ActivityAlertSubscription.converter(rows.cast<Map<String, dynamic>>());
-});
+final myActiveAlertSubscriptionsProvider =
+    FutureProvider<List<ActivityAlertSubscription>>((ref) async {
+      final client = ref.watch(supabaseClientProvider);
+      final rows = await client
+          .from('activity_alert_subscription')
+          .select()
+          .gt('expires_at', DateTime.now().toUtc().toIso8601String());
+      return ActivityAlertSubscription.converter(
+        rows.cast<Map<String, dynamic>>(),
+      );
+    });
 
 /// UI_PLAN.md §2.1 步驟 3 — 從該校已核准地點反查 distinct campus。
 ///
@@ -178,7 +202,10 @@ final myActiveAlertSubscriptionsProvider = FutureProvider<List<ActivityAlertSubs
 /// create_request_screen 在使用者還沒有 `default_campus` 時的 fallback）——純字母
 /// 序在 NTHU 會把地點數只有 1 筆的新校區「南大」排到有 9 筆地點的主校區「校本部」
 /// 前面，語意上不合理。
-final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((ref, school) async {
+final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((
+  ref,
+  school,
+) async {
   final client = ref.watch(supabaseClientProvider);
   final rows = await client
       .from('location')
@@ -228,12 +255,24 @@ final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
   if (userId == null) return null;
   final client = ref.watch(supabaseClientProvider);
   final rows = await client
-      .from('match_request')
-      .select()
-      .eq('owner_id', userId)
-      .inFilter('status', ['REQUESTING', 'PENDING_CONFIRMATION']);
+      .from('request_member')
+      .select('request:request_id(*)')
+      .eq('user_id', userId)
+      .eq('status', 'JOINED');
   if (rows.isEmpty) return null;
-  return decodeMatchRequest(rows.first);
+  final requests = rows
+      .map((row) => row['request'])
+      .whereType<Map<String, dynamic>>()
+      .map(decodeMatchRequest)
+      .toList();
+  final active = requests
+      .where(
+        (r) =>
+            r.status == REQUEST_STATUS.REQUESTING ||
+            r.status == REQUEST_STATUS.PENDING_CONFIRMATION,
+      )
+      .firstOrNull;
+  return active ?? requests.where((r) => r.inviteToken != null).firstOrNull;
 });
 
 /// 「現在是否有進行中的活動」（`MATCHED`/`ONGOING`）——直接鏡射
@@ -256,7 +295,11 @@ final myActiveActivityProvider = FutureProvider<Activity?>((ref) async {
       .map((r) => r['activity'])
       .whereType<Map<String, dynamic>>()
       .map(Activity.fromJson)
-      .where((a) => a.status == ACTIVITY_STATUS.MATCHED || a.status == ACTIVITY_STATUS.ONGOING)
+      .where(
+        (a) =>
+            a.status == ACTIVITY_STATUS.MATCHED ||
+            a.status == ACTIVITY_STATUS.ONGOING,
+      )
       .toList();
   if (activities.isEmpty) return null;
   activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -265,14 +308,16 @@ final myActiveActivityProvider = FutureProvider<Activity?>((ref) async {
 
 /// UI_PLAN.md §3 技術要求 — Realtime 訂閱單一 Request 的狀態變化，取代靜態
 /// 載入/手動刷新。`request_member` 為家族 (family)：等待室以外的畫面不需要它。
-final matchRequestStreamProvider = StreamProvider.family<MatchRequest?, String>((ref, requestId) {
-  final client = ref.watch(supabaseClientProvider);
-  return client
-      .from('match_request')
-      .stream(primaryKey: ['id'])
-      .eq('id', requestId)
-      .map((rows) => rows.isEmpty ? null : decodeMatchRequest(rows.first));
-});
+final matchRequestStreamProvider = StreamProvider.family<MatchRequest?, String>(
+  (ref, requestId) {
+    final client = ref.watch(supabaseClientProvider);
+    return client
+        .from('match_request')
+        .stream(primaryKey: ['id'])
+        .eq('id', requestId)
+        .map((rows) => rows.isEmpty ? null : decodeMatchRequest(rows.first));
+  },
+);
 
 /// 等待室成員頭像列（UI_PLAN §3）背後的資料——即時反應人數變化。
 ///
@@ -283,32 +328,41 @@ final matchRequestStreamProvider = StreamProvider.family<MatchRequest?, String>(
 /// 真的重複。比較可能是 `.stream()` 在初始快照與 realtime 事件交錯時，客戶端
 /// 曾經短暫拿到同一列兩次——這裡直接防禦性去重，不管實際觸發時機為何都能
 /// 保證畫面上每個成員只出現一次。
-final requestMembersStreamProvider = StreamProvider.family<List<RequestMember>, String>((ref, requestId) {
-  final client = ref.watch(supabaseClientProvider);
-  return client
-      .from('request_member')
-      .stream(primaryKey: ['id'])
-      .eq('request_id', requestId)
-      .map((rows) {
-        final byId = <String, RequestMember>{};
-        for (final row in rows) {
-          final member = RequestMember.fromJson(row);
-          byId[member.id] = member;
-        }
-        return byId.values.toList();
-      });
-});
+final requestMembersStreamProvider =
+    StreamProvider.family<List<RequestMember>, String>((ref, requestId) {
+      final client = ref.watch(supabaseClientProvider);
+      return client
+          .from('request_member')
+          .stream(primaryKey: ['id'])
+          .eq('request_id', requestId)
+          .map((rows) {
+            final byId = <String, RequestMember>{};
+            for (final row in rows) {
+              final member = RequestMember.fromJson(row);
+              byId[member.id] = member;
+            }
+            return byId.values.toList();
+          });
+    });
 
 /// 等待室需要顯示該 Request 對應的活動類型名稱（反饋：房間資訊太少）。
 /// `activity_type` 表的 RLS 已經有公開 SELECT（status='APPROVED'），直接用
 /// PostgREST 查即可。
-final activityTypeByIdProvider = FutureProvider.family<ActivityType?, String>((ref, typeId) async {
+final activityTypeByIdProvider = FutureProvider.family<ActivityType?, String>((
+  ref,
+  typeId,
+) async {
   final client = ref.watch(supabaseClientProvider);
-  final row = await client.from('activity_type').select().eq('id', typeId).maybeSingle();
+  final row = await client
+      .from('activity_type')
+      .select()
+      .eq('id', typeId)
+      .maybeSingle();
   return row == null ? null : ActivityType.fromJson(row);
 });
 
 /// REQUESTING 以後（PENDING_CONFIRMATION／MATCHED／ONGOING）不再是等待室的
 /// 狀態——等待室畫面看到這些值就該依 UI_PLAN §4 導去對應畫面（本輪只做
 /// REQUESTING 這一段，其餘狀態先顯示過渡訊息，見 waiting_room_screen.dart）。
-bool isTerminalForWaitingRoom(REQUEST_STATUS status) => status != REQUEST_STATUS.REQUESTING;
+bool isTerminalForWaitingRoom(REQUEST_STATUS status) =>
+    status != REQUEST_STATUS.REQUESTING;

@@ -242,6 +242,24 @@ void main() {
   });
 
   group('Activity Arrival Check-in UX', () {
+    testWidgets('shows my own meeting hint in the members tab', (tester) async {
+      await tester.pumpWidget(
+        createSubject(
+          activity: testActivity,
+          ownReport: null,
+          roster: [myMember.copyWithMeetingHint('我會穿紅外套')],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('想說的話請到「成員與聯絡」查看'), findsOneWidget);
+
+      await tester.tap(find.text('成員與聯絡'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('小明（你）'), 250);
+      expect(find.text('你的想說的話：我會穿紅外套'), findsOneWidget);
+      expect(find.text('我會穿紅外套'), findsOneWidget);
+    });
+
     testWidgets('shows check-in button in top arrival section when not yet arrived', (tester) async {
       await tester.pumpWidget(
         createSubject(

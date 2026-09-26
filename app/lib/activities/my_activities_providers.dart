@@ -18,17 +18,18 @@ class MyActivityListItem {
   final Activity? activity;
 
   const MyActivityListItem.request(this.request)
-      : kind = MyActivityKind.request,
-        activity = null;
+    : kind = MyActivityKind.request,
+      activity = null;
 
   const MyActivityListItem.activity(this.activity)
-      : kind = MyActivityKind.activity,
-        request = null;
+    : kind = MyActivityKind.activity,
+      request = null;
 
   String get id => kind == MyActivityKind.request ? request!.id : activity!.id;
 
-  String get activityTypeId =>
-      kind == MyActivityKind.request ? request!.activityTypeId : activity!.activityTypeId;
+  String get activityTypeId => kind == MyActivityKind.request
+      ? request!.activityTypeId
+      : activity!.activityTypeId;
 
   DateTime get sortKey =>
       kind == MyActivityKind.request ? request!.createdAt : activity!.createdAt;
@@ -36,7 +37,8 @@ class MyActivityListItem {
   /// 進行中 vs 已結束 兩個分頁（UI_PLAN §4 表格）的分類依據。
   bool get isOngoing {
     if (kind == MyActivityKind.request) {
-      return request!.status == REQUEST_STATUS.REQUESTING ||
+      return request!.status == REQUEST_STATUS.DRAFT ||
+          request!.status == REQUEST_STATUS.REQUESTING ||
           request!.status == REQUEST_STATUS.PENDING_CONFIRMATION;
     }
     return activity!.status == ACTIVITY_STATUS.MATCHED ||
@@ -63,14 +65,20 @@ final myMatchRequestsProvider = FutureProvider<List<MatchRequest>>((ref) async {
   final rows = await client.from('match_request').select().inFilter('status', [
     'REQUESTING',
     'PENDING_CONFIRMATION',
+    'DRAFT',
   ]);
-  return rows.map(decodeMatchRequest).toList();
+  return rows
+      .map(decodeMatchRequest)
+      .where((r) => r.status != REQUEST_STATUS.DRAFT || r.inviteToken != null)
+      .toList();
 });
 
 /// 來源 2：`activity`，透過 `activity_member` embed 查「我是成員的活動」
 /// （`my_activities_select`/`my_activity_members_select` RLS，經
 /// `fn_is_activity_member` helper 修過遞迴，見 SPEC v1.11.1）。
-final myActivitiesFromActivityTableProvider = FutureProvider<List<Activity>>((ref) async {
+final myActivitiesFromActivityTableProvider = FutureProvider<List<Activity>>((
+  ref,
+) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
   final client = ref.watch(supabaseClientProvider);
@@ -87,9 +95,13 @@ final myActivitiesFromActivityTableProvider = FutureProvider<List<Activity>>((re
 
 /// 合併兩個來源、依 `createdAt` 新到舊排序——畫面依 [MyActivityListItem.isOngoing]
 /// 分兩個分頁顯示（UI_PLAN §4）。
-final myActivityListProvider = FutureProvider<List<MyActivityListItem>>((ref) async {
+final myActivityListProvider = FutureProvider<List<MyActivityListItem>>((
+  ref,
+) async {
   final requests = await ref.watch(myMatchRequestsProvider.future);
-  final activities = await ref.watch(myActivitiesFromActivityTableProvider.future);
+  final activities = await ref.watch(
+    myActivitiesFromActivityTableProvider.future,
+  );
   final items = [
     for (final r in requests) MyActivityListItem.request(r),
     for (final a in activities) MyActivityListItem.activity(a),

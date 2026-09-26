@@ -38,16 +38,21 @@ class PinnedActiveStatusCard extends StatelessWidget {
     final textTheme = theme.textTheme;
 
     final isActivity = activity != null;
-    final title = isActivity ? '你目前有進行中的活動' : '你正在配對中';
+    final isInviting = request?.status == REQUEST_STATUS.DRAFT;
+    final title = isActivity
+        ? '你目前有進行中的活動'
+        : (isInviting ? '朋友邀請還沒完成' : '你正在配對中');
     final statusLabel = isActivity
-        ? (activity!.status == ACTIVITY_STATUS.ONGOING
-            ? '活動進行中'
-            : '已成團，等待出發')
-        : (request!.status == REQUEST_STATUS.PENDING_CONFIRMATION
-            ? '小人數確認中'
-            : '等待配對中');
+        ? (activity!.status == ACTIVITY_STATUS.ONGOING ? '活動進行中' : '已成團，等待出發')
+        : (isInviting
+              ? '邀請朋友中，尚未開始配對'
+              : (request!.status == REQUEST_STATUS.PENDING_CONFIRMATION
+                    ? '小人數確認中'
+                    : '等待配對中'));
 
-    final actionLabel = isActivity ? '前往活動房間' : '前往等待室';
+    final actionLabel = isActivity
+        ? '前往活動房間'
+        : (isInviting ? '繼續邀請朋友' : '前往等待室');
     final onAction = isActivity ? onOpenActivity : onOpenWaitingRoom;
     final icon = isActivity
         ? Icons.celebration_rounded
@@ -67,11 +72,7 @@ class PinnedActiveStatusCard extends StatelessWidget {
                     color: scheme.primaryContainer,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    icon,
-                    size: 20,
-                    color: scheme.onPrimaryContainer,
-                  ),
+                  child: Icon(icon, size: 20, color: scheme.onPrimaryContainer),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
@@ -86,7 +87,7 @@ class PinnedActiveStatusCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '狀態：$statusLabel · 已為你保留名額',
+                        '狀態：$statusLabel${isInviting ? '' : ' · 已為你保留名額'}',
                         style: textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,7 +20,6 @@ import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_error_state.dart';
 import '../widgets/app_section.dart';
-import '../widgets/app_snack_bar.dart';
 import '../widgets/app_status_summary.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
@@ -46,10 +44,8 @@ class WaitingRoomScreen extends ConsumerStatefulWidget {
 }
 
 class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
-  String? _inviteToken;
   bool _busy = false;
   String? _error;
-  bool _autoFetchInviteAttempted = false;
 
   @override
   Widget build(BuildContext context) {
@@ -65,16 +61,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       (previous, next) {
         final req = next.value;
         if (req != null) {
-          // 當收到跨裝置撤銷推播（revokedAt 被設定）時，立即清空本地快取的 invite token
-          if (req.revokedAt != null && _inviteToken != null) {
-            setState(() => _inviteToken = null);
-          }
           final status = req.status;
           if (isTerminalForWaitingRoom(status)) {
-            if (_inviteToken != null) {
-              setState(() => _inviteToken = null);
-            }
-            _autoFetchInviteAttempted = false;
             ref.invalidate(myActiveRequestProvider);
             ref.invalidate(myActiveActivityProvider);
             invalidateMyActivityList(ref);
@@ -138,24 +126,6 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   (m) =>
                       m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
-                final isRevoked = request.revokedAt != null;
-                if (isRevoked && _inviteToken != null) {
-                  _inviteToken = null;
-                }
-                final effectiveInviteToken =
-                    isRevoked ? null : (_inviteToken ?? request.inviteToken);
-
-                if (isOwner &&
-                    !isRevoked &&
-                    effectiveInviteToken == null &&
-                    !_busy &&
-                    !_autoFetchInviteAttempted) {
-                  _autoFetchInviteAttempted = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _getOrCreateInviteLink(request.id);
-                  });
-                }
-
                 final statusContent = waitingRoomStatusContent(request.status);
                 return RefreshIndicator(
                   onRefresh: () async {
@@ -175,7 +145,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         title: statusContent.title,
                         message: statusContent.message,
                         leading: const MatchingPulse(),
-                        deadline: '配對截止：${_formatDeadline(request.latestStart)}',
+                        deadline:
+                            '配對截止：${_formatDeadline(request.latestStart)}',
                         action: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -191,7 +162,9 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                                   expiredLabel: '正在確認配對結果',
                                   onExpired: () {
                                     ref.invalidate(
-                                      matchRequestStreamProvider(widget.requestId),
+                                      matchRequestStreamProvider(
+                                        widget.requestId,
+                                      ),
                                     );
                                   },
                                 ),
@@ -217,36 +190,13 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                       ],
-                      WaitingRoomActionSections(
-                        inviteToken: effectiveInviteToken,
-                        busy: _busy,
-                        isOwner: isOwner,
-                        isRevoked: isRevoked,
-                        onGenerate: () => _getOrCreateInviteLink(request.id),
-                        onCopy: () async {
-                          if (effectiveInviteToken == null) return;
-                          await Clipboard.setData(
-                            ClipboardData(text: effectiveInviteToken),
-                          );
-                          if (context.mounted) {
-                            showAppSnackBar(context, '已複製邀請碼');
-                          }
-                        },
-                        onShare: () async {
-                          if (effectiveInviteToken == null) return;
-                          final shareText =
-                              '來跟我一起參加配對！我的邀請碼是：$effectiveInviteToken';
-                          await Clipboard.setData(
-                            ClipboardData(text: shareText),
-                          );
-                          if (context.mounted) {
-                            showAppSnackBar(context, '已複製邀請訊息，可直接貼給朋友');
-                          }
-                        },
-                        onRevoke: () => _revokeInviteLink(request.id),
-                        onManage: () => isOwner
-                            ? _cancelRequest(request.id)
-                            : _leaveRequest(request.id),
+                      OutlinedButton(
+                        onPressed: _busy
+                            ? null
+                            : () => isOwner
+                                  ? _cancelRequest(request.id)
+                                  : _leaveRequest(request.id),
+                        child: Text(isOwner ? '取消整個配對' : '退出配對'),
                       ),
                     ],
                   ),
@@ -257,47 +207,6 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _getOrCreateInviteLink(String requestId) async {
-    if (_busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final client = ref.read(supabaseClientProvider);
-      final token = await getOrCreateInviteLink(
-        client,
-        requestId,
-      );
-      if (!mounted) return;
-      setState(() => _inviteToken = token);
-      ref.invalidate(matchRequestStreamProvider(requestId));
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _error = userErrorMessage(e));
-    } catch (_) {
-      // 網路或未初始化環境防護，不讓等待室崩潰
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _revokeInviteLink(String requestId) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await revokeInviteLink(ref.read(supabaseClientProvider), requestId);
-      if (!mounted) return;
-      setState(() => _inviteToken = null);
-      ref.invalidate(matchRequestStreamProvider(requestId));
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _error = userErrorMessage(e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   Future<void> _leaveRequest(String requestId) async {
@@ -472,9 +381,7 @@ class WaitingRoomActionSections extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(
-                      color: scheme.outlineVariant,
-                    ),
+                    border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Row(
                     children: [
@@ -505,8 +412,9 @@ class WaitingRoomActionSections extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final textScale =
-                        MediaQuery.textScalerOf(context).scale(1.0);
+                    final textScale = MediaQuery.textScalerOf(
+                      context,
+                    ).scale(1.0);
                     // 當可用寬度小於 330 或字級放大超過 1.15 時，自動轉為垂直堆疊以確保無障礙 Dynamic Type 不破版
                     final isNarrowOrLargeFont =
                         constraints.maxWidth < 330 || textScale > 1.15;
@@ -653,9 +561,7 @@ class WaitingRoomActionSections extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         Center(
           child: Text(
-            isOwner
-                ? '此操作無冷卻限制且不影響信譽評分'
-                : '無冷卻限制且不影響信譽評分',
+            isOwner ? '此操作無冷卻限制且不影響信譽評分' : '無冷卻限制且不影響信譽評分',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
