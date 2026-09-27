@@ -14,6 +14,9 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: fallback)));
 
     expect(find.text(userSafeUnexpectedErrorMessage), findsOneWidget);
+    expect(find.text('出了點問題'), findsOneWidget);
+    final mascot = tester.widget<Image>(find.byType(Image));
+    expect((mascot.image as AssetImage).assetName, 'assets/mascot/error_06.png');
     expect(find.textContaining(technicalMessage), findsNothing);
     expect(find.textContaining('StateError'), findsNothing);
   });

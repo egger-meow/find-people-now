@@ -7,6 +7,7 @@ import '../../theme/app_haptics.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/app_error_state.dart';
 import '../../widgets/skeleton.dart';
 import '../match_providers.dart';
 import 'aggregated_demands_sheet.dart';
@@ -234,43 +235,13 @@ class CampusDemandsSection extends ConsumerWidget {
             ],
           )
         else if (demandsAsync.hasError)
-          AppCard(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Row(
-                children: [
-                  Icon(Icons.cloud_off_rounded, color: scheme.error, size: 28),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '暫時無法取得校園揪團動態',
-                          style: textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '請檢查網路連線或稍後再試',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      AppHaptics.tap();
-                      ref.invalidate(campusDemandsProvider((school, campus)));
-                    },
-                    child: const Text('重試'),
-                  ),
-                ],
-              ),
-            ),
+          AppErrorState(
+            message: '暫時無法取得校園揪團動態',
+            retryLabel: '重試',
+            onRetry: () {
+              AppHaptics.tap();
+              ref.invalidate(campusDemandsProvider((school, campus)));
+            },
           )
         else
           demandsAsync.when(

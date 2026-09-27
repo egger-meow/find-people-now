@@ -75,6 +75,7 @@ flutter:
   assets:
     - .env
     - assets/mascot/
+    - assets/mascot/error_06.png
     - assets/mascot/tutorial/
 
   # An image asset can refer to one or more resolution-specific "variants", see

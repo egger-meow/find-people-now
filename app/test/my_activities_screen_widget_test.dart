@@ -384,7 +384,8 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      expect(find.byIcon(Icons.cloud_off_rounded), findsWidgets);
+      expect(find.text('出了點問題'), findsWidgets);
+      expect(find.text('活動清單暫時載入不到，請再試一次'), findsWidgets);
       expect(tester.takeException(), isNull);
     },
   );

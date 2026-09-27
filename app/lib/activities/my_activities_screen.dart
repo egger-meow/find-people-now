@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../theme/platform_adaptive.dart';
 import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_error_state.dart';
 import '../widgets/app_section.dart';
 import '../widgets/app_status_summary.dart';
 import '../widgets/skeleton.dart';
@@ -371,34 +372,10 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.cloud_off_rounded,
-              size: 40,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              '載入不到活動清單\n檢查一下網路，再試一次',
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: 220,
-              child: AppButton(label: '重新載入', onPressed: onRetry),
-            ),
-          ],
-        ),
-      ),
+    return AppErrorState(
+      message: '活動清單暫時載入不到，請再試一次',
+      retryLabel: '重新載入',
+      onRetry: onRetry,
     );
   }
 }

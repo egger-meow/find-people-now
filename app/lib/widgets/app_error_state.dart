@@ -10,10 +10,12 @@ class AppErrorState extends StatelessWidget {
     super.key,
     this.message = userSafeUnexpectedErrorMessage,
     this.onRetry,
+    this.retryLabel = '再試一次',
   });
 
   final String message;
   final VoidCallback? onRetry;
+  final String retryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -24,16 +26,22 @@ class AppErrorState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.sentiment_dissatisfied_rounded,
-                color: Theme.of(context).colorScheme.primary,
-                size: 32,
+              Text(
+                '出了點問題',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Image.asset(
+                'assets/mascot/error_06.png',
+                height: 88,
+                fit: BoxFit.contain,
+                semanticLabel: '眼冒金星的街街貓',
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(message, textAlign: TextAlign.center),
               if (onRetry != null) ...[
                 const SizedBox(height: AppSpacing.md),
-                AppButton(label: '再試一次', onPressed: onRetry),
+                AppButton(label: retryLabel, onPressed: onRetry),
               ],
             ],
           ),
