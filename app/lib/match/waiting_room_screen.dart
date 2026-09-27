@@ -141,6 +141,17 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(AppSpacing.lg),
                     children: [
+                      if (request.status == REQUEST_STATUS.REQUESTING) ...[
+                        Semantics(
+                          label: '街街貓正在幫你找夥伴',
+                          child: Image.asset(
+                            'assets/mascot/matching.png',
+                            height: 116,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
                       AppStatusSummary(
                         title: statusContent.title,
                         message: statusContent.message,
@@ -861,10 +872,20 @@ class _TransitionedState extends StatelessWidget {
         child: AppStatusSummary(
           title: content.title,
           message: content.message,
-          leading: Icon(
-            content.icon,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+          leading: status == REQUEST_STATUS.MATCHED
+              ? Semantics(
+                  label: '街街貓慶祝配對成功',
+                  child: Image.asset(
+                    'assets/mascot/matched.png',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.contain,
+                  ),
+                )
+              : Icon(
+                  content.icon,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
           action: SizedBox(
             width: double.infinity,
             child: AppButton(

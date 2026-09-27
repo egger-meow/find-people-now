@@ -106,11 +106,7 @@ class CampusDemandsSection extends ConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.explore_outlined,
-                  size: 22,
-                  color: scheme.primary,
-                ),
+                Icon(Icons.explore_outlined, size: 22, color: scheme.primary),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
                   '校園即時揪團動態',
@@ -131,7 +127,9 @@ class CampusDemandsSection extends ConsumerWidget {
                     vertical: AppSpacing.xs,
                   ),
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    color: scheme.surfaceContainerHighest.withValues(
+                      alpha: 0.6,
+                    ),
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                     border: Border.all(
                       color: scheme.outlineVariant.withValues(alpha: 0.5),
@@ -175,9 +173,7 @@ class CampusDemandsSection extends ConsumerWidget {
         const SizedBox(height: AppSpacing.xs),
         Text(
           '先找到一起做的事，再認識一起做的人。',
-          style: textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
+          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: AppSpacing.sm),
 
@@ -190,11 +186,7 @@ class CampusDemandsSection extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: AppSpacing.xs),
                   child: ChoiceChip(
-                    label: Text(
-                      filter.label,
-                      softWrap: false,
-                      maxLines: 1,
-                    ),
+                    label: Text(filter.label, softWrap: false, maxLines: 1),
                     selected: activeFilter == filter,
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.sm,
@@ -247,11 +239,7 @@ class CampusDemandsSection extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.cloud_off_rounded,
-                    color: scheme.error,
-                    size: 28,
-                  ),
+                  Icon(Icons.cloud_off_rounded, color: scheme.error, size: 28),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Column(
@@ -329,10 +317,13 @@ class CampusDemandsSection extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.explore_outlined,
-                size: 40,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+              Semantics(
+                label: '街街貓正在找活動',
+                child: Image.asset(
+                  'assets/mascot/explore_empty.png',
+                  height: 104,
+                  fit: BoxFit.contain,
+                ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
@@ -368,7 +359,10 @@ class CampusDemandsSection extends ConsumerWidget {
                     child: const Text('自己揪一個'),
                   ),
                   TextButton.icon(
-                    icon: const Icon(Icons.notifications_active_outlined, size: 16),
+                    icon: const Icon(
+                      Icons.notifications_active_outlined,
+                      size: 16,
+                    ),
                     label: const Text('設定時效提醒'),
                     onPressed: () {
                       AppHaptics.selection();
@@ -414,16 +408,16 @@ class CampusDemandsSection extends ConsumerWidget {
             )
           else
             AggregatedDemandCardWidget(
+              group: group,
+              activeFilter: activeFilter,
+              relativeNow: relativeNow,
+              onTap: () => showAggregatedDemandsSheet(
+                context,
                 group: group,
-                activeFilter: activeFilter,
+                onSelectDemand: onSelectDemand,
                 relativeNow: relativeNow,
-                onTap: () => showAggregatedDemandsSheet(
-                  context,
-                  group: group,
-                  onSelectDemand: onSelectDemand,
-                  relativeNow: relativeNow,
-                ),
               ),
+            ),
       ],
     );
   }

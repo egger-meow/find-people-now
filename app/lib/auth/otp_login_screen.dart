@@ -167,10 +167,13 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  Icons.groups_2_rounded,
-                  size: 56,
-                  color: Theme.of(context).colorScheme.primary,
+                Semantics(
+                  label: '街街貓歡迎你來敢不敢揪',
+                  child: Image.asset(
+                    'assets/mascot/login.png',
+                    height: 150,
+                    fit: BoxFit.contain,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(

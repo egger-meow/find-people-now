@@ -750,7 +750,15 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 40, color: scheme.onSurfaceVariant),
+            if (ctaLabel != null)
+              Image.asset(
+                'assets/mascot/explore_empty.png',
+                height: 112,
+                fit: BoxFit.contain,
+                semanticLabel: '街街貓邀請你探索活動',
+              )
+            else
+              Icon(icon, size: 40, color: scheme.onSurfaceVariant),
             const SizedBox(height: AppSpacing.md),
             Text(
               message,
