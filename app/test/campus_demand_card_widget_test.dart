@@ -41,9 +41,9 @@ void main() {
     expect(find.textContaining('18:00'), findsOneWidget);
     expect(find.text('光復校區'), findsOneWidget);
     expect(find.textContaining('2 人在找球友'), findsOneWidget);
-    expect(find.text('查看詳情'), findsOneWidget);
+    expect(find.text('看看條件'), findsOneWidget);
 
-    await tester.tap(find.text('查看詳情'));
+    await tester.tap(find.text('看看條件'));
     expect(tapped, isTrue);
   });
 

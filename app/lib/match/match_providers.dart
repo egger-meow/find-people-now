@@ -145,6 +145,7 @@ final campusDemandsProvider =
       final (school, campus) = key;
       final client = ref.watch(supabaseClientProvider);
       final fetcher = ref.watch(campusDemandsFetcherProvider);
+
       Future<List<CampusDemandCard>> fetch() async {
         final results = await fetcher(
           client: client,
@@ -174,6 +175,174 @@ final campusDemandsProvider =
       });
       return controller.stream;
     });
+
+/// 未登入訪客探索選定的學校（預設為陽明交大 NYCU）
+class GuestSelectedSchoolNotifier extends Notifier<SCHOOL> {
+  @override
+  SCHOOL build() => SCHOOL.NYCU;
+
+  void setSchool(SCHOOL school) => state = school;
+}
+
+final guestSelectedSchoolProvider =
+    NotifierProvider<GuestSelectedSchoolNotifier, SCHOOL>(
+      GuestSelectedSchoolNotifier.new,
+    );
+
+/// 未登入訪客探索選定的校區（null 代表依學校預設第一校區）
+class GuestSelectedCampusNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setCampus(String? campus) => state = campus;
+}
+
+final guestSelectedCampusProvider =
+    NotifierProvider<GuestSelectedCampusNotifier, String?>(
+      GuestSelectedCampusNotifier.new,
+    );
+
+typedef PublicCampusDemandsFetcher =
+    Future<PublicCampusDemandsResult> Function({
+      required SupabaseClient client,
+      required SCHOOL school,
+      String? campus,
+    });
+
+final publicCampusDemandsFetcherProvider = Provider<PublicCampusDemandsFetcher>(
+  (ref) =>
+      ({required client, required school, campus}) =>
+          getPublicCampusDemands(client, school: school, campus: campus),
+);
+
+final publicCampusDemandsProvider =
+    FutureProvider.family<PublicCampusDemandsResult, (SCHOOL, String?)>((
+      ref,
+      key,
+    ) async {
+      final (school, campus) = key;
+      try {
+        final client = ref.watch(supabaseClientProvider);
+        final fetcher = ref.watch(publicCampusDemandsFetcherProvider);
+        final result = await fetcher(
+          client: client,
+          school: school,
+          campus: campus,
+        );
+        ref
+            .read(campusDemandsLastUpdatedProvider.notifier)
+            .setTimestamp(DateTime.now());
+        return result;
+      } catch (_) {
+        return const PublicCampusDemandsResult(
+          demands: [],
+          campuses: [],
+          hasSuppressedDemands: false,
+        );
+      }
+    });
+
+/// 使用者在未登入或探索時點選「我也想去」所暫存的活動參與意圖
+class PendingDemandJoinIntent {
+  final String activityTypeId;
+  final String activityTypeName;
+  final SCHOOL school;
+  final String campus;
+  final DateTime earliestStart;
+  final DateTime latestStart;
+  final String? sportLevel;
+  final int? sportLevelRating;
+  final String? studyTarget;
+  final int minParticipants;
+  final int? maxParticipants;
+  final DateTime capturedAt;
+
+  const PendingDemandJoinIntent({
+    required this.activityTypeId,
+    required this.activityTypeName,
+    required this.school,
+    required this.campus,
+    required this.earliestStart,
+    required this.latestStart,
+    this.sportLevel,
+    this.sportLevelRating,
+    this.studyTarget,
+    required this.minParticipants,
+    this.maxParticipants,
+    required this.capturedAt,
+  });
+
+  factory PendingDemandJoinIntent.fromDemand({
+    required CampusDemandCard demand,
+    required SCHOOL school,
+    DateTime? capturedAt,
+  }) {
+    return PendingDemandJoinIntent(
+      activityTypeId: demand.activityTypeId,
+      activityTypeName: demand.activityTypeName,
+      school: school,
+      campus: demand.campus,
+      earliestStart: demand.earliestStart,
+      latestStart: demand.latestStart,
+      sportLevel: demand.sportLevel,
+      sportLevelRating: demand.sportLevelRating,
+      studyTarget: demand.studyTarget,
+      minParticipants: demand.minParticipants,
+      maxParticipants: demand.maxParticipants,
+      capturedAt: capturedAt ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'activity_type_id': activityTypeId,
+    'activity_type_name': activityTypeName,
+    'school': school.name,
+    'campus': campus,
+    'earliest_start': earliestStart.toIso8601String(),
+    'latest_start': latestStart.toIso8601String(),
+    'sport_level': sportLevel,
+    'sport_level_rating': sportLevelRating,
+    'study_target': studyTarget,
+    'min_participants': minParticipants,
+    'max_participants': maxParticipants,
+    'captured_at': capturedAt.toIso8601String(),
+  };
+
+  factory PendingDemandJoinIntent.fromJson(Map<String, dynamic> json) =>
+      PendingDemandJoinIntent(
+        activityTypeId: json['activity_type_id'] as String,
+        activityTypeName: json['activity_type_name'] as String,
+        school: SCHOOL.values.byName(json['school'] as String),
+        campus: json['campus'] as String,
+        earliestStart: DateTime.parse(json['earliest_start'] as String).toLocal(),
+        latestStart: DateTime.parse(json['latest_start'] as String).toLocal(),
+        sportLevel: json['sport_level'] as String?,
+        sportLevelRating: json['sport_level_rating'] as int?,
+        studyTarget: json['study_target'] as String?,
+        minParticipants: json['min_participants'] as int,
+        maxParticipants: (json['max_participants'] as num?)?.toInt(),
+        capturedAt: DateTime.parse(json['captured_at'] as String).toLocal(),
+      );
+
+  bool isExpired([DateTime? relativeTo]) {
+    final now = relativeTo ?? DateTime.now();
+    return !now.isBefore(latestStart);
+  }
+}
+
+class PendingDemandJoinIntentNotifier extends Notifier<PendingDemandJoinIntent?> {
+  @override
+  PendingDemandJoinIntent? build() => null;
+
+  void setIntent(PendingDemandJoinIntent? intent) => state = intent;
+  void clear() => state = null;
+  void clearIntent() => clear();
+}
+
+final pendingDemandJoinIntentProvider =
+    NotifierProvider<PendingDemandJoinIntentNotifier, PendingDemandJoinIntent?>(
+      PendingDemandJoinIntentNotifier.new,
+    );
 
 /// Alert Subscription（v1.27）——自己目前仍有效（`expires_at > now()`）的
 /// 訂閱清單，給 `create_request_screen.dart` 顯示「你正在等的通知」+ 取消
@@ -206,6 +375,20 @@ final campusOptionsProvider = FutureProvider.family<List<String>, SCHOOL>((
   ref,
   school,
 ) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) {
+    try {
+      final publicResult = await ref.watch(
+        publicCampusDemandsProvider((school, null)).future,
+      );
+      if (publicResult.campuses.isNotEmpty) {
+        return publicResult.campuses;
+      }
+    } catch (_) {}
+    return school == SCHOOL.NYCU
+        ? const ['光復', '博愛']
+        : const ['校本部', '南大'];
+  }
   final client = ref.watch(supabaseClientProvider);
   final rows = await client
       .from('location')

@@ -58,18 +58,21 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refreshNotifier.dispose);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/match',
     refreshListenable: refreshNotifier,
     redirect: (context, state) async {
       final session = ref.read(supabaseClientProvider).auth.currentSession;
-      final loggingIn = state.matchedLocation == '/login';
+      final location = state.matchedLocation;
+      final loggingIn = location == '/login';
+      final isPublicRoute =
+          location == '/match' || location == '/login' || location == '/help';
 
       if (session == null) {
-        return loggingIn ? null : '/login';
+        return isPublicRoute ? null : '/login';
       }
 
       final hasProfile = await ref.read(hasProfileProvider.future);
-      final onProfileGate = state.matchedLocation == '/complete-profile';
+      final onProfileGate = location == '/complete-profile';
       if (!hasProfile) {
         return onProfileGate ? null : '/complete-profile';
       }

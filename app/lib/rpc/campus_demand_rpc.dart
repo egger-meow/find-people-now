@@ -26,6 +26,8 @@ class CampusDemandCard {
   final int? maxParticipants;
   final int personCount;
   final int requestCount;
+  final int formedGroupCount;
+  final int formedPersonCount;
 
   const CampusDemandCard({
     required this.activityTypeId,
@@ -40,9 +42,18 @@ class CampusDemandCard {
     this.maxParticipants,
     required this.personCount,
     required this.requestCount,
+    this.formedGroupCount = 0,
+    this.formedPersonCount = 0,
   });
 
   factory CampusDemandCard.fromJson(Map<String, dynamic> json) {
+    final waitingPerson = (json['waiting_person_count'] as int?) ??
+        (json['person_count'] as int? ?? 0);
+    final waitingRequest = (json['waiting_request_count'] as int?) ??
+        (json['request_count'] as int? ?? 0);
+    final formedGroup = (json['formed_group_count'] as int?) ?? 0;
+    final formedPerson = (json['formed_person_count'] as int?) ?? 0;
+
     return CampusDemandCard(
       activityTypeId: json['activity_type_id'] as String,
       activityTypeName: json['activity_type_name'] as String,
@@ -54,8 +65,10 @@ class CampusDemandCard {
       studyTarget: json['study_target'] as String?,
       minParticipants: json['min_participants'] as int,
       maxParticipants: (json['max_participants'] as num?)?.toInt(),
-      personCount: json['person_count'] as int,
-      requestCount: json['request_count'] as int,
+      personCount: waitingPerson,
+      requestCount: waitingRequest,
+      formedGroupCount: formedGroup,
+      formedPersonCount: formedPerson,
     );
   }
 
@@ -126,7 +139,7 @@ class CampusDemandCard {
     return '$datePrefix$bucketName ${_formatTime(earliestStart)}–$endFormatted 可開始';
   }
 
-  String get honestSignalText {
+  String get waitingSignalText {
     final isBallSport = ['羽球', '籃球', '網球', '桌球', '排球'].contains(activityTypeName);
     final role = isBallSport ? '球友' : (activityTypeName == '讀書' ? '讀書夥伴' : '夥伴');
 
@@ -134,6 +147,24 @@ class CampusDemandCard {
       return '這個時段有 $personCount 人在找$role（共 $requestCount 組需求等待相容）';
     }
     return '這個時段有 $personCount 人在找$role';
+  }
+
+  String get formedSignalText {
+    if (formedPersonCount > 0) {
+      if (formedGroupCount > 1) {
+        return '今日已成團 $formedPersonCount 人（$formedGroupCount 組）';
+      }
+      return '今日已成團 $formedPersonCount 人';
+    }
+    return '今日尚無已成團';
+  }
+
+  String get honestSignalText {
+    final waiting = waitingSignalText;
+    if (formedPersonCount > 0) {
+      return '$waiting · $formedSignalText';
+    }
+    return '$waiting · 成團依條件撮合';
   }
 
   String get headcountRangeLabel =>
@@ -187,6 +218,55 @@ Future<List<CampusDemandCard>> getCampusDemands(
         .cast<Map<String, dynamic>>()
         .map(CampusDemandCard.fromJson)
         .toList(),
+  );
+}
+
+/// 匿名公開探索活動需求結果物件
+class PublicCampusDemandsResult {
+  final List<CampusDemandCard> demands;
+  final List<String> campuses;
+  final bool hasSuppressedDemands;
+
+  const PublicCampusDemandsResult({
+    required this.demands,
+    required this.campuses,
+    required this.hasSuppressedDemands,
+  });
+
+  factory PublicCampusDemandsResult.fromJson(Map<String, dynamic> json) {
+    final demandsList = (json['demands'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(CampusDemandCard.fromJson)
+        .toList();
+    final campusesList = (json['campuses'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList();
+    final hasSuppressed = json['has_suppressed_demands'] as bool? ?? false;
+
+    return PublicCampusDemandsResult(
+      demands: demandsList,
+      campuses: campusesList,
+      hasSuppressedDemands: hasSuppressed,
+    );
+  }
+}
+
+/// 未登入訪客專用粗粒度、唯讀探索 RPC：`rpc: get_public_campus_demands(school, campus)`
+Future<PublicCampusDemandsResult> getPublicCampusDemands(
+  SupabaseClient client, {
+  required SCHOOL school,
+  String? campus,
+}) {
+  return callRpc<PublicCampusDemandsResult>(
+    client,
+    'get_public_campus_demands',
+    params: {
+      'p_school': school.name,
+      if (campus != null && campus.isNotEmpty) 'p_campus': campus,
+    },
+    decode: (data) => PublicCampusDemandsResult.fromJson(
+      data as Map<String, dynamic>,
+    ),
   );
 }
 

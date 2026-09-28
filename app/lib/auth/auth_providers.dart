@@ -17,9 +17,13 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
 
 /// Convenience derived provider: the current user id, or null when signed out.
 final currentUserIdProvider = Provider<String?>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  // .value covers the synchronous initial read; the stream above is what
-  // actually triggers rebuilds/redirects on change.
-  ref.watch(authStateProvider);
-  return client.auth.currentUser?.id;
+  try {
+    final client = ref.watch(supabaseClientProvider);
+    // .value covers the synchronous initial read; the stream above is what
+    // actually triggers rebuilds/redirects on change.
+    ref.watch(authStateProvider);
+    return client.auth.currentUser?.id;
+  } catch (_) {
+    return null;
+  }
 });

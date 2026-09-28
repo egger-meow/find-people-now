@@ -183,16 +183,20 @@ class CampusDemandCardWidget extends StatelessWidget {
                       horizontal: AppSpacing.sm,
                       vertical: AppSpacing.xs,
                     ),
-                    minimumSize: const Size(44, 36),
+                    minimumSize: const Size(64, 44),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('查看詳情'),
-                      SizedBox(width: 2),
-                      Icon(Icons.chevron_right_rounded, size: 16),
-                    ],
+                  child: Semantics(
+                    label: '看看${demand.activityTypeName}條件',
+                    button: true,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('看看條件'),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded, size: 16),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -377,16 +381,20 @@ class AggregatedDemandCardWidget extends StatelessWidget {
                       horizontal: AppSpacing.sm,
                       vertical: AppSpacing.xs,
                     ),
-                    minimumSize: const Size(44, 36),
+                    minimumSize: const Size(64, 44),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('展開選擇'),
-                      SizedBox(width: 2),
-                      Icon(Icons.chevron_right_rounded, size: 16),
-                    ],
+                  child: Semantics(
+                    label: '看看${group.activityTypeName}所有條件',
+                    button: true,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('看看條件'),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded, size: 16),
+                      ],
+                    ),
                   ),
                 ),
               ],

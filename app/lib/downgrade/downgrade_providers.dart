@@ -12,6 +12,8 @@ import '../generated/supadart_header.dart' show DOWNGRADE_RESPONSE;
 /// （等待室、地點投票）同一個既有模式，Downgrade 彈窗本來就該主動跳出，
 /// 不能等使用者自己發現。
 final pendingDowngradesStreamProvider = StreamProvider<List<DowngradeRequest>>((ref) {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return Stream.value(const []);
   final client = ref.watch(supabaseClientProvider);
   return client
       .from('downgrade_request')
