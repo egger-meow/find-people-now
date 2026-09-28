@@ -392,7 +392,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                         ? () => _showCancelDialog(activity)
                         : null,
                   ),
-                  _MembersTab(
+                  MembersTab(
                     activityId: activity.id,
                     activityStatus: activity.status,
                     activityTypeId: activity.activityTypeId,
@@ -716,7 +716,7 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
       final leaderVotes = votes
           .where((vote) => vote.optionId == leader.id)
           .length;
-      final tieSuffix = isTie ? '（目前平票，依提案先後暫列；仍可調整投票）' : '';
+      final tieSuffix = isTie ? '（平票中，等待其他成員投票決定）' : '';
       locationSummary = switch (activity.status) {
         ACTIVITY_STATUS.MATCHED || ACTIVITY_STATUS.ONGOING =>
           '活動地點（地點投票）：${optionName(leader)}目前領先（$leaderVotes 票，仍可變更）$tieSuffix',
@@ -730,11 +730,15 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
         : AsyncValue.data(meetingPointUpdates!);
     final updates = updatesAsync.value ?? const <ActivityMeetingPointUpdate>[];
     String? meetupSummary;
-    if (activity.status != ACTIVITY_STATUS.CANCELLED && updates.isNotEmpty) {
-      final latest = updates.first;
-      meetupSummary = updates.length > 1
-          ? '集合地點：${latest.description}（已於 ${_hm(latest.createdAt.toLocal())} 更新）'
-          : '集合地點：${latest.description}';
+    if (activity.status != ACTIVITY_STATUS.CANCELLED) {
+      if (updates.isEmpty) {
+        meetupSummary = '集合地點：尚未設定（成團後由成員提議）';
+      } else {
+        final latest = updates.first;
+        meetupSummary = updates.length > 1
+            ? '集合地點：${latest.description}（已於 ${_hm(latest.createdAt.toLocal())} 更新）'
+            : '集合地點：${latest.description}';
+      }
     }
 
     final currentUserId = ref.watch(currentUserIdProvider);
@@ -749,10 +753,12 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
             : null);
 
     String? hintSummary;
-    if (activity.status != ACTIVITY_STATUS.CANCELLED &&
-        effectiveHint != null &&
-        effectiveHint.trim().isNotEmpty) {
-      hintSummary = '我的見面提示：$effectiveHint';
+    if (activity.status != ACTIVITY_STATUS.CANCELLED) {
+      if (effectiveHint != null && effectiveHint.trim().isNotEmpty) {
+        hintSummary = '見面提示：$effectiveHint';
+      } else {
+        hintSummary = '見面提示：尚未填寫（可到「成員與聯絡」說明衣著特徵以利相認）';
+      }
     }
 
     final effectiveNow = currentTime ?? DateTime.now();
@@ -2276,8 +2282,9 @@ class _MeetingHintSectionState extends ConsumerState<_MeetingHintSection> {
 /// UI_PLAN.md §4.1 Tab 2——成員名單依 `source_request_id` 分組顯示「一起
 /// 來的」，每張卡片點開後顯示聯絡方式（依 `get_activity_contacts` 的
 /// 24h/再約規則決定是否可見）＋封鎖／檢舉入口。
-class _MembersTab extends ConsumerWidget {
-  const _MembersTab({
+class MembersTab extends ConsumerWidget {
+  const MembersTab({
+    super.key,
     required this.activityId,
     required this.activityStatus,
     required this.activityTypeId,
@@ -2342,6 +2349,9 @@ class _MembersTab extends ConsumerWidget {
         final joinedCount = roster
             .where((m) => m.status == ACTIVITY_MEMBER_STATUS.JOINED)
             .length;
+        final cancelledCount = roster
+            .where((m) => m.status == ACTIVITY_MEMBER_STATUS.CANCELLED)
+            .length;
         final arrivedCount = roster
             .where(
               (m) =>
@@ -2363,6 +2373,70 @@ class _MembersTab extends ConsumerWidget {
               padding: const EdgeInsets.all(AppSpacing.lg),
               sliver: SliverList.list(
                 children: [
+                  if (cancelledCount > 0) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .errorContainer
+                            .withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .error
+                              .withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.person_off_rounded,
+                            size: 20,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '已有 $cancelledCount 位夥伴退出本次活動',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onErrorContainer,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '目前活動成員剩餘 $joinedCount 人，活動仍可照常進行。若人數不足也可至活動管理選擇退出。',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onErrorContainer,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   if (showArrival && joinedCount > 0) ...[
                     AppGlassSurface(
                       padding: const EdgeInsets.all(AppSpacing.md),

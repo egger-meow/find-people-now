@@ -329,7 +329,9 @@ void main() {
     expect(find.text('匿名活動需求確認'), findsOneWidget);
 
     // 點擊「調整條件後發起」
-    await tester.tap(find.textContaining('調整條件後發起'));
+    final customizeBtn = find.textContaining('調整條件後發起');
+    await tester.ensureVisible(customizeBtn);
+    await tester.tap(customizeBtn);
     await tester.pumpAndSettle();
 
     // Sheet 關閉
@@ -373,7 +375,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // 點擊「以相容條件加入配對」
-    await tester.tap(find.text('以相容條件加入配對'));
+    final joinBtn = find.text('以相容條件加入配對');
+    await tester.ensureVisible(joinBtn);
+    await tester.tap(joinBtn);
     await tester.pumpAndSettle();
 
     // 驗證 gateway 呼叫
@@ -421,7 +425,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // 點擊「以相容條件加入配對」
-    await tester.tap(find.text('以相容條件加入配對'));
+    final joinBtn6 = find.text('以相容條件加入配對');
+    await tester.ensureVisible(joinBtn6);
+    await tester.tap(joinBtn6);
     await tester.pumpAndSettle();
 
     // 驗證送出的 earliestStart 被推進到 currentNow (18:30)，而非原先的 18:00
@@ -446,7 +452,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // 點擊「以相容條件加入配對」
-    await tester.tap(find.text('以相容條件加入配對'));
+    final joinBtn7 = find.text('以相容條件加入配對');
+    await tester.ensureVisible(joinBtn7);
+    await tester.tap(joinBtn7);
     await tester.pumpAndSettle();
 
     // 驗證未呼叫 gateway 且出現錯誤提示
@@ -477,7 +485,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(CampusDemandCardWidget));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('調整條件後發起'));
+    final customizeBtn = find.textContaining('調整條件後發起');
+    await tester.ensureVisible(customizeBtn);
+    await tester.tap(customizeBtn);
     await tester.pumpAndSettle();
 
     final inviteSwitch = find.widgetWithText(SwitchListTile, '先邀請朋友加入');
