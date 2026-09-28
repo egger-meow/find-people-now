@@ -409,6 +409,28 @@ class _PendingConfirmationStatusViewState
             ),
           ),
         ),
+        const SizedBox(height: AppSpacing.sm),
+        AppCard(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.alt_route_rounded,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  '成團後流程：所有受邀成員確認 ➔ 共同投票決定活動地點 ➔ 確認集合點與見面提示 ➔ 出席報到。',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         if (widget.error != null) ...[
           const SizedBox(height: AppSpacing.sm),
           Text(

@@ -255,7 +255,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('地點：活動未設定集合地點'), findsOneWidget);
+    expect(find.textContaining('活動地點：未設定'), findsOneWidget);
     expect(find.textContaining('等待提出候選地點'), findsNothing);
     expect(find.textContaining('提出候選地點'), findsNothing);
     expect(find.text('下一步：查看成員並選擇再約'), findsOneWidget);

@@ -262,7 +262,10 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('地點投票：浩然圖書館目前領先（1 票，仍可變更）'), findsOneWidget);
+    expect(
+      find.textContaining('活動地點（地點投票）：浩然圖書館目前領先（1 票，仍可變更）'),
+      findsOneWidget,
+    );
     expect(find.text('下一步：投票選出集合地點'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

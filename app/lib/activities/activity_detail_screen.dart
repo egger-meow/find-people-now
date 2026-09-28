@@ -11,6 +11,7 @@ import '../errors/user_error_message.dart';
 import '../generated/activity.dart';
 import '../generated/activity_location_option.dart';
 import '../generated/activity_location_vote.dart';
+import '../generated/activity_meeting_point_update.dart';
 import '../generated/completion_report.dart';
 import '../generated/location.dart';
 import '../generated/supadart_header.dart'
@@ -230,6 +231,34 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
     }
   }
 
+  Future<void> _handleStickyMarkArrived(String activityId) async {
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '確定你已經到了嗎？',
+      message: '按下後會立刻通知其他成員你已抵達，無法收回。',
+      confirmLabel: '我到了',
+    );
+    if (!confirmed) return;
+    try {
+      await markArrived(
+        ref.read(supabaseClientProvider),
+        activityId: activityId,
+      );
+      AppHaptics.success();
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          '已完成報到！已通知其他成員你已抵達。',
+          kind: AppSnackKind.success,
+        );
+      }
+    } on ApiException {
+      if (mounted) {
+        showAppSnackBar(context, '標記失敗，請再試一次', kind: AppSnackKind.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // 反饋：活動狀態（如 ONGOING → COMPLETED）由背景排程觸發，不是使用者操作，
@@ -309,8 +338,34 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 locationOptionsAsync.hasError ||
                 locationVotesAsync.hasError ||
                 approvedLocationsAsync.hasError;
+            final currentUserId = ref.watch(currentUserIdProvider);
+            final rosterAsync = ref.watch(
+              activityMemberRosterProvider(activity.id),
+            );
+            final arrivalOverride = ref
+                .watch(activityArrivalStreamProvider(activity.id))
+                .value;
+            final myMember = rosterAsync.value
+                ?.where((m) => m.userId == currentUserId)
+                .firstOrNull;
+            final hasMyArrived =
+                (arrivalOverride != null &&
+                    currentUserId != null &&
+                    arrivalOverride.containsKey(currentUserId))
+                ? arrivalOverride[currentUserId] != null
+                : myMember?.arrivedAt != null;
+            final isMyJoined =
+                myMember?.status == ACTIVITY_MEMBER_STATUS.JOINED;
+            final canMarkArrived =
+                activity.status == ACTIVITY_STATUS.ONGOING &&
+                isMyJoined &&
+                !hasMyArrived;
+
             return ActivityDetailBodyLayout(
-              summary: ActivityDetailStatusSummary(activity: activity),
+              summary: ActivityDetailStatusSummary(
+                activity: activity,
+                canMarkArrived: canMarkArrived,
+              ),
               completionBanner:
                   (activity.status == ACTIVITY_STATUS.ONGOING ||
                       activity.status == ACTIVITY_STATUS.COMPLETED)
@@ -349,35 +404,41 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 hasLocationOptions: hasLocationOptions,
                 locationLoading: locationLoading,
                 locationError: locationError,
-                onPressed: () {
-                  final locationNeedsReload =
-                      (activity.status == ACTIVITY_STATUS.MATCHED ||
-                          activity.status == ACTIVITY_STATUS.ONGOING) &&
-                      locationError;
-                  final target = _stickyActionSection(
-                    activity.status,
-                    hasLocationOptions: locationNeedsReload
-                        ? false
-                        : hasLocationOptions,
-                  );
-                  setState(() => _sectionIndex = target);
-                  if (target == 0) {
-                    ref.invalidate(
-                      activityLocationOptionsStreamProvider(activity.id),
-                    );
-                    ref.invalidate(
-                      activityLocationVotesStreamProvider(activity.id),
-                    );
-                    ref.invalidate(
-                      approvedLocationsProvider((
-                        activity.school,
-                        activity.campus,
-                      )),
-                    );
-                  } else {
-                    ref.invalidate(activityMemberRosterProvider(activity.id));
-                  }
-                },
+                customLabel: canMarkArrived ? '我到了' : null,
+                customIcon: canMarkArrived ? Icons.near_me_rounded : null,
+                onPressed: canMarkArrived
+                    ? () => _handleStickyMarkArrived(activity.id)
+                    : () {
+                        final locationNeedsReload =
+                            (activity.status == ACTIVITY_STATUS.MATCHED ||
+                                activity.status == ACTIVITY_STATUS.ONGOING) &&
+                            locationError;
+                        final target = _stickyActionSection(
+                          activity.status,
+                          hasLocationOptions: locationNeedsReload
+                              ? false
+                              : hasLocationOptions,
+                        );
+                        setState(() => _sectionIndex = target);
+                        if (target == 0) {
+                          ref.invalidate(
+                            activityLocationOptionsStreamProvider(activity.id),
+                          );
+                          ref.invalidate(
+                            activityLocationVotesStreamProvider(activity.id),
+                          );
+                          ref.invalidate(
+                            approvedLocationsProvider((
+                              activity.school,
+                              activity.campus,
+                            )),
+                          );
+                        } else {
+                          ref.invalidate(
+                            activityMemberRosterProvider(activity.id),
+                          );
+                        }
+                      },
               ),
             );
           },
@@ -553,8 +614,8 @@ class _ActivityDetailNavigation extends StatelessWidget {
   }
 }
 
-/// 首屏唯一的狀態摘要。時間、地點（含投票中／鎖定結果）與下一步放在同一個
-/// 可掃讀區塊，避免使用者先切分頁才能知道現在要做什麼。
+/// 首屏唯一的狀態摘要。時間、地點（含投票中／鎖定結果）、集合地點與見面提示放在同一個
+/// 可掃讀區塊，清楚區隔三層空間資訊，避免使用者先切分頁才能知道現在要做什麼。
 class ActivityDetailStatusSummary extends ConsumerWidget {
   const ActivityDetailStatusSummary({
     super.key,
@@ -562,12 +623,20 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
     this.locationOptions,
     this.locationVotes,
     this.fixtureLocations,
+    this.meetingPointUpdates,
+    this.myMeetingHint,
+    this.currentTime,
+    this.canMarkArrived,
   });
 
   final Activity activity;
   final List<ActivityLocationOption>? locationOptions;
   final List<ActivityLocationVote>? locationVotes;
   final List<Location>? fixtureLocations;
+  final List<ActivityMeetingPointUpdate>? meetingPointUpdates;
+  final String? myMeetingHint;
+  final DateTime? currentTime;
+  final bool? canMarkArrived;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -600,26 +669,43 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
         optionsAsync.hasError || votesAsync.hasError || locationsAsync.hasError;
     final hasLocationOptions =
         activity.activityLocationId != null || options.isNotEmpty;
+
+    final sorted = [...options]
+      ..sort((a, b) {
+        final bVotes = votes.where((vote) => vote.optionId == b.id).length;
+        final aVotes = votes.where((vote) => vote.optionId == a.id).length;
+        final voteOrder = bVotes.compareTo(aVotes);
+        if (voteOrder != 0) return voteOrder;
+        return a.createdAt.compareTo(b.createdAt);
+      });
+    final topVoteCount = sorted.isEmpty
+        ? 0
+        : votes.where((vote) => vote.optionId == sorted.first.id).length;
+    final tiedOptions = sorted
+        .where(
+          (o) =>
+              votes.where((vote) => vote.optionId == o.id).length ==
+              topVoteCount,
+        )
+        .toList();
+    final isTie =
+        tiedOptions.length > 1 &&
+        topVoteCount > 0 &&
+        (activity.status == ACTIVITY_STATUS.MATCHED ||
+            activity.status == ACTIVITY_STATUS.ONGOING);
+
     String locationSummary;
     if (locationLoading) {
-      locationSummary = '地點：載入中';
+      locationSummary = '活動地點：載入中';
     } else if (locationError) {
-      locationSummary = '地點：暫時無法載入';
+      locationSummary = '活動地點：暫時無法載入';
     } else if (options.isEmpty) {
       locationSummary = switch (activity.status) {
-        ACTIVITY_STATUS.MATCHED || ACTIVITY_STATUS.ONGOING => '地點：等待提出候選地點',
-        ACTIVITY_STATUS.COMPLETED => '地點：活動未設定集合地點',
-        ACTIVITY_STATUS.CANCELLED => '地點：沒有地點記錄',
+        ACTIVITY_STATUS.MATCHED || ACTIVITY_STATUS.ONGOING => '活動地點：等待提出候選地點',
+        ACTIVITY_STATUS.COMPLETED => '活動地點：未設定',
+        ACTIVITY_STATUS.CANCELLED => '活動地點：沒有地點記錄',
       };
     } else {
-      final sorted = [...options]
-        ..sort((a, b) {
-          final bVotes = votes.where((vote) => vote.optionId == b.id).length;
-          final aVotes = votes.where((vote) => vote.optionId == a.id).length;
-          final voteOrder = bVotes.compareTo(aVotes);
-          if (voteOrder != 0) return voteOrder;
-          return a.createdAt.compareTo(b.createdAt);
-        });
       // activity_location_id is maintained by the backend using the same
       // vote-count/earliest-proposal tie-break. Prefer that authoritative
       // value so the first viewport never disagrees with the voting cards.
@@ -630,25 +716,92 @@ class ActivityDetailStatusSummary extends ConsumerWidget {
       final leaderVotes = votes
           .where((vote) => vote.optionId == leader.id)
           .length;
+      final tieSuffix = isTie ? '（目前平票，依提案先後暫列；仍可調整投票）' : '';
       locationSummary = switch (activity.status) {
         ACTIVITY_STATUS.MATCHED || ACTIVITY_STATUS.ONGOING =>
-          '地點投票：${optionName(leader)}目前領先（$leaderVotes 票，仍可變更）',
+          '活動地點（地點投票）：${optionName(leader)}目前領先（$leaderVotes 票，仍可變更）$tieSuffix',
         ACTIVITY_STATUS.COMPLETED ||
-        ACTIVITY_STATUS.CANCELLED => '地點：${optionName(leader)}',
+        ACTIVITY_STATUS.CANCELLED => '活動地點：${optionName(leader)}',
       };
+    }
+
+    final updatesAsync = meetingPointUpdates == null
+        ? ref.watch(activityMeetingPointUpdatesStreamProvider(activity.id))
+        : AsyncValue.data(meetingPointUpdates!);
+    final updates = updatesAsync.value ?? const <ActivityMeetingPointUpdate>[];
+    String? meetupSummary;
+    if (activity.status != ACTIVITY_STATUS.CANCELLED && updates.isNotEmpty) {
+      final latest = updates.first;
+      meetupSummary = updates.length > 1
+          ? '集合地點：${latest.description}（已於 ${_hm(latest.createdAt.toLocal())} 更新）'
+          : '集合地點：${latest.description}';
+    }
+
+    final currentUserId = ref.watch(currentUserIdProvider);
+    final hintsAsync = myMeetingHint == null
+        ? ref.watch(activityMeetingHintStreamProvider(activity.id))
+        : null;
+    final hintMap = hintsAsync?.value;
+    final effectiveHint =
+        myMeetingHint ??
+        (currentUserId != null && hintMap != null
+            ? hintMap[currentUserId]
+            : null);
+
+    String? hintSummary;
+    if (activity.status != ACTIVITY_STATUS.CANCELLED &&
+        effectiveHint != null &&
+        effectiveHint.trim().isNotEmpty) {
+      hintSummary = '我的見面提示：$effectiveHint';
+    }
+
+    final effectiveNow = currentTime ?? DateTime.now();
+    final diff = activity.startTime.difference(effectiveNow);
+    final isStartingSoon =
+        (activity.status == ACTIVITY_STATUS.MATCHED ||
+            activity.status == ACTIVITY_STATUS.ONGOING) &&
+        diff.inMinutes >= 0 &&
+        diff.inMinutes < 60;
+    final isLocationUnsettled =
+        options.isEmpty || activity.activityLocationId == null || isTie;
+    final isMeetupUnsettled = updates.isEmpty;
+    final showStartingSoonWarning =
+        isStartingSoon && (isLocationUnsettled || isMeetupUnsettled);
+
+    final buffer = StringBuffer();
+    if (showStartingSoonWarning) {
+      final missingParts = [
+        if (isLocationUnsettled) '地點',
+        if (isMeetupUnsettled) '集合方式',
+      ].join('與');
+      buffer.writeln('⚠️ 活動即將開始，但$missingParts尚未確定！請儘速確認。');
+    }
+    buffer.writeln('活動時間：${_activityTimeLabel(activity)}');
+    buffer.writeln(locationSummary);
+    if (meetupSummary != null) {
+      buffer.writeln(meetupSummary);
+    }
+    if (hintSummary != null) {
+      buffer.writeln(hintSummary);
+    }
+
+    final String deadlineText;
+    if (canMarkArrived == true) {
+      deadlineText = '下一步：抵達集合地點並點擊「我到了」';
+    } else {
+      deadlineText = _nextActionDescription(
+        activity.status,
+        hasLocationOptions: hasLocationOptions,
+        locationLoading: locationLoading,
+        locationError: locationError,
+      );
     }
 
     return LayoutBuilder(
       builder: (context, constraints) => AppStatusSummary(
         title: _activityStatusLabel(activity.status),
-        message:
-            '活動時間：${_activityTimeLabel(activity)}\n$locationSummary\n想說的話請到「成員與聯絡」查看。',
-        deadline: _nextActionDescription(
-          activity.status,
-          hasLocationOptions: hasLocationOptions,
-          locationLoading: locationLoading,
-          locationError: locationError,
-        ),
+        message: buffer.toString().trim(),
+        deadline: deadlineText,
         compact: true,
         inlineDeadline: constraints.maxWidth >= 600,
         leading: Icon(
@@ -672,6 +825,8 @@ class ActivityDetailStickyAction extends StatelessWidget {
     required this.onPressed,
     this.locationLoading = false,
     this.locationError = false,
+    this.customLabel,
+    this.customIcon,
   });
 
   final ACTIVITY_STATUS status;
@@ -679,6 +834,8 @@ class ActivityDetailStickyAction extends StatelessWidget {
   final VoidCallback onPressed;
   final bool locationLoading;
   final bool locationError;
+  final String? customLabel;
+  final IconData? customIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -686,20 +843,27 @@ class ActivityDetailStickyAction extends StatelessWidget {
         status == ACTIVITY_STATUS.MATCHED || status == ACTIVITY_STATUS.ONGOING;
     final effectiveLocationLoading = locationDependent && locationLoading;
     final effectiveLocationError = locationDependent && locationError;
-    return AppStickyActionArea(
-      child: AppButton(
-        key: const Key('activity-detail-next-action'),
-        label: _stickyActionLabel(
+    final label =
+        customLabel ??
+        _stickyActionLabel(
           status,
           hasLocationOptions: hasLocationOptions,
           locationLoading: effectiveLocationLoading,
           locationError: effectiveLocationError,
-        ),
-        icon: effectiveLocationError
+        );
+    final icon =
+        customIcon ??
+        (effectiveLocationError
             ? Icons.refresh_rounded
             : status == ACTIVITY_STATUS.MATCHED
             ? Icons.how_to_vote_outlined
-            : Icons.groups_rounded,
+            : Icons.groups_rounded);
+
+    return AppStickyActionArea(
+      child: AppButton(
+        key: const Key('activity-detail-next-action'),
+        label: label,
+        icon: icon,
         loading: effectiveLocationLoading,
         onPressed: effectiveLocationLoading ? null : onPressed,
       ),
@@ -1626,9 +1790,53 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
     final myVotes = votes.where((v) => v.userId == userId).toList();
     final myVoteOptionId = myVotes.isEmpty ? null : myVotes.first.optionId;
 
+    final maxVotes = options.isEmpty
+        ? 0
+        : options
+              .map((o) => votes.where((v) => v.optionId == o.id).length)
+              .reduce((a, b) => a > b ? a : b);
+    final tiedLeaders = maxVotes > 0
+        ? options
+              .where(
+                (o) =>
+                    votes.where((v) => v.optionId == o.id).length == maxVotes,
+              )
+              .toList()
+        : <ActivityLocationOption>[];
+    final isTopTied = tiedLeaders.length > 1;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (isTopTied)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.balance_rounded,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '目前有 ${tiedLeaders.length} 個地點平手（各 $maxVotes 票）；依提案先後暫列，仍可調整投票。',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onTertiaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (options.isEmpty)
           const AppCard(child: Text('還沒有人提案候選地點'))
         else
@@ -1640,11 +1848,17 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
               // 領先」，但不代表投票已經結束——大家還是可以繼續投票把它換掉。
               child: Row(
                 children: [
-                  if (option.id == widget.activity.activityLocationId) ...[
+                  if (option.id == widget.activity.activityLocationId ||
+                      (isTopTied &&
+                          tiedLeaders.any((o) => o.id == option.id))) ...[
                     Icon(
-                      Icons.chat_bubble_rounded,
+                      isTopTied
+                          ? Icons.balance_rounded
+                          : Icons.chat_bubble_rounded,
                       size: 16,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: isTopTied
+                          ? Theme.of(context).colorScheme.tertiary
+                          : Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 4),
                   ],
@@ -1655,7 +1869,9 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                           '（地點）',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight:
-                            option.id == widget.activity.activityLocationId
+                            (option.id == widget.activity.activityLocationId ||
+                                (isTopTied &&
+                                    tiedLeaders.any((o) => o.id == option.id)))
                             ? FontWeight.bold
                             : null,
                       ),
@@ -1678,7 +1894,21 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                 ],
               ),
             ),
-            if (option.id == widget.activity.activityLocationId)
+            if (isTopTied && tiedLeaders.any((o) => o.id == option.id))
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: AppSpacing.sm,
+                  bottom: AppSpacing.xs,
+                ),
+                child: Text(
+                  '目前平手領先（各 $maxVotes 票，仍可調整投票）',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.tertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else if (option.id == widget.activity.activityLocationId)
               Padding(
                 padding: const EdgeInsets.only(
                   left: AppSpacing.sm,
@@ -1842,6 +2072,31 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
                                     fontWeight: FontWeight.w700,
                                   ),
                             ),
+                            if (updates.length > 1) ...[
+                              const SizedBox(width: AppSpacing.xs),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.errorContainer,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '已於 ${_hm(updates.first.createdAt.toLocal())} 更新',
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onErrorContainer,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 2),
@@ -1855,6 +2110,19 @@ class _MeetingPointSectionState extends ConsumerState<_MeetingPointSection> {
                                 fontWeight: FontWeight.bold,
                               ),
                         ),
+                        if (updates.length > 1) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '集合地點曾有變更，請依最新地點會合，避免在原位置撲空。',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer
+                                      .withValues(alpha: 0.8),
+                                ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -2427,8 +2695,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 見面提示（「想說的話」）對本人與其他成員都可見。
-          if (member.meetingHint != null &&
-              member.meetingHint!.isNotEmpty) ...[
+          if (member.meetingHint != null && member.meetingHint!.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(left: 8, bottom: 2),
               child: _MeetingHintBubble(text: member.meetingHint!),

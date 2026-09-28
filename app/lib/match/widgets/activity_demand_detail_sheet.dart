@@ -173,6 +173,24 @@ class ActivityDemandDetailSheet extends StatelessWidget {
                       ? '${demand.minParticipants} 至 ${demand.maxParticipants} 人'
                       : '${demand.minParticipants} 人以上',
                 ),
+                const Divider(height: AppSpacing.md),
+                const _DetailRow(
+                  icon: Icons.place_outlined,
+                  label: '活動地點',
+                  value: '成團後由成員提案並投票決定；建議選擇安全、容易找到的公開場所',
+                ),
+                const Divider(height: AppSpacing.md),
+                const _DetailRow(
+                  icon: Icons.flag_outlined,
+                  label: '集合方式',
+                  value: '成團後確認（由成員提議集合點與見面特徵）',
+                ),
+                const Divider(height: AppSpacing.md),
+                const _DetailRow(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: '溝通形式',
+                  value: '成團前不公開聯絡方式；成團後於活動內查看地點與集合資訊',
+                ),
               ],
             ),
           ),
@@ -275,7 +293,6 @@ class ActivityDemandDetailSheet extends StatelessWidget {
               child: const Text('調整條件後發起...'),
             ),
           ),
-
         ],
       ),
     );
@@ -309,18 +326,14 @@ class _DetailRow extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs),
         Text(
           label,
-          style: textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
+          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Text(
             value,
             textAlign: TextAlign.end,
-            style: textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
       ],

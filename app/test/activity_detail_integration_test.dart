@@ -541,7 +541,7 @@ void main() {
     final criticalFinders = [
       find.text('已成團，等待開始'),
       find.textContaining('活動時間：08/11 17:00–18:00'),
-      find.textContaining('地點：等待提出候選地點'),
+      find.textContaining('活動地點：等待提出候選地點'),
       find.text('下一步：提出候選地點'),
     ];
 
@@ -633,7 +633,7 @@ void main() {
         expect(find.byType(AppStickyActionArea), findsOneWidget);
         expect(find.text('已成團，等待開始'), findsOneWidget);
         expect(find.textContaining('活動時間：08/11 17:00–18:00'), findsOneWidget);
-        expect(find.textContaining('地點：等待提出候選地點'), findsOneWidget);
+        expect(find.textContaining('活動地點：等待提出候選地點'), findsOneWidget);
         expect(find.text('下一步：提出候選地點'), findsOneWidget);
         expect(find.text('前往提出候選地點'), findsOneWidget);
         final actionFinder = find.byKey(
@@ -652,7 +652,7 @@ void main() {
           for (final finder in [
             find.text('已成團，等待開始'),
             find.textContaining('活動時間：08/11 17:00–18:00'),
-            find.textContaining('地點：等待提出候選地點'),
+            find.textContaining('活動地點：等待提出候選地點'),
             find.text('下一步：提出候選地點'),
           ]) {
             expect(
