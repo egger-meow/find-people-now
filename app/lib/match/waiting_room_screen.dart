@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,6 +22,7 @@ import '../widgets/app_dialog.dart';
 import '../widgets/app_error_state.dart';
 import '../widgets/app_mascot_stage.dart';
 import '../widgets/app_section.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/app_status_summary.dart';
 import '../widgets/countdown_text.dart';
 import '../widgets/loading_indicator.dart';
@@ -45,8 +47,10 @@ class WaitingRoomScreen extends ConsumerStatefulWidget {
 }
 
 class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
+  String? _inviteToken;
   bool _busy = false;
   String? _error;
+  bool _autoFetchInviteAttempted = false;
 
   @override
   Widget build(BuildContext context) {
@@ -62,8 +66,16 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
       (previous, next) {
         final req = next.value;
         if (req != null) {
+          // 當收到跨裝置撤銷推播（revokedAt 被設定）時，立即清空本地快取的 invite token
+          if (req.revokedAt != null && _inviteToken != null) {
+            setState(() => _inviteToken = null);
+          }
           final status = req.status;
           if (isTerminalForWaitingRoom(status)) {
+            if (_inviteToken != null) {
+              setState(() => _inviteToken = null);
+            }
+            _autoFetchInviteAttempted = false;
             ref.invalidate(myActiveRequestProvider);
             ref.invalidate(myActiveActivityProvider);
             invalidateMyActivityList(ref);
@@ -127,6 +139,24 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   (m) =>
                       m.userId == userId && m.role == REQUEST_MEMBER_ROLE.OWNER,
                 );
+                final isRevoked = request.revokedAt != null;
+                if (isRevoked && _inviteToken != null) {
+                  _inviteToken = null;
+                }
+                final effectiveInviteToken =
+                    isRevoked ? null : (_inviteToken ?? request.inviteToken);
+
+                if (isOwner &&
+                    !isRevoked &&
+                    effectiveInviteToken == null &&
+                    !_busy &&
+                    !_autoFetchInviteAttempted) {
+                  _autoFetchInviteAttempted = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _getOrCreateInviteLink(request.id);
+                  });
+                }
+
                 final statusContent = waitingRoomStatusContent(request.status);
                 return RefreshIndicator(
                   onRefresh: () async {
@@ -139,80 +169,110 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                       ),
                     ]);
                   },
-                  child: ListView(
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(AppSpacing.lg),
-                    children: [
-                      if (request.status == REQUEST_STATUS.REQUESTING) ...[
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: AppMascotStage(
-                              assetPath: 'assets/mascot/matching.png',
-                              height: 126,
-                              style: AppMascotStageStyle.waiting,
-                              semanticLabel: '街街貓正在幫你找夥伴',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (request.status == REQUEST_STATUS.REQUESTING) ...[
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                              child: AppMascotStage(
+                                assetPath: 'assets/mascot/matching.png',
+                                height: 126,
+                                style: AppMascotStageStyle.waiting,
+                                semanticLabel: '街街貓正在幫你找夥伴',
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                      AppStatusSummary(
-                        title: statusContent.title,
-                        message: statusContent.message,
-                        leading: const MatchingPulse(),
-                        deadline:
-                            '配對截止：${_formatDeadline(request.latestStart)}',
-                        action: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                const Expanded(child: Text('剩餘時間')),
-                                CountdownText(
-                                  deadline: request.latestStart,
-                                  style: Theme.of(context).textTheme.titleSmall,
-                                  urgentColor: Theme.of(
-                                    context,
-                                  ).colorScheme.error,
-                                  expiredLabel: '正在確認配對結果',
-                                  onExpired: () {
-                                    ref.invalidate(
-                                      matchRequestStreamProvider(
-                                        widget.requestId,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      _RequestInfoCard(request: request),
-                      const SizedBox(height: AppSpacing.lg),
-                      _RoomMembersSection(
-                        members: members,
-                        currentUserId: userId,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      if (_error != null) ...[
-                        Text(
-                          _error!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                        ],
+                        AppStatusSummary(
+                          title: statusContent.title,
+                          message: statusContent.message,
+                          leading: const MatchingPulse(),
+                          deadline:
+                              '配對截止：${_formatDeadline(request.latestStart)}',
+                          action: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  const Expanded(child: Text('剩餘時間')),
+                                  CountdownText(
+                                    deadline: request.latestStart,
+                                    style:
+                                        Theme.of(context).textTheme.titleSmall,
+                                    urgentColor: Theme.of(
+                                      context,
+                                    ).colorScheme.error,
+                                    expiredLabel: '正在確認配對結果',
+                                    onExpired: () {
+                                      ref.invalidate(
+                                        matchRequestStreamProvider(
+                                          widget.requestId,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.sm),
+                        const SizedBox(height: AppSpacing.lg),
+                        _RequestInfoCard(request: request),
+                        const SizedBox(height: AppSpacing.lg),
+                        _RoomMembersSection(
+                          members: members,
+                          currentUserId: userId,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _WaitingTrustCard(latestStart: request.latestStart),
+                        const SizedBox(height: AppSpacing.lg),
+                        if (_error != null) ...[
+                          Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                        WaitingRoomActionSections(
+                          inviteToken: effectiveInviteToken,
+                          busy: _busy,
+                          isOwner: isOwner,
+                          isRevoked: isRevoked,
+                          onGenerate: () => _getOrCreateInviteLink(request.id),
+                          onCopy: () async {
+                            if (effectiveInviteToken == null) return;
+                            await Clipboard.setData(
+                              ClipboardData(text: effectiveInviteToken),
+                            );
+                            if (context.mounted) {
+                              showAppSnackBar(context, '已複製邀請碼');
+                            }
+                          },
+                          onShare: () async {
+                            if (effectiveInviteToken == null) return;
+                            final shareText =
+                                '來跟我一起參加配對！我的邀請碼是：$effectiveInviteToken';
+                            await Clipboard.setData(
+                              ClipboardData(text: shareText),
+                            );
+                            if (context.mounted) {
+                              showAppSnackBar(context, '已複製邀請訊息，可直接貼給朋友');
+                            }
+                          },
+                          onRevoke: () => _revokeInviteLink(request.id),
+                          onManage: () => isOwner
+                              ? _cancelRequest(request.id)
+                              : _leaveRequest(request.id),
+                        ),
                       ],
-                      OutlinedButton(
-                        onPressed: _busy
-                            ? null
-                            : () => isOwner
-                                  ? _cancelRequest(request.id)
-                                  : _leaveRequest(request.id),
-                        child: Text(isOwner ? '取消整個配對' : '退出配對'),
-                      ),
-                    ],
+                    ),
                   ),
                 );
               },
@@ -221,6 +281,47 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _getOrCreateInviteLink(String requestId) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final client = ref.read(supabaseClientProvider);
+      final token = await getOrCreateInviteLink(
+        client,
+        requestId,
+      );
+      if (!mounted) return;
+      setState(() => _inviteToken = token);
+      ref.invalidate(matchRequestStreamProvider(requestId));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = userErrorMessage(e));
+    } catch (_) {
+      // 網路或未初始化環境防護，不讓等待室崩潰
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _revokeInviteLink(String requestId) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await revokeInviteLink(ref.read(supabaseClientProvider), requestId);
+      if (!mounted) return;
+      setState(() => _inviteToken = null);
+      ref.invalidate(matchRequestStreamProvider(requestId));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = userErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _leaveRequest(String requestId) async {
@@ -969,14 +1070,14 @@ WaitingRoomStatusContent waitingRoomStatusContent(REQUEST_STATUS status) =>
       ),
       REQUEST_STATUS.EXPIRED => const WaitingRoomStatusContent(
         title: '這次沒有成團',
-        message: '這次配對沒有成立，別擔心，可以重新發起新的邀約。',
+        message: '已達截止時間，這次配對沒有成立（無冷卻限制且不扣信譽）。別擔心，可以重新發起新的邀約，或設定時效提醒。',
         actionLabel: '回配對頁',
         destination: '/match',
         icon: Icons.schedule_outlined,
       ),
       REQUEST_STATUS.CANCELLED => const WaitingRoomStatusContent(
         title: '配對已取消',
-        message: '這個配對已經關閉，你可以回配對頁再找一次。',
+        message: '這個配對已經關閉（無冷卻限制且不影響信譽）。你可以回配對頁再找一次。',
         actionLabel: '回配對頁',
         destination: '/match',
         icon: Icons.cancel_outlined,
@@ -989,3 +1090,110 @@ WaitingRoomStatusContent waitingRoomStatusContent(REQUEST_STATUS status) =>
         icon: Icons.info_outline,
       ),
     };
+
+/// 安心等待承諾與透明規則說明卡（Direction 4）
+class _WaitingTrustCard extends StatelessWidget {
+  const _WaitingTrustCard({required this.latestStart});
+
+  final DateTime latestStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.shield_outlined, size: 20, color: scheme.primary),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                '安心等待承諾',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _TrustItem(
+            icon: Icons.timer_outlined,
+            title: '等到何時？',
+            description: '最晚撮合至 ${_formatDeadline(latestStart)} 截止。',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const _TrustItem(
+            icon: Icons.check_circle_outline_rounded,
+            title: '取消會怎樣？',
+            description: '等待期間取消或退出，無冷卻時間、不扣信譽評分，可隨時重新發起。',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const _TrustItem(
+            icon: Icons.sentiment_satisfied_alt_rounded,
+            title: '沒配到會怎樣？',
+            description: '若未成團將自動安全截止，不扣分、無懲罰，亦不發送打擾推播。',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const _TrustItem(
+            icon: Icons.notifications_none_rounded,
+            title: '通知如何送達？',
+            description: 'App 開啟時即時更新；關閉 App 時無法保證系統推播，建議在截止前開啟 App 查看。',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrustItem extends StatelessWidget {
+  const _TrustItem({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+              children: [
+                TextSpan(
+                  text: '$title ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                TextSpan(text: description),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
