@@ -34,9 +34,6 @@ class CampusDemandsSection extends ConsumerWidget {
     this.canParticipate = true,
     this.disabledReason,
     this.relativeNow,
-    this.onSelectSchool,
-    this.onLoginTap,
-    this.hasSuppressedDemands,
   });
 
   final SCHOOL school;
@@ -49,54 +46,6 @@ class CampusDemandsSection extends ConsumerWidget {
   final bool canParticipate;
   final String? disabledReason;
   final DateTime? relativeNow;
-  final ValueChanged<SCHOOL>? onSelectSchool;
-  final VoidCallback? onLoginTap;
-  final bool? hasSuppressedDemands;
-
-  Future<void> _showSchoolPicker(BuildContext context) async {
-    final selected = await showDialog<SCHOOL>(
-      context: context,
-      builder: (dialogContext) => AppAdaptiveDialog(
-        title: '選擇學校',
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('國立陽明交通大學'),
-              trailing: school == SCHOOL.NYCU
-                  ? Icon(
-                      Icons.check_rounded,
-                      color: Theme.of(context).colorScheme.primary,
-                    )
-                  : null,
-              onTap: () => Navigator.of(dialogContext).pop(SCHOOL.NYCU),
-            ),
-            ListTile(
-              title: const Text('國立清華大學'),
-              trailing: school == SCHOOL.NTHU
-                  ? Icon(
-                      Icons.check_rounded,
-                      color: Theme.of(context).colorScheme.primary,
-                    )
-                  : null,
-              onTap: () => Navigator.of(dialogContext).pop(SCHOOL.NTHU),
-            ),
-          ],
-        ),
-        actions: [
-          AppDialogAction(
-            label: '取消',
-            onPressed: () => Navigator.of(dialogContext).pop(),
-          ),
-        ],
-      ),
-    );
-
-    if (selected != null && selected != school && onSelectSchool != null) {
-      AppHaptics.selection();
-      onSelectSchool!(selected);
-    }
-  }
 
   Future<void> _showCampusPicker(BuildContext context) async {
     if (availableCampuses.length <= 1) return;
@@ -142,30 +91,13 @@ class CampusDemandsSection extends ConsumerWidget {
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final isGuest = onLoginTap != null || onSelectSchool != null;
-
-    final AsyncValue<List<CampusDemandCard>> demandsAsync;
-    final bool effectiveHasSuppressed;
-
-    if (isGuest) {
-      final publicAsync = ref.watch(publicCampusDemandsProvider((school, campus)));
-      demandsAsync = publicAsync.whenData((res) => res.demands);
-      effectiveHasSuppressed = publicAsync.value?.hasSuppressedDemands ?? false;
-    } else {
-      demandsAsync = ref.watch(campusDemandsProvider((school, campus)));
-      effectiveHasSuppressed = hasSuppressedDemands ?? false;
-    }
-
+    final demandsAsync = ref.watch(campusDemandsProvider((school, campus)));
     final activeFilter = ref.watch(selectedTimeFilterProvider);
     final lastUpdated = ref.watch(campusDemandsLastUpdatedProvider);
 
     void onRetry() {
       AppHaptics.tap();
-      if (isGuest) {
-        ref.invalidate(publicCampusDemandsProvider((school, campus)));
-      } else {
-        ref.invalidate(campusDemandsProvider((school, campus)));
-      }
+      ref.invalidate(campusDemandsProvider((school, campus)));
     }
 
     return Column(
@@ -195,46 +127,6 @@ class CampusDemandsSection extends ConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (onSelectSchool != null) ...[
-                  InkWell(
-                    onTap: () => _showSchoolPicker(context),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.xs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(
-                          color: scheme.primary.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.school_outlined, size: 14, color: scheme.primary),
-                          const SizedBox(width: 4),
-                          Text(
-                            school == SCHOOL.NYCU ? '陽明交大' : '清華大學',
-                            style: textTheme.labelSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onPrimaryContainer,
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          Icon(
-                            Icons.arrow_drop_down_rounded,
-                            size: 16,
-                            color: scheme.onPrimaryContainer,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
                 if (availableCampuses.length > 1)
                   InkWell(
                     onTap: () => _showCampusPicker(context),
@@ -344,8 +236,6 @@ class CampusDemandsSection extends ConsumerWidget {
             lastUpdated,
             scheme,
             textTheme,
-            isGuest: isGuest,
-            effectiveHasSuppressed: effectiveHasSuppressed,
           ),
         ],
       )
@@ -373,8 +263,6 @@ class CampusDemandsSection extends ConsumerWidget {
           lastUpdated,
           scheme,
           textTheme,
-          isGuest: isGuest,
-          effectiveHasSuppressed: effectiveHasSuppressed,
         ),
       ),
   ],
@@ -388,104 +276,13 @@ class CampusDemandsSection extends ConsumerWidget {
     DemandTimeFilter activeFilter,
     DateTime? lastUpdated,
     ColorScheme scheme,
-    TextTheme textTheme, {
-    required bool isGuest,
-    required bool effectiveHasSuppressed,
-  }) {
+    TextTheme textTheme,
+  ) {
     final filtered = demands
         .where((d) => d.matchesFilter(activeFilter, relativeTo: relativeNow))
         .toList();
 
     if (filtered.isEmpty) {
-      if (effectiveHasSuppressed && activeFilter == DemandTimeFilter.all) {
-        return AppCard(
-          width: double.infinity,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: AppSpacing.md,
-              horizontal: AppSpacing.sm,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.shield_outlined,
-                    size: 36,
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  '目前小樣本需求依隱私原則未公開',
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '為避免透過特定時間與地點反推個人身分，在尚未累積足夠同校人數前暫不公開活動細節。',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    height: 1.4,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    if (isGuest && onLoginTap != null)
-                      FilledButton.icon(
-                        icon: const Icon(Icons.login_rounded, size: 18),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(130, 44),
-                        ),
-                        onPressed: () {
-                          AppHaptics.tap();
-                          onLoginTap!();
-                        },
-                        label: const Text('登入學校信箱'),
-                      )
-                    else
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(120, 44),
-                        ),
-                        onPressed: () {
-                          AppHaptics.tap();
-                          onCreateNewRequest();
-                        },
-                        child: const Text('自己揪一個'),
-                      ),
-                    TextButton.icon(
-                      icon: const Icon(
-                        Icons.notifications_active_outlined,
-                        size: 16,
-                      ),
-                      label: const Text('設定時效提醒'),
-                      onPressed: () {
-                        AppHaptics.selection();
-                        onSetAlert();
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-
       return AppCard(
         width: double.infinity,
         child: Padding(
@@ -522,29 +319,16 @@ class CampusDemandsSection extends ConsumerWidget {
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.xs,
                 children: [
-                  if (isGuest && onLoginTap != null)
-                    FilledButton.icon(
-                      icon: const Icon(Icons.login_rounded, size: 18),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(130, 44),
-                      ),
-                      onPressed: () {
-                        AppHaptics.tap();
-                        onLoginTap!();
-                      },
-                      label: const Text('登入發起活動'),
-                    )
-                  else
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(120, 44),
-                      ),
-                      onPressed: () {
-                        AppHaptics.tap();
-                        onCreateNewRequest();
-                      },
-                      child: const Text('自己揪一個'),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(120, 44),
                     ),
+                    onPressed: () {
+                      AppHaptics.tap();
+                      onCreateNewRequest();
+                    },
+                    child: const Text('自己揪一個'),
+                  ),
                   TextButton.icon(
                     icon: const Icon(
                       Icons.notifications_active_outlined,
@@ -574,32 +358,12 @@ class CampusDemandsSection extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '共 ${filtered.length} 個即時活動等待相容夥伴 · $updatedText',
-                style: textTheme.bodySmall?.copyWith(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-              if (effectiveHasSuppressed)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shield_outlined, size: 12, color: scheme.primary),
-                    const SizedBox(width: 2),
-                    Text(
-                      '部分依隱私保護未公開',
-                      style: textTheme.bodySmall?.copyWith(
-                        fontSize: 10,
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
-            ],
+          child: Text(
+            '共 ${filtered.length} 個即時活動等待相容夥伴 · $updatedText',
+            style: textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color: scheme.onSurfaceVariant,
+            ),
           ),
         ),
         for (final group in groups)

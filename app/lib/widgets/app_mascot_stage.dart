@@ -299,20 +299,26 @@ class _WaitingBackdrop extends StatefulWidget {
 
 class _WaitingBackdropState extends State<_WaitingBackdrop>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  AnimationController? _controller;
 
   @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..repeat(reverse: true);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final allowMotion = AppMotion.allowsDecorative(context);
+    if (allowMotion && _controller == null) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2400),
+      )..repeat(reverse: true);
+    } else if (!allowMotion && _controller != null) {
+      _controller!.dispose();
+      _controller = null;
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -322,7 +328,8 @@ class _WaitingBackdropState extends State<_WaitingBackdrop>
     final emerald = AppColors.vibrantGreen;
     final skyBlue = AppColors.skyBlue;
 
-    if (!allowMotion) {
+    final controller = _controller;
+    if (!allowMotion || controller == null) {
       return Container(
         width: widget.size * 1.1,
         height: widget.size * 1.1,
@@ -340,10 +347,10 @@ class _WaitingBackdropState extends State<_WaitingBackdrop>
     }
 
     return AnimatedBuilder(
-      animation: _controller,
+      animation: controller,
       builder: (context, child) {
-        final scale = 1.0 + (_controller.value * 0.08);
-        final opacity = 0.14 + (_controller.value * 0.12);
+        final scale = 1.0 + (controller.value * 0.08);
+        final opacity = 0.14 + (controller.value * 0.12);
 
         return Stack(
           alignment: Alignment.center,

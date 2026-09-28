@@ -55,7 +55,7 @@ void main() {
     expect(find.textContaining('差 1 人'), findsNothing);
     expect(find.textContaining('即將成團'), findsNothing);
     // 4. 我如何參與：查看詳情入口
-    expect(find.text('查看詳情'), findsOneWidget);
+    expect(find.text('看看條件'), findsOneWidget);
 
     // 驗證已移除火焰圖示
     expect(find.byIcon(Icons.local_fire_department_rounded), findsNothing);
@@ -158,9 +158,16 @@ void main() {
     expect(find.text('正在幫你找人'), findsOneWidget);
     expect(find.textContaining('系統會持續配對'), findsOneWidget);
     // 2. 邀請朋友與次要取消操作
-    await tester.scrollUntilVisible(find.text('取消整個配對'), 200);
-    expect(find.text('取消整個配對'), findsOneWidget);
-    expect(find.textContaining('此操作無冷卻限制且不影響信譽評分'), findsOneWidget);
+    final cancelFinder = find.text('取消整個配對');
+    await tester.scrollUntilVisible(
+      cancelFinder,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(cancelFinder, findsOneWidget);
+    await tester.tap(cancelFinder);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('此操作不會有冷卻時間或信譽扣分'), findsOneWidget);
   });
 
 

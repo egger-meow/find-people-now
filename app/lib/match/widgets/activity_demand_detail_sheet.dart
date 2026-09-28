@@ -20,7 +20,6 @@ Future<void> showActivityDemandDetailSheet(
   required VoidCallback onParticipate,
   required VoidCallback onCustomize,
   DateTime? relativeNow,
-  bool isAuthenticated = true,
   String? participateButtonLabel,
 }) {
   return showAppSheet(
@@ -32,7 +31,6 @@ Future<void> showActivityDemandDetailSheet(
       onParticipate: onParticipate,
       onCustomize: onCustomize,
       relativeNow: relativeNow,
-      isAuthenticated: isAuthenticated,
       participateButtonLabel: participateButtonLabel,
     ),
   );
@@ -47,7 +45,6 @@ class ActivityDemandDetailSheet extends StatelessWidget {
     required this.onParticipate,
     required this.onCustomize,
     this.relativeNow,
-    this.isAuthenticated = true,
     this.participateButtonLabel,
   });
 
@@ -57,7 +54,6 @@ class ActivityDemandDetailSheet extends StatelessWidget {
   final VoidCallback onParticipate;
   final VoidCallback onCustomize;
   final DateTime? relativeNow;
-  final bool isAuthenticated;
   final String? participateButtonLabel;
 
   String _formatLevel(String activityName, String? sportLevel, int? rating) {
@@ -233,30 +229,6 @@ class ActivityDemandDetailSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (!isAuthenticated) ...[
-                  const SizedBox(height: AppSpacing.xs + 2),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.school_outlined,
-                        size: 16,
-                        color: scheme.primary,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          '【驗證流程】點擊下方按鈕將先透過學校信箱（.edu.tw）完成登入與資料確認，完成後即可回到本活動送出配對。',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w500,
-                            height: 1.45,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
@@ -276,15 +248,12 @@ class ActivityDemandDetailSheet extends StatelessWidget {
             ),
           ],
 
-          // 操作按鈕：我也想去 / 以相容條件加入配對 + 調整條件後發起
+          // 操作按鈕：以相容條件加入配對 + 調整條件後發起
           SizedBox(
             width: double.infinity,
             child: AppButton(
-              label: participateButtonLabel ??
-                  (isAuthenticated ? '以相容條件加入配對' : '我也想去（登入並加入）'),
-              icon: isAuthenticated
-                  ? Icons.how_to_reg_outlined
-                  : Icons.login_rounded,
+              label: participateButtonLabel ?? '以相容條件加入配對',
+              icon: Icons.how_to_reg_outlined,
               onPressed: canParticipate
                   ? () {
                       AppHaptics.tap();
@@ -303,7 +272,7 @@ class ActivityDemandDetailSheet extends StatelessWidget {
                 Navigator.of(context).pop();
                 onCustomize();
               },
-              child: Text(isAuthenticated ? '調整條件後發起...' : '登入後發起新活動...'),
+              child: const Text('調整條件後發起...'),
             ),
           ),
 

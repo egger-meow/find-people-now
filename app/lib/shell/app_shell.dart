@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../activities/my_activities_providers.dart';
-import '../auth/auth_providers.dart';
 import '../downgrade/downgrade_consent_dialog.dart';
 import '../notifications/notification_providers.dart';
 import '../onboarding/onboarding_overlay.dart';
@@ -26,18 +25,12 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userId = ref.watch(currentUserIdProvider);
-    final isGuest = userId == null;
-    final unreadCount = isGuest ? 0 : ref.watch(unreadNotificationCountProvider);
+    final unreadCount = ref.watch(unreadNotificationCountProvider);
     final mediaQuery = MediaQuery.of(context);
     final isKeyboardOpen = mediaQuery.viewInsets.bottom > 0;
 
     void onDestinationSelected(int index) {
       AppHaptics.selection();
-      if (index > 0 && isGuest) {
-        context.push('/login');
-        return;
-      }
       if (index == 1) {
         invalidateMyActivityList(ref);
       }

@@ -268,7 +268,10 @@ void main() {
     expect(waitingBtn.onPressed, isNotNull);
 
     // 點擊需求卡開啟詳情 Sheet，確認「以相容條件加入配對」停用
-    await tester.tap(find.byType(CampusDemandCardWidget));
+    final demandCard = find.byType(CampusDemandCardWidget);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    await tester.tap(demandCard);
     await tester.pumpAndSettle();
 
     expect(find.text('匿名活動需求確認'), findsOneWidget);

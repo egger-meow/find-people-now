@@ -221,55 +221,6 @@ Future<List<CampusDemandCard>> getCampusDemands(
   );
 }
 
-/// 匿名公開探索活動需求結果物件
-class PublicCampusDemandsResult {
-  final List<CampusDemandCard> demands;
-  final List<String> campuses;
-  final bool hasSuppressedDemands;
-
-  const PublicCampusDemandsResult({
-    required this.demands,
-    required this.campuses,
-    required this.hasSuppressedDemands,
-  });
-
-  factory PublicCampusDemandsResult.fromJson(Map<String, dynamic> json) {
-    final demandsList = (json['demands'] as List? ?? [])
-        .cast<Map<String, dynamic>>()
-        .map(CampusDemandCard.fromJson)
-        .toList();
-    final campusesList = (json['campuses'] as List? ?? [])
-        .map((e) => e.toString())
-        .toList();
-    final hasSuppressed = json['has_suppressed_demands'] as bool? ?? false;
-
-    return PublicCampusDemandsResult(
-      demands: demandsList,
-      campuses: campusesList,
-      hasSuppressedDemands: hasSuppressed,
-    );
-  }
-}
-
-/// 未登入訪客專用粗粒度、唯讀探索 RPC：`rpc: get_public_campus_demands(school, campus)`
-Future<PublicCampusDemandsResult> getPublicCampusDemands(
-  SupabaseClient client, {
-  required SCHOOL school,
-  String? campus,
-}) {
-  return callRpc<PublicCampusDemandsResult>(
-    client,
-    'get_public_campus_demands',
-    params: {
-      'p_school': school.name,
-      if (campus != null && campus.isNotEmpty) 'p_campus': campus,
-    },
-    decode: (data) => PublicCampusDemandsResult.fromJson(
-      data as Map<String, dynamic>,
-    ),
-  );
-}
-
 /// 依 stable `activityTypeId` 聚合的探索需求群組（UI_PLAN / iOS UX 指南 §7）
 class AggregatedDemandGroup {
   final String activityTypeId;
