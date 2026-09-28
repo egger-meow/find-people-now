@@ -369,58 +369,106 @@ Future<void> _showSubscribeAlertDialog({
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
-      builder: (dialogContext, setDialogState) => AppAdaptiveDialog(
-        title: '設定提醒',
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('活動類型', style: Theme.of(dialogContext).textTheme.labelMedium),
-            const SizedBox(height: AppSpacing.xs),
-            DropdownButton<ActivityType>(
-              isExpanded: true,
-              value: selectedType,
-              items: [
-                for (final type in types)
-                  DropdownMenuItem(value: type, child: Text(type.name)),
-              ],
-              onChanged: (value) {
-                if (value != null) setDialogState(() => selectedType = value);
-              },
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '$campus 出現在幾小時內就通知我',
-              style: Theme.of(dialogContext).textTheme.labelMedium,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Wrap(
-              spacing: AppSpacing.xs,
-              children: [
-                for (final option in const [1, 3, 6, 12, 24])
-                  ChoiceChip(
-                    label: Text('$option 小時'),
-                    selected: hours == option,
-                    onSelected: AppHaptics.select(
-                      (_) => setDialogState(() => hours = option),
+      builder: (dialogContext, setDialogState) {
+        final expireTime = DateTime.now().add(Duration(hours: hours));
+        return AppAdaptiveDialog(
+          title: '設定時效提醒',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('活動類型', style: Theme.of(dialogContext).textTheme.labelMedium),
+              const SizedBox(height: AppSpacing.xs),
+              DropdownButton<ActivityType>(
+                isExpanded: true,
+                value: selectedType,
+                items: [
+                  for (final type in types)
+                    DropdownMenuItem(value: type, child: Text(type.name)),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedType = value);
+                },
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '$campus 出現在幾小時內就通知我',
+                style: Theme.of(dialogContext).textTheme.labelMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: AppSpacing.xs,
+                children: [
+                  for (final option in const [1, 3, 6, 12, 24])
+                    ChoiceChip(
+                      label: Text('$option 小時'),
+                      selected: hours == option,
+                      onSelected: AppHaptics.select(
+                        (_) => setDialogState(() => hours = option),
+                      ),
                     ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.sm),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: Theme.of(dialogContext)
+                        .colorScheme
+                        .outlineVariant
+                        .withValues(alpha: 0.3),
                   ),
-              ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '• 預計到期時間：${_formatTime(expireTime)}（自動清理失效）',
+                      style: Theme.of(dialogContext).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '• 取消方式：可在首頁隨時點擊 ✕ 取消提醒',
+                      style: Theme.of(dialogContext).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '• 通知去向：有人發起時傳送至 App 內「通知」分頁',
+                      style: Theme.of(dialogContext).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '• 低承諾說明：提醒訂閱非排隊亦非成團，零心理負擔',
+                      style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(dialogContext).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            AppDialogAction(
+              label: '取消',
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            AppDialogAction(
+              label: '設定提醒',
+              isDefault: true,
+              onPressed: () => Navigator.of(dialogContext).pop(true),
             ),
           ],
-        ),
-        actions: [
-          AppDialogAction(
-            label: '取消',
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-          ),
-          AppDialogAction(
-            label: '設定提醒',
-            isDefault: true,
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-          ),
-        ],
-      ),
+        );
+      },
     ),
   );
   if (confirmed != true || !context.mounted) return;
@@ -479,6 +527,9 @@ class _AlertSubscriptionSection extends ConsumerWidget {
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -491,13 +542,22 @@ class _AlertSubscriptionSection extends ConsumerWidget {
                   color: scheme.primary,
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                Text(
-                  '已啟用的時效提醒：',
-                  style: textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    '已設定的時效提醒（非排隊／非成團）：',
+                    style: textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '當有相符條件的邀約發起時會於「通知」分頁提醒你。點擊 ✕ 可隨時取消。',
+              style: textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Wrap(
@@ -506,8 +566,13 @@ class _AlertSubscriptionSection extends ConsumerWidget {
               children: [
                 for (final sub in subs)
                   InputChip(
-                    label: Text(typeNameById[sub.activityTypeId] ?? '未知類型'),
+                    avatar: const Icon(Icons.alarm_on_rounded, size: 14),
+                    label: Text(
+                      '${typeNameById[sub.activityTypeId] ?? '未知類型'} · ${sub.campus}（至 ${_formatTime(sub.expiresAt)}）',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     onDeleted: () => _cancel(ref, sub.id),
+                    deleteIconColor: scheme.error,
                   ),
               ],
             ),

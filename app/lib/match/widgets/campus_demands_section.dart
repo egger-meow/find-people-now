@@ -298,7 +298,7 @@ class CampusDemandsSection extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '目前$campus還沒有人在揪',
+                '目前$campus還沒有人在揪（暫無相符需求）',
                 style: textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -306,7 +306,7 @@ class CampusDemandsSection extends ConsumerWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '當第一個發起的人，或是設定提醒，有人發起時通知你！',
+                '可以先設定時效提醒，有人發起時通知你；或留下你方便的時段，由系統自動撮合夥伴（無需負責找人）。',
                 style: textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -319,17 +319,10 @@ class CampusDemandsSection extends ConsumerWidget {
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.xs,
                 children: [
-                  FilledButton(
+                  FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size(120, 44),
+                      minimumSize: const Size(130, 44),
                     ),
-                    onPressed: () {
-                      AppHaptics.tap();
-                      onCreateNewRequest();
-                    },
-                    child: const Text('自己揪一個'),
-                  ),
-                  TextButton.icon(
                     icon: const Icon(
                       Icons.notifications_active_outlined,
                       size: 16,
@@ -339,6 +332,16 @@ class CampusDemandsSection extends ConsumerWidget {
                       AppHaptics.selection();
                       onSetAlert();
                     },
+                  ),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(120, 44),
+                    ),
+                    onPressed: () {
+                      AppHaptics.tap();
+                      onCreateNewRequest();
+                    },
+                    child: const Text('自己揪一個'),
                   ),
                 ],
               ),
