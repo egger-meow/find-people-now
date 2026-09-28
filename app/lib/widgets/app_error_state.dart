@@ -4,6 +4,7 @@ import '../errors/user_error_message.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_card.dart';
+import 'app_mascot_stage.dart';
 
 class AppErrorState extends StatelessWidget {
   const AppErrorState({
@@ -31,10 +32,10 @@ class AppErrorState extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: AppSpacing.sm),
-              Image.asset(
-                'assets/mascot/error_06.png',
-                height: 88,
-                fit: BoxFit.contain,
+              const AppMascotStage(
+                assetPath: 'assets/mascot/error_06.png',
+                height: 96,
+                style: AppMascotStageStyle.alert,
                 semanticLabel: '眼冒金星的街街貓',
               ),
               const SizedBox(height: AppSpacing.sm),

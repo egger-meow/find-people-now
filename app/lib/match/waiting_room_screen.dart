@@ -19,6 +19,7 @@ import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_error_state.dart';
+import '../widgets/app_mascot_stage.dart';
 import '../widgets/app_section.dart';
 import '../widgets/app_status_summary.dart';
 import '../widgets/countdown_text.dart';
@@ -142,15 +143,17 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                     padding: const EdgeInsets.all(AppSpacing.lg),
                     children: [
                       if (request.status == REQUEST_STATUS.REQUESTING) ...[
-                        Semantics(
-                          label: '街街貓正在幫你找夥伴',
-                          child: Image.asset(
-                            'assets/mascot/matching.png',
-                            height: 116,
-                            fit: BoxFit.contain,
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: AppMascotStage(
+                              assetPath: 'assets/mascot/matching.png',
+                              height: 126,
+                              style: AppMascotStageStyle.waiting,
+                              semanticLabel: '街街貓正在幫你找夥伴',
+                            ),
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.sm),
                       ],
                       AppStatusSummary(
                         title: statusContent.title,
@@ -866,26 +869,52 @@ class _TransitionedState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = waitingRoomStatusContent(status);
+
+    if (status == REQUEST_STATUS.MATCHED) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppMascotStage(
+                assetPath: 'assets/mascot/matched.png',
+                height: 136,
+                style: AppMascotStageStyle.celebration,
+                semanticLabel: '街街貓慶祝配對成功',
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppStatusSummary(
+                title: content.title,
+                message: content.message,
+                leading: Icon(
+                  Icons.celebration_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                action: SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: content.actionLabel,
+                    onPressed: () => context.go(content.destination),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: AppStatusSummary(
           title: content.title,
           message: content.message,
-          leading: status == REQUEST_STATUS.MATCHED
-              ? Semantics(
-                  label: '街街貓慶祝配對成功',
-                  child: Image.asset(
-                    'assets/mascot/matched.png',
-                    width: 64,
-                    height: 64,
-                    fit: BoxFit.contain,
-                  ),
-                )
-              : Icon(
-                  content.icon,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+          leading: Icon(
+            content.icon,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           action: SizedBox(
             width: double.infinity,
             child: AppButton(

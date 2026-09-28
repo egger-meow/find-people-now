@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../legal/legal_links.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_mascot_stage.dart';
 import '../widgets/app_snack_bar.dart';
 import '../widgets/app_text_field.dart';
 import 'auth_providers.dart';
@@ -148,133 +150,208 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+
     return Scaffold(
+      appBar: canPop
+          ? AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                tooltip: '返回',
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+            )
+          : null,
       body: SafeArea(
-        // 原本是 `Padding > Column(mainAxisAlignment: center)`，完全不能捲動。
-        // 這在登入畫面是必壞的組合：畫面上有輸入框，鍵盤一定會彈出來，
-        // [Scaffold] 預設 `resizeToAvoidBottomInset` 會把 body 高度縮掉鍵盤那
-        // 一段，Column 立刻溢出（實測 375×812 的可用高度被壓到 262 時溢出
-        // 39px，畫面出現黃黑斜紋、內容被裁掉）。橫向使用時同理。
-        //
-        // [Center] + [SingleChildScrollView] 是這個情境的標準解：空間夠時
-        // Center 維持原本的垂直置中外觀（視覺上跟改動前一樣），空間不夠時
-        // 自動變成可捲動，不會裁切也不會報錯。
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              // Center 底下高度是鬆的，必須用 min；置中交給外層 Center。
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Semantics(
-                  label: '街街貓歡迎你來敢不敢揪',
-                  child: Image.asset(
-                    'assets/mascot/login.png',
-                    height: 150,
-                    fit: BoxFit.contain,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1. 街街貓迎賓專屬舞台（環境微光、雙重同心環、地面陰影）
+                  const AppMascotStage(
+                    assetPath: 'assets/mascot/login.png',
+                    height: 156,
+                    style: AppMascotStageStyle.hero,
+                    semanticLabel: '街街貓歡迎你來敢不敢揪',
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  '敢不敢揪',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '找到現在也想一起的人。',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                AppTextField(
-                  controller: _emailController,
-                  label: '學校信箱',
-                  hint: 'example@nycu.edu.tw',
-                  keyboardType: TextInputType.emailAddress,
-                  enabled: !_otpSent,
-                  onSubmitted: (_) => _otpSent ? null : _sendOtp(),
-                ),
-                if (_otpSent) ...[
                   const SizedBox(height: AppSpacing.md),
-                  AppTextField(
-                    controller: _codeController,
-                    label: '驗證碼',
-                    hint: '6 位數字',
-                    keyboardType: TextInputType.number,
-                    autofocus: true,
-                    onSubmitted: (_) => _verifyOtp(),
+
+                  // 2. 校園認證微標籤
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm + 2,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.22),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.school_rounded,
+                            size: 13,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '陽明交大 / 清華 校園即刻揪團',
+                            style:
+                                Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ],
-                if (_error != null) ...[
                   const SizedBox(height: AppSpacing.sm),
+
+                  // 3. 標題與引言（居中對齊舞台）
                   Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                    '敢不敢揪',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '找到現在也想一起的人。',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // 4. 表單結構卡片（提升層次，告別零散貼圖漂浮感）
+                  AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AppTextField(
+                          controller: _emailController,
+                          label: '學校信箱',
+                          hint: 'example@nycu.edu.tw',
+                          keyboardType: TextInputType.emailAddress,
+                          enabled: !_otpSent,
+                          onSubmitted: (_) => _otpSent ? null : _sendOtp(),
+                        ),
+                        if (_otpSent) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          AppTextField(
+                            controller: _codeController,
+                            label: '驗證碼',
+                            hint: '6 位數字',
+                            keyboardType: TextInputType.number,
+                            autofocus: true,
+                            onSubmitted: (_) => _verifyOtp(),
+                          ),
+                        ],
+                        if (_error != null) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.md),
+                        AppButton(
+                          label: _otpSent ? '驗證並登入' : '傳送驗證碼',
+                          loading: _loading,
+                          onPressed: _otpSent ? _verifyOtp : _sendOtp,
+                        ),
+                        if (_otpSent) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          TextButton(
+                            onPressed:
+                                (_loading || _resending || _cooldownSeconds > 0)
+                                    ? null
+                                    : _resendOtp,
+                            child: Text(
+                              _cooldownSeconds > 0
+                                  ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）'
+                                  : '重新傳送驗證碼',
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _loading
+                                ? null
+                                : () => setState(() {
+                                      _otpSent = false;
+                                      _codeController.clear();
+                                      _error = null;
+                                      _cooldownTimer?.cancel();
+                                      _cooldownSeconds = 0;
+                                    }),
+                            child: const Text('重新輸入信箱'),
+                          ),
+                        ],
+                      ],
                     ),
+                  ),
+
+                  // 5. 隱私與條款法務連結
+                  const SizedBox(height: AppSpacing.md),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '繼續即表示你同意',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            LegalLinks.open(context, LegalDocument.terms),
+                        child: const Text('《服務條款》'),
+                      ),
+                      Text(
+                        '，並確認已閱讀',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            LegalLinks.open(context, LegalDocument.privacy),
+                        child: const Text('《隱私權政策》'),
+                      ),
+                      Text('。', style: Theme.of(context).textTheme.bodySmall),
+                    ],
                   ),
                 ],
-                const SizedBox(height: AppSpacing.lg),
-                AppButton(
-                  label: _otpSent ? '驗證並登入' : '傳送驗證碼',
-                  loading: _loading,
-                  onPressed: _otpSent ? _verifyOtp : _sendOtp,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      '繼續即表示你同意',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    TextButton(
-                      onPressed: () =>
-                          LegalLinks.open(context, LegalDocument.terms),
-                      child: const Text('《服務條款》'),
-                    ),
-                    Text(
-                      '，並確認已閱讀',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    TextButton(
-                      onPressed: () =>
-                          LegalLinks.open(context, LegalDocument.privacy),
-                      child: const Text('《隱私權政策》'),
-                    ),
-                    Text('。', style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ),
-                if (_otpSent) ...[
-                  TextButton(
-                    onPressed: (_loading || _resending || _cooldownSeconds > 0)
-                        ? null
-                        : _resendOtp,
-                    child: Text(
-                      _cooldownSeconds > 0
-                          ? '重新傳送驗證碼（$_cooldownSeconds 秒後可用）'
-                          : '重新傳送驗證碼',
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => setState(() {
-                            _otpSent = false;
-                            _codeController.clear();
-                            _error = null;
-                            _cooldownTimer?.cancel();
-                            _cooldownSeconds = 0;
-                          }),
-                    child: const Text('重新輸入信箱'),
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_mascot_stage.dart';
 
 /// UI_PLAN.md §11.2 常駐說明入口——比 Onboarding（onboarding_overlay.dart）
 /// 詳細、對應實際畫面的分步驟圖文說明，服務兩種情境：①用到一半忘記目前
@@ -51,12 +52,11 @@ class HelpScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Align(
-                      alignment: Alignment.center,
-                      child: Image.asset(
-                        'assets/mascot/tutorial/${index + 1}.png',
-                        height: 104,
-                        fit: BoxFit.contain,
+                    Center(
+                      child: AppMascotStage(
+                        assetPath: 'assets/mascot/tutorial/${index + 1}.png',
+                        height: 110,
+                        style: AppMascotStageStyle.card,
                         semanticLabel: '街街貓示範第 ${index + 1} 步',
                       ),
                     ),

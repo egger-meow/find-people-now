@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/app_error_state.dart';
+import '../../widgets/app_mascot_stage.dart';
 import '../../widgets/skeleton.dart';
 import '../match_providers.dart';
 import 'aggregated_demands_sheet.dart';
@@ -492,13 +493,11 @@ class CampusDemandsSection extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Semantics(
-                label: '街街貓正在找活動',
-                child: Image.asset(
-                  'assets/mascot/explore_empty.png',
-                  height: 104,
-                  fit: BoxFit.contain,
-                ),
+              const AppMascotStage(
+                assetPath: 'assets/mascot/explore_empty.png',
+                height: 108,
+                style: AppMascotStageStyle.card,
+                semanticLabel: '街街貓正在找活動',
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(

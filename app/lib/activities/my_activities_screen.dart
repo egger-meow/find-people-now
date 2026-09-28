@@ -13,6 +13,7 @@ import '../theme/platform_adaptive.dart';
 import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_error_state.dart';
+import '../widgets/app_mascot_stage.dart';
 import '../widgets/app_section.dart';
 import '../widgets/app_status_summary.dart';
 import '../widgets/skeleton.dart';
@@ -728,10 +729,10 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (ctaLabel != null)
-              Image.asset(
-                'assets/mascot/explore_empty.png',
-                height: 112,
-                fit: BoxFit.contain,
+              const AppMascotStage(
+                assetPath: 'assets/mascot/explore_empty.png',
+                height: 116,
+                style: AppMascotStageStyle.card,
                 semanticLabel: '街街貓邀請你探索活動',
               )
             else
