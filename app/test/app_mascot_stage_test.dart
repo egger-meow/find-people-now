@@ -119,5 +119,28 @@ void main() {
       expect(find.text('連線逾時，請檢查網路'), findsOneWidget);
       expect(find.bySemanticsLabel('眼冒金星的街街貓'), findsOneWidget);
     });
+
+    testWidgets('AppMascotStage provides fallback icon on error', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AppMascotStage(
+              assetPath: 'assets/mascot/matching.png',
+              height: 120,
+              style: AppMascotStageStyle.waiting,
+            ),
+          ),
+        ),
+      );
+
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(image.errorBuilder, isNotNull);
+
+      final context = tester.element(find.byType(Image));
+      final fallbackWidget = image.errorBuilder!(context, Exception('Asset not found'), null);
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: fallbackWidget)));
+
+      expect(find.byIcon(Icons.radar_rounded), findsOneWidget);
+    });
   });
 }

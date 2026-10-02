@@ -97,6 +97,19 @@ class AppMascotStage extends StatelessWidget {
                 assetPath,
                 height: height,
                 fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return SizedBox(
+                    height: height,
+                    width: height,
+                    child: Center(
+                      child: Icon(
+                        _fallbackIconForStyle(style),
+                        size: height * 0.42,
+                        color: _fallbackIconColor(style, scheme),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -203,6 +216,36 @@ class AppMascotStage extends StatelessWidget {
             ),
           ),
         );
+    }
+  }
+
+  IconData _fallbackIconForStyle(AppMascotStageStyle style) {
+    switch (style) {
+      case AppMascotStageStyle.hero:
+        return Icons.pets_rounded;
+      case AppMascotStageStyle.waiting:
+        return Icons.radar_rounded;
+      case AppMascotStageStyle.celebration:
+        return Icons.celebration_rounded;
+      case AppMascotStageStyle.alert:
+        return Icons.error_outline_rounded;
+      case AppMascotStageStyle.compact:
+      case AppMascotStageStyle.card:
+        return Icons.pets_rounded;
+    }
+  }
+
+  Color _fallbackIconColor(AppMascotStageStyle style, ColorScheme scheme) {
+    switch (style) {
+      case AppMascotStageStyle.alert:
+        return scheme.error.withValues(alpha: 0.7);
+      case AppMascotStageStyle.celebration:
+        return AppColors.warmYellow;
+      case AppMascotStageStyle.hero:
+      case AppMascotStageStyle.waiting:
+      case AppMascotStageStyle.card:
+      case AppMascotStageStyle.compact:
+        return scheme.primary.withValues(alpha: 0.7);
     }
   }
 }
