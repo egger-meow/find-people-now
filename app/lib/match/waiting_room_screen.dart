@@ -445,6 +445,7 @@ class WaitingRoomActionSections extends StatelessWidget {
     this.isRevoked = false,
     this.onRevoke,
     this.onShare,
+    this.showManageAction = true,
   });
 
   final String? inviteToken;
@@ -456,6 +457,7 @@ class WaitingRoomActionSections extends StatelessWidget {
   final VoidCallback onManage;
   final VoidCallback? onRevoke;
   final VoidCallback? onShare;
+  final bool showManageAction;
 
   @override
   Widget build(BuildContext context) {
@@ -661,27 +663,29 @@ class WaitingRoomActionSections extends StatelessWidget {
             ),
           ),
         ],
-        const SizedBox(height: AppSpacing.xl),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: busy ? null : onManage,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: scheme.onSurfaceVariant,
-              side: BorderSide(color: scheme.outlineVariant),
-            ),
-            child: Text(isOwner ? '取消整個配對' : '退出房間'),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Center(
-          child: Text(
-            isOwner ? '此操作無冷卻限制且不影響信譽評分' : '無冷卻限制且不影響信譽評分',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+        if (showManageAction) ...[
+          const SizedBox(height: AppSpacing.xl),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: busy ? null : onManage,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.onSurfaceVariant,
+                side: BorderSide(color: scheme.outlineVariant),
+              ),
+              child: Text(isOwner ? '取消整個配對' : '退出房間'),
             ),
           ),
-        ),
+          const SizedBox(height: AppSpacing.xs),
+          Center(
+            child: Text(
+              isOwner ? '此操作無冷卻限制且不影響信譽評分' : '無冷卻限制且不影響信譽評分',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
