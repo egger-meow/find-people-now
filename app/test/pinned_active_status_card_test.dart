@@ -93,4 +93,80 @@ void main() {
     await tester.tap(find.text('前往活動房間'));
     expect(openedActivity, isTrue);
   });
+
+  testWidgets(
+      'renders SizedBox.shrink when request is MATCHED, EXPIRED, or CANCELLED without active activity',
+      (tester) async {
+    for (final terminalStatus in [
+      REQUEST_STATUS.MATCHED,
+      REQUEST_STATUS.EXPIRED,
+      REQUEST_STATUS.CANCELLED,
+    ]) {
+      final terminalRequest = MatchRequest(
+        id: 'req-term',
+        ownerId: 'user-1',
+        activityTypeId: 'act-1',
+        earliestStart: DateTime.now(),
+        latestStart: DateTime.now().add(const Duration(hours: 2)),
+        flexibleMinutes: 0,
+        minParticipants: 2,
+        maxParticipants: 4,
+        allowDowngrade: false,
+        status: terminalStatus,
+        inviteToken: 'any-token',
+        createdAt: DateTime.now().subtract(const Duration(days: 7)),
+        school: SCHOOL.NYCU,
+        campus: '光復校區',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PinnedActiveStatusCard(
+              request: terminalRequest,
+              activity: null,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('你正在配對中'), findsNothing);
+      expect(find.text('前往等待室'), findsNothing);
+    }
+  });
+
+  testWidgets(
+      'renders SizedBox.shrink when activity is COMPLETED or CANCELLED',
+      (tester) async {
+    for (final terminalStatus in [
+      ACTIVITY_STATUS.COMPLETED,
+      ACTIVITY_STATUS.CANCELLED,
+    ]) {
+      final terminalActivity = Activity(
+        id: 'act-term',
+        activityTypeId: 'type-1',
+        startTime: DateTime.now().subtract(const Duration(days: 1)),
+        estimatedEndTime: DateTime.now().subtract(const Duration(hours: 22)),
+        status: terminalStatus,
+        contactVisibleUntil: DateTime.now().add(const Duration(hours: 24)),
+        createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        school: SCHOOL.NYCU,
+        campus: '光復校區',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PinnedActiveStatusCard(
+              request: null,
+              activity: terminalActivity,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('你目前有進行中的活動'), findsNothing);
+      expect(find.text('前往活動房間'), findsNothing);
+    }
+  });
 }

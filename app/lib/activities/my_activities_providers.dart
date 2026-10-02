@@ -37,8 +37,12 @@ class MyActivityListItem {
   /// 進行中 vs 已結束 兩個分頁（UI_PLAN §4 表格）的分類依據。
   bool get isOngoing {
     if (kind == MyActivityKind.request) {
-      return request!.status == REQUEST_STATUS.DRAFT ||
-          request!.status == REQUEST_STATUS.REQUESTING ||
+      if (request!.status == REQUEST_STATUS.DRAFT) {
+        return request!.inviteToken != null &&
+            request!.revokedAt == null &&
+            request!.latestStart.isAfter(DateTime.now());
+      }
+      return request!.status == REQUEST_STATUS.REQUESTING ||
           request!.status == REQUEST_STATUS.PENDING_CONFIRMATION;
     }
     return activity!.status == ACTIVITY_STATUS.MATCHED ||
@@ -67,9 +71,17 @@ final myMatchRequestsProvider = FutureProvider<List<MatchRequest>>((ref) async {
     'PENDING_CONFIRMATION',
     'DRAFT',
   ]);
+  final now = DateTime.now();
   return rows
       .map(decodeMatchRequest)
-      .where((r) => r.status != REQUEST_STATUS.DRAFT || r.inviteToken != null)
+      .where((r) {
+        if (r.status == REQUEST_STATUS.DRAFT) {
+          return r.inviteToken != null &&
+              r.revokedAt == null &&
+              r.latestStart.isAfter(now);
+        }
+        return true;
+      })
       .toList();
 });
 

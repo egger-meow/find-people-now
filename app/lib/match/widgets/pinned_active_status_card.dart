@@ -29,7 +29,19 @@ class PinnedActiveStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (request == null && activity == null) {
+    final isRequestActive = request != null &&
+        (request!.status == REQUEST_STATUS.REQUESTING ||
+            request!.status == REQUEST_STATUS.PENDING_CONFIRMATION ||
+            (request!.status == REQUEST_STATUS.DRAFT &&
+                request!.inviteToken != null &&
+                request!.revokedAt == null &&
+                request!.latestStart.isAfter(DateTime.now())));
+
+    final isActivityActive = activity != null &&
+        (activity!.status == ACTIVITY_STATUS.MATCHED ||
+            activity!.status == ACTIVITY_STATUS.ONGOING);
+
+    if (!isRequestActive && !isActivityActive) {
       return const SizedBox.shrink();
     }
 
@@ -37,7 +49,7 @@ class PinnedActiveStatusCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final isActivity = activity != null;
+    final isActivity = isActivityActive;
     final isInviting = request?.status == REQUEST_STATUS.DRAFT;
     final title = isActivity
         ? '你目前有進行中的活動'

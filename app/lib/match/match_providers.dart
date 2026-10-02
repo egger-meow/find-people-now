@@ -260,7 +260,9 @@ final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
       .map((row) => row['request'])
       .whereType<Map<String, dynamic>>()
       .map(decodeMatchRequest)
-      .toList();
+      .toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
   final active = requests
       .where(
         (r) =>
@@ -268,7 +270,17 @@ final myActiveRequestProvider = FutureProvider<MatchRequest?>((ref) async {
             r.status == REQUEST_STATUS.PENDING_CONFIRMATION,
       )
       .firstOrNull;
-  return active ?? requests.where((r) => r.inviteToken != null).firstOrNull;
+  if (active != null) return active;
+
+  return requests
+      .where(
+        (r) =>
+            r.status == REQUEST_STATUS.DRAFT &&
+            r.inviteToken != null &&
+            r.revokedAt == null &&
+            r.latestStart.isAfter(DateTime.now()),
+      )
+      .firstOrNull;
 });
 
 /// 「現在是否有進行中的活動」（`MATCHED`/`ONGOING`）——直接鏡射
