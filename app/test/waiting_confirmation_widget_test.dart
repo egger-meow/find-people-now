@@ -397,4 +397,66 @@ void main() {
     expect(find.text('等待發起人確認人都進來後開始配對。'), findsOneWidget);
     expect(find.text('人都進來了，開始配對'), findsNothing);
   });
+
+  testWidgets(
+    'waiting room trust card is collapsed by default and expands on tap',
+    (tester) async {
+      final now = DateTime.now();
+      final request = MatchRequest(
+        id: 'req-trust-1',
+        ownerId: 'owner',
+        activityTypeId: 'gym',
+        school: SCHOOL.NYCU,
+        campus: '光復',
+        status: REQUEST_STATUS.REQUESTING,
+        earliestStart: now,
+        latestStart: now.add(const Duration(minutes: 30)),
+        flexibleMinutes: 15,
+        minParticipants: 2,
+        maxParticipants: 4,
+        allowDowngrade: false,
+        createdAt: now,
+      );
+      final type = ActivityType(
+        id: 'gym',
+        name: '健身',
+        status: ACTIVITY_TYPE_STATUS.APPROVED,
+        createdAt: now,
+        skillLevelEnabled: false,
+        sortOrder: 0,
+        levelSystem: LEVEL_SYSTEM.NONE,
+        aliases: const [],
+      );
+
+      await tester.pumpWidget(
+        _waitingRoomHost(request: request, activityType: type),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final list = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('安心等待承諾'), 200, scrollable: list);
+      await tester.pump();
+
+      expect(find.text('安心等待承諾'), findsOneWidget);
+      expect(find.text('無冷卻時間・不扣信用評分・隨時可退出'), findsOneWidget);
+      // Initially collapsed:
+      expect(find.textContaining('等到何時'), findsNothing);
+
+      // Tap to expand:
+      await tester.tap(find.text('安心等待承諾'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('等到何時'), findsOneWidget);
+      expect(find.textContaining('取消會怎樣'), findsOneWidget);
+
+      // Tap to collapse again:
+      await tester.tap(find.text('安心等待承諾'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('等到何時'), findsNothing);
+    },
+  );
 }

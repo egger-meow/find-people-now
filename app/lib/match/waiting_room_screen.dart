@@ -1095,11 +1095,18 @@ WaitingRoomStatusContent waitingRoomStatusContent(REQUEST_STATUS status) =>
       ),
     };
 
-/// 安心等待承諾與透明規則說明卡（Direction 4）
-class _WaitingTrustCard extends StatelessWidget {
+/// 安心等待承諾與透明規則說明卡（Direction 4：漸進式揭露）
+class _WaitingTrustCard extends StatefulWidget {
   const _WaitingTrustCard({required this.latestStart});
 
   final DateTime latestStart;
+
+  @override
+  State<_WaitingTrustCard> createState() => _WaitingTrustCardState();
+}
+
+class _WaitingTrustCardState extends State<_WaitingTrustCard> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1108,6 +1115,12 @@ class _WaitingTrustCard extends StatelessWidget {
     final textTheme = theme.textTheme;
 
     return AppCard(
+      onTap: () {
+        setState(() => _expanded = !_expanded);
+      },
+      semanticLabel: _expanded
+          ? '安心等待承諾，點擊收合說明'
+          : '安心等待承諾，無冷卻、不扣評分、隨時可退出，點擊展開完整規則說明',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1115,39 +1128,77 @@ class _WaitingTrustCard extends StatelessWidget {
             children: [
               Icon(Icons.shield_outlined, size: 20, color: scheme.primary),
               const SizedBox(width: AppSpacing.xs),
-              Text(
-                '安心等待承諾',
-                style: textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: scheme.primary,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '安心等待承諾',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: scheme.primary,
+                      ),
+                    ),
+                    if (!_expanded) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '無冷卻時間・不扣信用評分・隨時可退出',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Icon(
+                _expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: scheme.onSurfaceVariant,
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          _TrustItem(
-            icon: Icons.timer_outlined,
-            title: '等到何時？',
-            description: '最晚撮合至 ${_formatDeadline(latestStart)} 截止。',
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          const _TrustItem(
-            icon: Icons.check_circle_outline_rounded,
-            title: '取消會怎樣？',
-            description: '等待期間取消或退出，無冷卻時間、不扣信譽評分，可隨時重新發起。',
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          const _TrustItem(
-            icon: Icons.sentiment_satisfied_alt_rounded,
-            title: '沒配到會怎樣？',
-            description: '若未成團將自動安全截止，不扣分、無懲罰，亦不發送打擾推播。',
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          const _TrustItem(
-            icon: Icons.notifications_none_rounded,
-            title: '通知如何送達？',
-            description: 'App 開啟時即時更新；關閉 App 時無法保證系統推播，建議在截止前開啟 App 查看。',
-          ),
+          if (_expanded) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: scheme.outlineVariant.withValues(alpha: 0.25),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _TrustItem(
+              icon: Icons.timer_outlined,
+              title: '等到何時？',
+              description:
+                  '最晚撮合至 ${_formatDeadline(widget.latestStart)} 截止。',
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const _TrustItem(
+              icon: Icons.check_circle_outline_rounded,
+              title: '取消會怎樣？',
+              description:
+                  '等待期間取消或退出，無冷卻時間、不扣信譽評分，可隨時重新發起。',
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const _TrustItem(
+              icon: Icons.sentiment_satisfied_alt_rounded,
+              title: '沒配到會怎樣？',
+              description:
+                  '若未成團將自動安全截止，不扣分、無懲罰，亦不發送打擾推播。',
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const _TrustItem(
+              icon: Icons.notifications_none_rounded,
+              title: '通知如何送達？',
+              description:
+                  'App 開啟時即時更新；關閉 App 時無法保證系統推播，建議在截止前開啟 App 查看。',
+            ),
+          ],
         ],
       ),
     );
@@ -1179,8 +1230,8 @@ class _TrustItem extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs),
         Expanded(
-          child: RichText(
-            text: TextSpan(
+          child: Text.rich(
+            TextSpan(
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
