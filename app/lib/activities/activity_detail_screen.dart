@@ -26,7 +26,8 @@ import '../match/match_providers.dart'
     show activityTypesProvider, myActiveActivityProvider, myAppUserProvider;
 import '../rpc/activity_rpc.dart';
 import '../rpc/api_exception.dart';
-import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
+import '../rpc/auth_profile_rpc.dart'
+    show ReliabilityTier, ReliabilityTierExtension;
 import '../rpc/completion_rpc.dart';
 import '../rpc/location_rpc.dart';
 import '../rpc/report_rpc.dart';
@@ -88,12 +89,17 @@ String _stickyActionLabel(
   required bool hasLocationOptions,
   required bool locationLoading,
   required bool locationError,
+  int sectionIndex = 0,
 }) => switch (status) {
   ACTIVITY_STATUS.MATCHED ||
   ACTIVITY_STATUS.ONGOING when locationLoading => '正在載入地點資訊',
   ACTIVITY_STATUS.MATCHED ||
   ACTIVITY_STATUS.ONGOING when locationError => '重新載入地點資訊',
+  ACTIVITY_STATUS.MATCHED when sectionIndex == 1 =>
+    hasLocationOptions ? '返回地點頁參與投票' : '返回地點頁提出候選',
   ACTIVITY_STATUS.MATCHED => hasLocationOptions ? '前往地點投票' : '前往提出候選地點',
+  ACTIVITY_STATUS.ONGOING when sectionIndex == 1 =>
+    hasLocationOptions ? '查看成員與聯絡' : '返回地點頁提出候選',
   ACTIVITY_STATUS.ONGOING => hasLocationOptions ? '查看報到與成員' : '前往提出候選地點',
   ACTIVITY_STATUS.COMPLETED => '查看成員與再約',
   ACTIVITY_STATUS.CANCELLED => '查看活動紀錄',
@@ -404,6 +410,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 hasLocationOptions: hasLocationOptions,
                 locationLoading: locationLoading,
                 locationError: locationError,
+                sectionIndex: _sectionIndex,
                 customLabel: canMarkArrived ? '我到了' : null,
                 customIcon: canMarkArrived ? Icons.near_me_rounded : null,
                 onPressed: canMarkArrived
@@ -413,30 +420,50 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                             (activity.status == ACTIVITY_STATUS.MATCHED ||
                                 activity.status == ACTIVITY_STATUS.ONGOING) &&
                             locationError;
-                        final target = _stickyActionSection(
-                          activity.status,
-                          hasLocationOptions: locationNeedsReload
-                              ? false
-                              : hasLocationOptions,
-                        );
-                        setState(() => _sectionIndex = target);
-                        if (target == 0) {
-                          ref.invalidate(
-                            activityLocationOptionsStreamProvider(activity.id),
-                          );
-                          ref.invalidate(
-                            activityLocationVotesStreamProvider(activity.id),
-                          );
-                          ref.invalidate(
-                            approvedLocationsProvider((
-                              activity.school,
-                              activity.campus,
-                            )),
-                          );
+                        if (_sectionIndex == 1) {
+                          if (activity.status == ACTIVITY_STATUS.MATCHED ||
+                              !hasLocationOptions ||
+                              locationNeedsReload) {
+                            setState(() => _sectionIndex = 0);
+                            ref.invalidate(
+                              activityLocationOptionsStreamProvider(activity.id),
+                            );
+                            ref.invalidate(
+                              activityLocationVotesStreamProvider(activity.id),
+                            );
+                            ref.invalidate(
+                              approvedLocationsProvider((
+                                activity.school,
+                                activity.campus,
+                              )),
+                            );
+                          }
                         } else {
-                          ref.invalidate(
-                            activityMemberRosterProvider(activity.id),
+                          final target = _stickyActionSection(
+                            activity.status,
+                            hasLocationOptions: locationNeedsReload
+                                ? false
+                                : hasLocationOptions,
                           );
+                          setState(() => _sectionIndex = target);
+                          if (target == 0) {
+                            ref.invalidate(
+                              activityLocationOptionsStreamProvider(activity.id),
+                            );
+                            ref.invalidate(
+                              activityLocationVotesStreamProvider(activity.id),
+                            );
+                            ref.invalidate(
+                              approvedLocationsProvider((
+                                activity.school,
+                                activity.campus,
+                              )),
+                            );
+                          } else {
+                            ref.invalidate(
+                              activityMemberRosterProvider(activity.id),
+                            );
+                          }
                         }
                       },
               ),
@@ -484,9 +511,9 @@ class ActivityDetailBodyLayout extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
                       AppSpacing.lg,
-                      AppSpacing.sm,
+                      AppSpacing.xs,
                       AppSpacing.lg,
-                      AppSpacing.md,
+                      AppSpacing.xs,
                     ),
                     child: AppGlassSurface(
                       padding: EdgeInsets.zero,
@@ -500,7 +527,7 @@ class ActivityDetailBodyLayout extends StatelessWidget {
                       padding: const EdgeInsets.only(
                         left: AppSpacing.lg,
                         right: AppSpacing.lg,
-                        bottom: AppSpacing.md,
+                        bottom: AppSpacing.sm,
                       ),
                       child: completionBanner!,
                     ),
@@ -534,9 +561,9 @@ class _ActivityDetailNavigationSliverDelegate
   final Color backgroundColor;
 
   @override
-  double get minExtent => 60.0;
+  double get minExtent => 52.0;
   @override
-  double get maxExtent => 60.0;
+  double get maxExtent => 52.0;
 
   @override
   Widget build(
@@ -879,6 +906,7 @@ class ActivityDetailStickyAction extends StatelessWidget {
     this.locationError = false,
     this.customLabel,
     this.customIcon,
+    this.sectionIndex = 0,
   });
 
   final ACTIVITY_STATUS status;
@@ -888,6 +916,7 @@ class ActivityDetailStickyAction extends StatelessWidget {
   final bool locationError;
   final String? customLabel;
   final IconData? customIcon;
+  final int sectionIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -902,14 +931,19 @@ class ActivityDetailStickyAction extends StatelessWidget {
           hasLocationOptions: hasLocationOptions,
           locationLoading: effectiveLocationLoading,
           locationError: effectiveLocationError,
+          sectionIndex: sectionIndex,
         );
     final icon =
         customIcon ??
         (effectiveLocationError
             ? Icons.refresh_rounded
-            : status == ACTIVITY_STATUS.MATCHED
-            ? Icons.how_to_vote_outlined
-            : Icons.groups_rounded);
+            : sectionIndex == 1
+            ? (status == ACTIVITY_STATUS.MATCHED || !hasLocationOptions
+                ? Icons.place_rounded
+                : Icons.groups_rounded)
+            : (status == ACTIVITY_STATUS.MATCHED
+                ? Icons.how_to_vote_outlined
+                : Icons.groups_rounded));
 
     return AppStickyActionArea(
       child: AppButton(
