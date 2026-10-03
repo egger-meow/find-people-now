@@ -496,6 +496,8 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(inviteSwitch);
+    await tester.pumpAndSettle();
     await tester.tap(inviteSwitch);
     await tester.pumpAndSettle();
     final submit = tester.widget<AppButton>(

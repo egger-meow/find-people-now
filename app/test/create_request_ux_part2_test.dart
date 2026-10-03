@@ -175,9 +175,11 @@ void main() {
     final scrollable = find.byType(Scrollable).first;
     await tester.scrollUntilVisible(
       find.text('羽球'),
-      150,
+      100,
       scrollable: scrollable,
     );
+    await tester.ensureVisible(find.text('羽球'));
+    await tester.pumpAndSettle();
     final initialOffset = tester
         .state<ScrollableState>(scrollable)
         .position
@@ -207,18 +209,22 @@ void main() {
     // 滾動並點選羽球
     await tester.scrollUntilVisible(
       find.text('羽球'),
-      150,
+      100,
       scrollable: scrollable,
     );
-    await tester.tap(find.text('羽球'), warnIfMissed: false);
+    await tester.ensureVisible(find.text('羽球'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('羽球'));
     await tester.pumpAndSettle();
 
     // 滾動並點選「現在」時段
     await tester.scrollUntilVisible(
       find.text('現在'),
-      150,
+      100,
       scrollable: scrollable,
     );
+    await tester.ensureVisible(find.text('現在'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('現在'));
     await tester.pumpAndSettle();
 
@@ -243,9 +249,11 @@ void main() {
     // 滾動並點選羽球
     await tester.scrollUntilVisible(
       find.text('羽球'),
-      150,
+      100,
       scrollable: scrollable,
     );
+    await tester.ensureVisible(find.text('羽球'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('羽球'));
     await tester.pumpAndSettle();
 

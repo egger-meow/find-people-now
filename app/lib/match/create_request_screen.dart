@@ -290,6 +290,7 @@ class _TimeBucket {
   final IconData icon;
 
   String get displayLabel => isTomorrow ? '明天 $label' : '今天 $label';
+  String get timeRangeLabel => '${_formatTime(start)}–${_formatTime(end)}';
 }
 
 /// 動態顯示規則（UI_PLAN §7）：僅列出「起始時間」落在 `now()~now()+24h`
@@ -1214,9 +1215,48 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
         title: '確認配對條件',
         confirmLabel: '確認送出',
         barrierDismissible: false,
-        content: SingleChildScrollView(
-          child: AppSelectionSummary(
-            items: _selectionSummaryItems(snapshot.window, snapshot: snapshot),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppSelectionSummary(
+                  items: _selectionSummaryItems(snapshot.window, snapshot: snapshot),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '• 人數不足時（降級）：${snapshot.allowDowngrade ? '接受以最少 ${snapshot.minParticipants} 人彈性成團' : '需達到最多 ${snapshot.maxParticipants} 人才成團'}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '• 送出後進入等待室，可隨時取消配對',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '• 若逾時未滿額將安全結束，不影響信賴紀錄',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -1756,6 +1796,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                       _TimeChip(
                                         icon: _buckets[i].icon,
                                         label: _buckets[i].displayLabel,
+                                        timeRange: _buckets[i].timeRangeLabel,
                                         selected: _selectedBucketIndices
                                             .contains(i),
                                         onTap: () => _toggleBucket(i),
@@ -1829,7 +1870,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            '可開始時段：${_timeWindowLabel(window)}',
+                                            '可開始時段：${_timeWindowLabel(window)}（活動時長成團後約定）',
                                             style: textTheme.bodySmall
                                                 ?.copyWith(
                                                   color: Theme.of(
@@ -2014,7 +2055,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     _FormCardSection(
                       stepNumber: 5,
                       title: '降級配對',
-                      description: '如果人數不足，可以選擇接受較少人也成立活動。',
+                      description: '人數不足時彈性成團：若未達最多人數，接受以最少人數成團。',
                       child: Material(
                         type: MaterialType.transparency,
                         child: SwitchListTile(
@@ -2173,8 +2214,8 @@ class _FormCardSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 24,
-                  height: 24,
+                  width: 22,
+                  height: 22,
                   decoration: BoxDecoration(
                     color: scheme.primaryContainer,
                     shape: BoxShape.circle,
@@ -2184,28 +2225,16 @@ class _FormCardSection extends StatelessWidget {
                     '$stepNumber',
                     style: textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
+                      fontSize: 11,
                       color: scheme.onPrimaryContainer,
                     ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '步驟 $stepNumber',
-                  style: textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: scheme.primary,
                   ),
                 ),
                 const Spacer(),
                 ?trailing,
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Divider(
-              height: 1,
-              color: scheme.outlineVariant.withValues(alpha: 0.35),
-            ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.xs),
             child,
           ],
         ),
@@ -2548,7 +2577,8 @@ class _HeadcountRangeSlider extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Semantics(
-            label: '人數規模滑桿，最少 $clampedMin 人，最多 $clampedMax 人',
+            label: '人數規模滑桿：最少 $clampedMin 人，最多 $clampedMax 人。可於下方點選微調人數按鈕逐人調整。',
+            value: '最少 $clampedMin 人，最多 $clampedMax 人',
             child: RangeSlider(
               values: RangeValues(clampedMin.toDouble(), clampedMax.toDouble()),
               min: firstAllowed.toDouble(),
@@ -2604,7 +2634,7 @@ class _HeadcountRangeSlider extends StatelessWidget {
                 effectiveStep,
               ),
               icon: const Icon(Icons.tune_rounded, size: 18),
-              label: const Text('微調人數'),
+              label: const Text('微調人數（可逐人加減）'),
             ),
           ),
           if (isNewUser && minPossible <= 2) ...[
@@ -2761,18 +2791,21 @@ class _TimeChip extends StatelessWidget {
   const _TimeChip({
     required this.icon,
     required this.label,
+    this.timeRange,
     required this.selected,
     required this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final String? timeRange;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Material(
       color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -2809,14 +2842,31 @@ class _TimeChip extends StatelessWidget {
                     : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: AppSpacing.xs),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: selected
-                      ? scheme.onPrimaryContainer
-                      : scheme.onSurface,
-                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: selected
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurface,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  if (timeRange != null)
+                    Text(
+                      timeRange!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: selected
+                            ? scheme.onPrimaryContainer.withValues(alpha: 0.85)
+                            : scheme.onSurfaceVariant,
+                        fontSize: 10.5,
+                        height: 1.1,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
