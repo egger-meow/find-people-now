@@ -13,7 +13,8 @@ abstract final class AppColors {
 
   /// 淺色模式：暖米白背景、森林翡翠綠主色、自然大地色調
   static const lightSurface = Color(0xFFFAF9F6);
-  static const forestGreen = Color(0xFF059669);
+  /// 森林翡翠綠主色（#036949，對比白字 > 4.5:1，符合 WCAG AA 標準）
+  static const forestGreen = Color(0xFF036949);
   static const forestGreenContainer = Color(0xFFD1FAE5);
   static const forestGreenOnContainer = Color(0xFF065F46);
   static const lightSurfaceCard = Color(0xFFF3F0EA);

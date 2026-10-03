@@ -85,212 +85,255 @@ class ActivityDemandDetailSheet extends StatelessWidget {
             demand.sportLevelRating,
           );
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.xl,
-      ),
+    return SafeArea(
+      top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 標題列
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  activityTypeIcon(demand.activityTypeName),
-                  size: 24,
-                  color: scheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      demand.activityTypeName,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '匿名活動需求確認',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // 條件明細卡
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.4),
-              ),
+          // 頂部列：活動圖示 + 標題 + 關閉按鈕（明確提供退出路徑，F14/F36 審查修復）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.sm,
+              0,
             ),
-            child: Column(
+            child: Row(
               children: [
-                _DetailRow(
-                  icon: Icons.calendar_today_rounded,
-                  label: '可開始時段',
-                  value: demand.timeSlotLabel(relativeTo: relativeNow),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    activityTypeIcon(demand.activityTypeName),
+                    size: 24,
+                    color: scheme.onPrimaryContainer,
+                  ),
                 ),
-                const Divider(height: AppSpacing.md),
-                _DetailRow(
-                  icon: Icons.location_on_outlined,
-                  label: '活動校區',
-                  value: demand.campus,
-                ),
-                const Divider(height: AppSpacing.md),
-                _DetailRow(
-                  icon: Icons.tune_rounded,
-                  label: '程度 / 條件',
-                  value: levelLabel,
-                ),
-                const Divider(height: AppSpacing.md),
-                _DetailRow(
-                  icon: Icons.group_outlined,
-                  label: '人數規模',
-                  value: demand.maxParticipants != null
-                      ? '${demand.minParticipants} 至 ${demand.maxParticipants} 人'
-                      : '${demand.minParticipants} 人以上',
-                ),
-                const Divider(height: AppSpacing.md),
-                const _DetailRow(
-                  icon: Icons.place_outlined,
-                  label: '活動地點',
-                  value: '成團後由成員提案並投票決定；建議選擇安全、容易找到的公開場所',
-                ),
-                const Divider(height: AppSpacing.md),
-                const _DetailRow(
-                  icon: Icons.flag_outlined,
-                  label: '集合方式',
-                  value: '成團後確認（由成員提議集合點與見面特徵）',
-                ),
-                const Divider(height: AppSpacing.md),
-                const _DetailRow(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: '溝通形式',
-                  value: '成團前不公開聯絡方式；成團後於活動內查看地點與集合資訊',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // 整合式配對說明與盲配承諾（清楚說明：登入、撮合確認、等待室與截止機制）
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.info_outline_rounded,
-                      size: 16,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        '${demand.honestSignalText}。加入後將由系統在背景撮合相容夥伴，並非直接加入特定私人小組。',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          height: 1.45,
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        demand.activityTypeName,
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs + 2),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.shield_outlined,
-                      size: 16,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        '【安全承諾】撮合完全依條件進行，成團前絕不公開任何外部聯絡方式。撮合成功後提供 15 分鐘雙向確認；若至開始前仍未成團，需求將自動安全截止。',
+                      const SizedBox(height: 2),
+                      Text(
+                        '匿名活動需求確認',
                         style: textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
-                          height: 1.45,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  tooltip: '關閉',
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // 若無法參與（有進行中配對/活動），顯示說明
-          if (!canParticipate && disabledReason != null) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: Text(
-                disabledReason!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: scheme.error,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-
-          // 操作按鈕：以相容條件加入配對 + 調整條件後發起
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              label: participateButtonLabel ?? '以相容條件加入配對',
-              icon: Icons.how_to_reg_outlined,
-              onPressed: canParticipate
-                  ? () {
-                      AppHaptics.tap();
-                      Navigator.of(context).pop();
-                      onParticipate();
-                    }
-                  : null,
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton(
-              onPressed: () {
-                AppHaptics.selection();
-                Navigator.of(context).pop();
-                onCustomize();
-              },
-              child: const Text('調整條件後發起...'),
+
+          // 條件明細卡與說明（可捲動區域）
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: AppSpacing.xs),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        _DetailRow(
+                          icon: Icons.calendar_today_rounded,
+                          label: '可開始時段',
+                          value: demand.timeSlotLabel(relativeTo: relativeNow),
+                        ),
+                        const Divider(height: AppSpacing.md),
+                        _DetailRow(
+                          icon: Icons.location_on_outlined,
+                          label: '活動校區',
+                          value: demand.campus,
+                        ),
+                        const Divider(height: AppSpacing.md),
+                        _DetailRow(
+                          icon: Icons.tune_rounded,
+                          label: '程度 / 條件',
+                          value: levelLabel,
+                        ),
+                        const Divider(height: AppSpacing.md),
+                        _DetailRow(
+                          icon: Icons.group_outlined,
+                          label: '人數規模',
+                          value: demand.maxParticipants != null
+                              ? '${demand.minParticipants} 至 ${demand.maxParticipants} 人'
+                              : '${demand.minParticipants} 人以上',
+                        ),
+                        const Divider(height: AppSpacing.md),
+                        const _DetailRow(
+                          icon: Icons.place_outlined,
+                          label: '活動地點',
+                          value: '成團後由成員提案並投票決定；建議選擇安全、容易找到的公開場所',
+                          isDescription: true,
+                        ),
+                        const Divider(height: AppSpacing.md),
+                        const _DetailRow(
+                          icon: Icons.flag_outlined,
+                          label: '集合方式',
+                          value: '成團後確認（由成員提議集合點與見面特徵）',
+                          isDescription: true,
+                        ),
+                        const Divider(height: AppSpacing.md),
+                        const _DetailRow(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: '溝通形式',
+                          value: '成團前不公開聯絡方式；成團後於活動內查看地點與集合資訊',
+                          isDescription: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+
+                  // 整合式配對說明與盲配承諾
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                              color: scheme.primary,
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Text(
+                                '${demand.honestSignalText}。加入後將由系統在背景撮合相容夥伴，並非直接加入特定私人小組。',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.xs + 2),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.shield_outlined,
+                              size: 16,
+                              color: scheme.primary,
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Text(
+                                '【安全承諾】撮合完全依條件進行，成團前絕不公開任何外部聯絡方式。撮合成功後提供 15 分鐘雙向確認；若至開始前仍未成團，需求將自動安全截止。',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+              ),
+            ),
+          ),
+
+          // 固定的底部操作區（F13：主要 CTA 首屏立即可見，避免被長規則推到螢幕外）
+          Container(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.xs,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              border: Border(
+                top: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.35),
+                  width: 0.5,
+                ),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!canParticipate && disabledReason != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                    child: Text(
+                      disabledReason!,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: participateButtonLabel ?? '以相容條件加入配對',
+                    icon: Icons.how_to_reg_outlined,
+                    onPressed: canParticipate
+                        ? () {
+                            AppHaptics.tap();
+                            Navigator.of(context).pop();
+                            onParticipate();
+                          }
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () {
+                      AppHaptics.selection();
+                      Navigator.of(context).pop();
+                      onCustomize();
+                    },
+                    child: const Text('調整條件後發起...'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -304,17 +347,51 @@ class _DetailRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.isDescription = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final bool isDescription;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+
+    if (isDescription) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.only(left: 20),
+            child: Text(
+              value,
+              style: textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

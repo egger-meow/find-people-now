@@ -55,12 +55,14 @@ class PinnedActiveStatusCard extends StatelessWidget {
         ? '你目前有進行中的活動'
         : (isInviting ? '朋友邀請還沒完成' : '你正在配對中');
     final statusLabel = isActivity
-        ? (activity!.status == ACTIVITY_STATUS.ONGOING ? '活動進行中' : '已成團，等待出發')
+        ? (activity!.status == ACTIVITY_STATUS.ONGOING
+            ? '活動進行中 · 名額已確認'
+            : '已成團，等待出發 · 名額已確認')
         : (isInviting
-              ? '邀請朋友中，尚未開始配對'
-              : (request!.status == REQUEST_STATUS.PENDING_CONFIRMATION
-                    ? '小人數確認中'
-                    : '等待配對中'));
+            ? '邀請朋友中，尚未開始配對'
+            : (request!.status == REQUEST_STATUS.PENDING_CONFIRMATION
+                ? '小人數確認中 · 請於期限內確認'
+                : '已收到需求，正在撮合中'));
 
     final actionLabel = isActivity
         ? '前往活動房間'
@@ -99,7 +101,7 @@ class PinnedActiveStatusCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '狀態：$statusLabel${isInviting ? '' : ' · 已為你保留名額'}',
+                        '狀態：$statusLabel',
                         style: textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),

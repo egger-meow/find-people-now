@@ -69,7 +69,7 @@ class CampusDemandCardWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 頂部列：活動圖示 + 名稱 + 時間徽章
+            // 頂部列：活動圖示 + 名稱（滿版展示，避免 320 寬度直排，F07 審查修復）
             Row(
               children: [
                 Container(
@@ -86,45 +86,10 @@ class CampusDemandCardWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (summaryHeadline != null) ...[
-                        Text(
-                          summaryHeadline!,
-                          style: textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                      ],
-                      Text(
-                        demand.activityTypeName,
-                        style: summaryHeadline != null
-                            ? textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              )
-                            : textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
                   child: Text(
-                    demand.timeSlotLabel(relativeTo: relativeNow),
-                    style: textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurfaceVariant,
+                    summaryHeadline ?? demand.activityTypeName,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
@@ -132,11 +97,15 @@ class CampusDemandCardWidget extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
 
-            // 條件 Chips：校區、程度、人數範圍
+            // 條件 Chips：時段（移至晶片列靈活換行）、校區、程度、人數範圍
             Wrap(
               spacing: AppSpacing.xs,
               runSpacing: AppSpacing.xs,
               children: [
+                _CriterionChip(
+                  icon: Icons.access_time_rounded,
+                  label: demand.timeSlotLabel(relativeTo: relativeNow),
+                ),
                 _CriterionChip(
                   icon: Icons.location_on_outlined,
                   label: demand.campus,
@@ -300,39 +269,10 @@ class AggregatedDemandCardWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        headline,
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        group.activityTypeName,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
                   child: Text(
-                    '${group.demands.length} 組條件',
-                    style: textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurfaceVariant,
+                    headline,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
@@ -343,6 +283,10 @@ class AggregatedDemandCardWidget extends StatelessWidget {
               spacing: AppSpacing.xs,
               runSpacing: AppSpacing.xs,
               children: [
+                _CriterionChip(
+                  icon: Icons.layers_outlined,
+                  label: '${group.demands.length} 組條件',
+                ),
                 _CriterionChip(
                   icon: Icons.location_on_outlined,
                   label: group.campus,

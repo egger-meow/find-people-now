@@ -1785,26 +1785,99 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
         .toList();
     final picked = await showAppSheet<String>(
       context,
-      builder: (context) {
-        if (candidates.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(AppSpacing.lg),
-            child: Text('這個校區的核准地點都已經是候選了'),
-          );
-        }
-        return ListView(
-          shrinkWrap: true,
-          children: [
-            for (final loc in candidates)
-              ListTile(
-                title: Text(loc.name),
-                onTap: () => Navigator.of(context).pop(loc.id),
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final scheme = theme.colorScheme;
+        final textTheme = theme.textTheme;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.xl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '提出這場活動的地點',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-          ],
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '可從校園核准地點選擇，或自訂僅此活動專用的地點',
+                style: textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(AppSpacing.xs),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.edit_location_alt_outlined,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                ),
+                title: const Text('自訂其他地點（免審核）'),
+                subtitle: const Text('例如校外咖啡廳、桌遊店，馬上可投'),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  side: BorderSide(
+                    color: scheme.primary.withValues(alpha: 0.35),
+                  ),
+                ),
+                tileColor: scheme.primaryContainer.withValues(alpha: 0.15),
+                onTap: () => Navigator.of(sheetContext).pop('__CUSTOM__'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (candidates.isNotEmpty) ...[
+                Text(
+                  '校園核准地點',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                for (final loc in candidates)
+                  ListTile(
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(loc.name),
+                    dense: true,
+                    onTap: () => Navigator.of(sheetContext).pop(loc.id),
+                  ),
+              ] else ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  child: Text(
+                    '這個校區的核准地點都已經是候選了',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         );
       },
     );
-    if (picked != null) await _propose(picked);
+    if (!mounted || picked == null) return;
+    if (picked == '__CUSTOM__') {
+      await _proposeCustom();
+    } else {
+      await _propose(picked);
+    }
   }
 
   @override
@@ -1994,13 +2067,7 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
                       .toSet(),
                 ),
           icon: const Icon(Icons.add_location_alt_outlined),
-          label: const Text('提案新地點'),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        OutlinedButton.icon(
-          onPressed: _busy ? null : _proposeCustom,
-          icon: const Icon(Icons.edit_location_alt_outlined),
-          label: const Text('新增這場活動的候選地點'),
+          label: const Text('提出地點'),
         ),
         const SizedBox(height: AppSpacing.xs),
         ActivityOfficialLocationProposalAction(

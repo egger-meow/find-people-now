@@ -19,16 +19,21 @@ import '../theme/platform_adaptive.dart';
 /// 3. **圓角是 Material 尺度。** iOS sheet 的頂端圓角明顯更大，用 [AppRadius.lg]
 ///    對齊，跟 Material 分支各自維持自己的視覺語言。
 ///
+/// 4. **使用 `useRootNavigator: true`。** 確保在巢狀 ShellRoute 中彈出時，
+///    能完整覆蓋底部導覽列（避免背景 Tab 遮蓋或被誤觸，符合 F14 審查修復）。
+///
 /// 另外補上開啟時的輕觸覺——iOS 原生 sheet 彈出有實體感，沒有回饋會覺得
 /// 畫面「浮」出來但手上沒感覺。
 Future<T?> showAppSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
   bool isScrollControlled = true,
+  bool useRootNavigator = true,
 }) {
   AppHaptics.selection();
   return showModalBottomSheet<T>(
     context: context,
+    useRootNavigator: useRootNavigator,
     isScrollControlled: isScrollControlled,
     // 面板內容自己不再需要包 SafeArea，交給這裡統一處理上下兩端
     // （頂端避開瀏海、底端避開 home indicator）。
