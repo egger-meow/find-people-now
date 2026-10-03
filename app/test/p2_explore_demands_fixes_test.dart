@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:find_people_now/activities/activity_detail_providers.dart';
+import 'package:find_people_now/activities/activity_detail_screen.dart';
+import 'package:find_people_now/auth/auth_providers.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/match/widgets/campus_demand_card_widget.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/campus_demand_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
-import 'package:find_people_now/widgets/app_sheet.dart';
 import 'package:find_people_now/widgets/department_field.dart';
 
 CampusDemandCard _makeCard({
@@ -97,66 +100,72 @@ void main() {
       expect(find.byTooltip('展開科系清單'), findsWidgets);
     });
 
-    testWidgets('F36: 驗證無名操作賦予清晰語意名稱且 Sheet 關閉時焦點正確返回觸發節點', (tester) async {
+    testWidgets('F36: 驗證正式成員卡賦予清晰語意名稱且個人資料 Sheet 關閉時焦點正確返回頭像按鈕', (tester) async {
       final triggerFocusNode = FocusNode();
       addTearDown(triggerFocusNode.dispose);
 
+      final member = MemberRosterEntry(
+        userId: 'user-sunny',
+        sourceRequestId: 'req-1',
+        status: ACTIVITY_MEMBER_STATUS.JOINED,
+        displayName: '小晴',
+        avatarUrl: '',
+        contacts: null,
+        school: SCHOOL.NYCU,
+        department: '資工系',
+        degreeLevel: DEGREE_LEVEL.UNDERGRAD,
+        bio: '喜歡打羽球',
+        reliabilityTier: ReliabilityTier.trusted,
+        meetingHint: '穿白色運動外套',
+        arrivedAt: null,
+        vibeTags: ['羽球新手'],
+        studyTarget: null,
+      );
+
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: Scaffold(
-            body: Builder(
-              builder: (context) {
-                return Center(
-                  child: Semantics(
-                    button: true,
-                    label: '查看 小晴 的個人資料',
-                    child: ElevatedButton(
-                      focusNode: triggerFocusNode,
-                      onPressed: () {
-                        showAppSheet<void>(
-                          context,
-                          builder: (sheetContext) => Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('小晴個人資料'),
-                              ElevatedButton(
-                                onPressed: () => Navigator.of(sheetContext).pop(),
-                                child: const Text('關閉'),
-                              ),
-                            ],
-                          ),
-                        ).then((_) {
-                          triggerFocusNode.requestFocus();
-                        });
-                      },
-                      child: const Text('頭像按鈕'),
-                    ),
-                  ),
-                );
-              },
+        ProviderScope(
+          overrides: [
+            currentUserIdProvider.overrideWith((ref) => 'user-other'),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: Scaffold(
+              body: Center(
+                child: ActivityMemberCard(
+                  activityId: 'act-1',
+                  activityStatus: ACTIVITY_STATUS.MATCHED,
+                  member: member,
+                  activityTypeName: '羽球',
+                  focusNode: triggerFocusNode,
+                ),
+              ),
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // 1. 驗證無名操作賦予清楚之讀屏語意標籤
-      expect(find.bySemanticsLabel('查看 小晴 的個人資料'), findsOneWidget);
+      // 1. 驗證讀屏能識別帶有名字的清晰語意操作，而非未命名按鈕
+      final avatarFinder = find.bySemanticsLabel('查看 小晴 的個人資料');
+      expect(avatarFinder, findsOneWidget);
 
-      // 2. 聚焦並開啟 Sheet
+      // 2. 聚焦並點擊正式成員頭像開啟個人檔案 Sheet
       triggerFocusNode.requestFocus();
       await tester.pump();
       expect(triggerFocusNode.hasFocus, isTrue);
 
-      await tester.tap(find.text('頭像按鈕'));
+      await tester.tap(avatarFinder);
       await tester.pumpAndSettle();
-      expect(find.text('小晴個人資料'), findsOneWidget);
 
-      // 3. 關閉 Sheet 並驗證焦點成功回到觸發節點
-      await tester.tap(find.text('關閉'));
+      // 3. 驗證正式個人資料 Sheet 內容開啟
+      expect(find.text('小晴'), findsWidgets);
+      expect(find.text('喜歡打羽球'), findsOneWidget);
+
+      // 4. 關閉 Sheet 並驗證焦點成功返回觸發頭像
+      Navigator.of(tester.element(find.text('喜歡打羽球'))).pop();
       await tester.pumpAndSettle();
-      expect(find.text('小晴個人資料'), findsNothing);
+
+      expect(find.text('喜歡打羽球'), findsNothing);
       expect(triggerFocusNode.hasFocus, isTrue, reason: 'Sheet 關閉後焦點必須返回觸發元素');
     });
 

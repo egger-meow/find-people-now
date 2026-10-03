@@ -221,8 +221,9 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                               .withValues(alpha: 0.22),
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        alignment: WrapAlignment.center,
                         children: [
                           Icon(
                             Icons.school_rounded,
@@ -232,6 +233,7 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                           const SizedBox(width: 4),
                           Text(
                             '陽明交大 / 清華 校園即刻揪團',
+                            textAlign: TextAlign.center,
                             style:
                                 Theme.of(context).textTheme.labelSmall?.copyWith(
                                       color: Theme.of(context)

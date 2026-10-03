@@ -172,95 +172,123 @@ class _BadgesSection extends ConsumerWidget {
                 '成就徽章',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
-              Text(
-                '點擊查看條件',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(
+                  '點擊查看條件',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                  textAlign: TextAlign.end,
+                ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              for (final badge in AchievementBadge.values) ...[
-                Expanded(
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      onTap: () => _showBadgeDetails(
-                        context,
-                        badge,
-                        earned.contains(badge),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+              final useTwoColumns = textScale > 1.25 || constraints.maxWidth < 320;
+
+              Widget buildBadgeTile(AchievementBadge badge) {
+                return Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    onTap: () => _showBadgeDetails(
+                      context,
+                      badge,
+                      earned.contains(badge),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xs,
+                        horizontal: 2,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.xs,
-                          horizontal: 2,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              badge.icon,
-                              style: const TextStyle(fontSize: 26),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            badge.icon,
+                            style: const TextStyle(fontSize: 26),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            badge.label,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              badge.label,
+                            decoration: BoxDecoration(
+                              color: earned.contains(badge)
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: Text(
+                              earned.contains(badge) ? '已達成' : '未達成',
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall
                                   ?.copyWith(
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 10,
+                                    color: earned.contains(badge)
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: earned.contains(badge)
-                                    ? Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHighest,
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.pill),
-                              ),
-                              child: Text(
-                                earned.contains(badge) ? '已達成' : '未達成',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      fontSize: 10,
-                                      color: earned.contains(badge)
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .onPrimaryContainer
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-              ],
-            ],
+                );
+              }
+
+              if (useTwoColumns) {
+                final itemWidth = (constraints.maxWidth - AppSpacing.sm) / 2;
+                return Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    for (final badge in AchievementBadge.values)
+                      SizedBox(
+                        width: itemWidth,
+                        child: buildBadgeTile(badge),
+                      ),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  for (final badge in AchievementBadge.values)
+                    Expanded(child: buildBadgeTile(badge)),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -330,11 +358,13 @@ class ProfileScreen extends ConsumerWidget {
                                               .primary,
                                         ),
                                         const SizedBox(width: AppSpacing.sm),
-                                        Text(
-                                          '可信度等級：${_tierLabel(reliability.tier)}',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall,
+                                        Expanded(
+                                          child: Text(
+                                            '可信度等級：${_tierLabel(reliability.tier)}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleSmall,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -609,21 +639,62 @@ class _ThemeModeSection extends ConsumerWidget {
       children: [
         Text('外觀', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: AppSpacing.sm),
-        SegmentedButton<ThemeMode>(
-          showSelectedIcon: false,
-          segments: [
-            for (final m in ThemeMode.values)
-              ButtonSegment(
-                value: m,
-                label: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(_themeModeLabel(m), maxLines: 1, softWrap: false),
-                ),
-              ),
-          ],
-          selected: {mode},
-          onSelectionChanged: (selected) =>
-              ref.read(themeModeProvider.notifier).setThemeMode(selected.first),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+            if (textScale > 1.25 || constraints.maxWidth < 300) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final m in ThemeMode.values) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                      child: OutlinedButton(
+                        onPressed: () => ref
+                            .read(themeModeProvider.notifier)
+                            .setThemeMode(m),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: mode == m
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                              : null,
+                          foregroundColor: mode == m
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer
+                              : null,
+                        ),
+                        child: Text(
+                          _themeModeLabel(m),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            }
+
+            return SegmentedButton<ThemeMode>(
+              showSelectedIcon: false,
+              segments: [
+                for (final m in ThemeMode.values)
+                  ButtonSegment(
+                    value: m,
+                    label: Text(
+                      _themeModeLabel(m),
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+              ],
+              selected: {mode},
+              onSelectionChanged: (selected) => ref
+                  .read(themeModeProvider.notifier)
+                  .setThemeMode(selected.first),
+            );
+          },
         ),
       ],
     );

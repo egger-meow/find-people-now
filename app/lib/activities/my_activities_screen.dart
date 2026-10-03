@@ -182,18 +182,12 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
                   groupValue: _index,
                   children: const {
                     0: Padding(
-                      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('進行中', maxLines: 1, softWrap: false),
-                      ),
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                      child: Text('進行中', textAlign: TextAlign.center),
                     ),
                     1: Padding(
-                      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('已結束', maxLines: 1, softWrap: false),
-                      ),
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                      child: Text('已結束', textAlign: TextAlign.center),
                     ),
                   },
                   onValueChanged: (value) {

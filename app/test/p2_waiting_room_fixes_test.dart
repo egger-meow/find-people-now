@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -144,11 +145,31 @@ void main() {
     final mascotWidget = tester.widget<AppMascotStage>(mascotFinder);
     expect(mascotWidget.height, lessThanOrEqualTo(88));
 
-    // 首屏可達性：在 390x844 視窗中，無須滾動，核心邀請動作即在首屏可視高度內 (dy < 844)
-    final inviteBtnFinder = find.text('複製邀請碼');
+    // 首屏可達性：在 390x844 視窗中，無須滾動，核心邀請動作整顆按鈕均在首屏可視高度內 (dy <= 844) 且可點擊
+    final inviteBtnTextFinder = find.text('複製邀請碼');
+    expect(inviteBtnTextFinder, findsOneWidget);
+    final inviteBtnFinder = find.ancestor(
+      of: inviteBtnTextFinder,
+      matching: find.byType(OutlinedButton),
+    );
     expect(inviteBtnFinder, findsOneWidget);
+
     final inviteTopLeft = tester.getTopLeft(inviteBtnFinder);
-    expect(inviteTopLeft.dy, lessThan(844.0), reason: '複製邀請碼必須在首屏 844 像素可視高度內');
+    final inviteBottomRight = tester.getBottomRight(inviteBtnFinder);
+    expect(inviteTopLeft.dy, greaterThanOrEqualTo(0.0));
+    expect(inviteBottomRight.dy, lessThanOrEqualTo(844.0),
+        reason: '整顆「複製邀請碼」按鈕必須完整在首屏可見範圍內，不得裁切');
+
+    // 實際觸發點擊，證明可點且正常執行複製回饋
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall methodCall) async => null,
+    );
+    await tester.tap(inviteBtnFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('已複製邀請碼'), findsOneWidget);
+    await tester.pumpAndSettle();
 
     // 驗證安全取消退出動作可達且清楚說明無冷卻
     final cancelBtnFinder = find.text('取消整個配對');

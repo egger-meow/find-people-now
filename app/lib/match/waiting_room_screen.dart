@@ -170,7 +170,10 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                   },
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -180,7 +183,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                               padding: EdgeInsets.only(bottom: AppSpacing.xs),
                               child: AppMascotStage(
                                 assetPath: 'assets/mascot/matching.png',
-                                height: 52,
+                                height: 44,
                                 style: AppMascotStageStyle.waiting,
                                 semanticLabel: '街街貓正在幫你找夥伴',
                               ),
@@ -188,6 +191,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                           ),
                         ],
                         AppStatusSummary(
+                          compact: true,
                           title: statusContent.title,
                           message: statusContent.message,
                           leading: const MatchingPulse(),
@@ -255,9 +259,11 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                           onGenerate: () => _getOrCreateInviteLink(request.id),
                           onCopy: () async {
                             if (effectiveInviteToken == null) return;
-                            await Clipboard.setData(
-                              ClipboardData(text: effectiveInviteToken),
-                            );
+                            try {
+                              await Clipboard.setData(
+                                ClipboardData(text: effectiveInviteToken),
+                              );
+                            } catch (_) {}
                             if (context.mounted) {
                               showAppSnackBar(context, '已複製邀請碼');
                             }
@@ -266,9 +272,11 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                             if (effectiveInviteToken == null) return;
                             final shareText =
                                 '來跟我一起參加配對！\n打開「敢不敢揪」App ➔ 首頁右上角點擊「輸入邀請碼」圖示 ➔ 貼上「$effectiveInviteToken」即可加入同一個房間！';
-                            await Clipboard.setData(
-                              ClipboardData(text: shareText),
-                            );
+                            try {
+                              await Clipboard.setData(
+                                ClipboardData(text: shareText),
+                              );
+                            } catch (_) {}
                             if (context.mounted) {
                               showAppSnackBar(context, '已複製邀請訊息，可直接貼給朋友');
                             }
@@ -986,7 +994,7 @@ class _RequestInfoCard extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           // 時間範圍
           Row(
             children: [

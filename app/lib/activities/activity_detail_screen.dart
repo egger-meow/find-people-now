@@ -610,24 +610,21 @@ class ActivityDetailNavigation extends StatelessWidget {
                 vertical: AppSpacing.sm,
                 horizontal: AppSpacing.xs,
               ),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.place_rounded, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      '地點與集合',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.place_rounded, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    '地點與集合',
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             1: Padding(
@@ -635,24 +632,21 @@ class ActivityDetailNavigation extends StatelessWidget {
                 vertical: AppSpacing.sm,
                 horizontal: AppSpacing.xs,
               ),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.groups_rounded, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      '成員與聯絡',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.groups_rounded, size: 18),
+                  const SizedBox(width: 4),
+                  Text(
+                    '成員與聯絡',
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           },
@@ -685,18 +679,12 @@ class ActivityDetailNavigation extends StatelessWidget {
           ButtonSegment(
             value: 0,
             icon: Icon(Icons.place_rounded, size: 16),
-            label: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text('地點與集合', maxLines: 1, softWrap: false),
-            ),
+            label: Text('地點與集合', maxLines: 2, textAlign: TextAlign.center),
           ),
           ButtonSegment(
             value: 1,
             icon: Icon(Icons.groups_rounded, size: 18),
-            label: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text('成員與聯絡', maxLines: 1, softWrap: false),
-            ),
+            label: Text('成員與聯絡', maxLines: 2, textAlign: TextAlign.center),
           ),
         ],
         selected: {index},
@@ -2799,29 +2787,53 @@ class MembersTab extends ConsumerWidget {
 /// 都能繼續按（見 [_RematchButton]），呼應 UI_PLAN §4「COMPLETED」列的「再約
 /// 按鈕」跟第一步/第二步彈窗（`_CompletionReportSheet`/`_RematchSheet`）是
 /// 同一個底層 RPC 的兩個入口，不是兩套邏輯。
-class _MemberCard extends ConsumerStatefulWidget {
-  const _MemberCard({
+class ActivityMemberCard extends ConsumerStatefulWidget {
+  const ActivityMemberCard({
     super.key,
     required this.activityId,
     required this.activityStatus,
     required this.member,
     required this.activityTypeName,
+    this.focusNode,
   });
 
   final String activityId;
   final ACTIVITY_STATUS activityStatus;
   final MemberRosterEntry member;
   final String activityTypeName;
+  final FocusNode? focusNode;
 
   @override
-  ConsumerState<_MemberCard> createState() => _MemberCardState();
+  ConsumerState<ActivityMemberCard> createState() => _ActivityMemberCardState();
 }
 
-class _MemberCardState extends ConsumerState<_MemberCard> {
+typedef _MemberCard = ActivityMemberCard;
+
+class _ActivityMemberCardState extends ConsumerState<ActivityMemberCard> {
   bool _expanded = false;
   bool _blocking = false;
   bool _openingReport = false;
   bool _vibeBusy = false;
+  final FocusNode _profileTriggerFocusNode = FocusNode();
+
+  FocusNode get _effectiveFocusNode =>
+      widget.focusNode ?? _profileTriggerFocusNode;
+
+  @override
+  void dispose() {
+    _profileTriggerFocusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openProfileSheet() async {
+    await showAppSheet<void>(
+      context,
+      builder: (context) => _ProfileCardSheet(member: widget.member),
+    );
+    if (mounted) {
+      _effectiveFocusNode.requestFocus();
+    }
+  }
 
   Future<void> _confirmBlock() async {
     if (_blocking) return;
@@ -3018,10 +3030,7 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: isSelf
-              ? () => showAppSheet<void>(
-                  context,
-                  builder: (context) => _ProfileCardSheet(member: member),
-                )
+              ? _openProfileSheet
               : () => setState(() => _expanded = !_expanded),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
@@ -3042,11 +3051,9 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                       button: true,
                       label: '查看 ${isSelf ? '自己' : member.displayName} 的個人資料',
                       child: InkWell(
+                        focusNode: _effectiveFocusNode,
                         borderRadius: BorderRadius.circular(28),
-                        onTap: () => showAppSheet<void>(
-                          context,
-                          builder: (context) => _ProfileCardSheet(member: member),
-                        ),
+                        onTap: _openProfileSheet,
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [

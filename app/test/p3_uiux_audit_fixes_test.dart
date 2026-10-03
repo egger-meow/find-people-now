@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:find_people_now/activities/activity_detail_screen.dart';
+import 'package:find_people_now/activities/my_activities_providers.dart';
+import 'package:find_people_now/activities/my_activities_screen.dart';
 import 'package:find_people_now/auth/auth_providers.dart';
 import 'package:find_people_now/auth/otp_login_screen.dart';
 import 'package:find_people_now/generated/app_user.dart';
@@ -237,6 +240,144 @@ void main() {
       // '登出' is a ListTile inside the legal & account card, not in a lonely separate card
       expect(find.widgetWithText(ListTile, '登出'), findsOneWidget);
       expect(find.widgetWithText(ListTile, '服務條款'), findsOneWidget);
+    });
+
+    testWidgets('F35: 驗證 200% (2.0) 字級下 OtpLoginScreen 校園徽章與表單自適應換列無溢出', (tester) async {
+      tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseClientProvider.overrideWithValue(_createDummyClient()),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(2.0),
+              ),
+              child: child!,
+            ),
+            home: const Scaffold(body: OtpLoginScreen()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('敢不敢揪'), findsOneWidget);
+      expect(find.text('羽球、讀書、桌遊，找到現在也想一起的同學。'), findsOneWidget);
+      expect(find.text('陽明交大 / 清華 校園即刻揪團'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('F35: 驗證 200% (2.0) 字級下 ActivityDetailNavigation 導覽分段無 FittedBox 並自然展開折行', (tester) async {
+      tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(2.0),
+            ),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: ActivityDetailNavigation(
+              index: 0,
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('地點與集合'), findsOneWidget);
+      expect(find.text('成員與聯絡'), findsOneWidget);
+      // 確保沒有 FittedBox 包裹文字強制將其縮小回原尺寸
+      expect(find.ancestor(of: find.text('地點與集合'), matching: find.byType(FittedBox)), findsNothing);
+      expect(find.ancestor(of: find.text('成員與聯絡'), matching: find.byType(FittedBox)), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('F35: 驗證 200% (2.0) 字級下 MyActivitiesScreen 分段控制無 FittedBox', (tester) async {
+      tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            myActivityListProvider.overrideWith((ref) async => const []),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(2.0),
+              ),
+              child: child!,
+            ),
+            home: const MyActivitiesScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('進行中'), findsOneWidget);
+      expect(find.text('已結束'), findsOneWidget);
+      expect(find.ancestor(of: find.text('進行中'), matching: find.byType(FittedBox)), findsNothing);
+      expect(find.ancestor(of: find.text('已結束'), matching: find.byType(FittedBox)), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('F35: 驗證 200% (2.0) 字級下 ProfileScreen 外觀主題控制無 FittedBox 且正常呈現', (tester) async {
+      tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final user = _createTestUser();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseClientProvider.overrideWithValue(_createDummyClient()),
+            myAppUserProvider.overrideWith((ref) => Future.value(user)),
+            myReliabilityProvider.overrideWith(
+              (ref) => Future.value(
+                MyReliability(tier: ReliabilityTier.trusted, isNewUser: false),
+              ),
+            ),
+            myBadgesProvider.overrideWith(
+              (ref) => Future.value({AchievementBadge.firstActivity}),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(2.0),
+              ),
+              child: child!,
+            ),
+            home: const ProfileScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(find.text('跟隨系統'), 100);
+      expect(find.text('跟隨系統'), findsOneWidget);
+      expect(find.ancestor(of: find.text('跟隨系統'), matching: find.byType(FittedBox)), findsNothing);
+      final exc = tester.takeException();
+      expect(exc, isNull);
     });
   });
 }

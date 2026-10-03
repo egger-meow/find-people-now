@@ -17,42 +17,109 @@ import 'package:find_people_now/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
-  testWidgets('F26: ActivityDetailBodyLayout 縮減頂部邊距與 Delegate 高度，維持首屏可達性', (tester) async {
-    // 1. 直向 390x844 視窗：驗證首屏內容、緊湊導覽列與固定動作列同時可見
+  testWidgets('F26: ActivityDetailBodyLayout 搭配正式摘要、導覽與動作列，維持首屏與橫向可達性', (tester) async {
+    final now = DateTime.utc(2026, 10, 4, 12, 0);
+    final testActivity = Activity(
+      id: 'act-f26-layout-test',
+      activityTypeId: 'badminton',
+      startTime: now.add(const Duration(hours: 2)),
+      estimatedEndTime: now.add(const Duration(hours: 4)),
+      status: ACTIVITY_STATUS.ONGOING,
+      contactVisibleUntil: now.add(const Duration(days: 1)),
+      createdAt: now,
+      school: SCHOOL.NYCU,
+      campus: '光復',
+    );
+
+    var stickyActionTapped = false;
+    var navIndex = 0;
+
+    Widget buildLayout() {
+      return ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: ActivityDetailBodyLayout(
+              summary: ActivityDetailStatusSummary(
+                activity: testActivity,
+                locationOptions: const [],
+                locationVotes: const [],
+                fixtureLocations: const [],
+                meetingPointUpdates: const [],
+                currentTime: now.add(const Duration(hours: 2, minutes: 30)),
+              ),
+              navigation: StatefulBuilder(
+                builder: (context, setState) {
+                  return ActivityDetailNavigation(
+                    index: navIndex,
+                    onChanged: (i) => setState(() => navIndex = i),
+                  );
+                },
+              ),
+              content: const Center(child: Text('正式活動資訊內容區塊')),
+              stickyAction: ActivityDetailStickyAction(
+                status: ACTIVITY_STATUS.ONGOING,
+                hasLocationOptions: true,
+                sectionIndex: 0,
+                onPressed: () => stickyActionTapped = true,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 1. 直向 390x844 視窗：驗證正式摘要、分段導覽、內容與固定動作列同時可見且可點
     tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light,
-        home: Scaffold(
-          body: ActivityDetailBodyLayout(
-            summary: const SizedBox(height: 120, child: Text('狀態摘要')),
-            navigation: const Text('分頁導覽'),
-            content: const Text('內容'),
-            stickyAction: const Text('動作按鈕'),
-          ),
-        ),
-      ),
-    );
+    await tester.pumpWidget(buildLayout());
     await tester.pumpAndSettle();
 
-    expect(find.text('狀態摘要'), findsOneWidget);
-    expect(find.text('分頁導覽'), findsOneWidget);
-    expect(find.text('內容'), findsOneWidget);
-    expect(find.text('動作按鈕'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    // 驗證正式狀態摘要
+    expect(find.byType(ActivityDetailStatusSummary), findsOneWidget);
+    expect(find.text('進行中'), findsOneWidget);
+
+    // 驗證正式導覽列包含「地點與集合」和「成員與聯絡」
+    expect(find.byType(ActivityDetailNavigation), findsOneWidget);
+    expect(find.text('地點與集合'), findsOneWidget);
+    expect(find.text('成員與聯絡'), findsOneWidget);
+
+    // 驗證正式內容
+    expect(find.text('正式活動資訊內容區塊'), findsOneWidget);
+
+    // 驗證正式 Sticky Action 完整在首屏高度內 (dy <= 844) 且點擊回呼有效
+    final stickyTextFinder = find.text('查看成員與聯絡');
+    expect(stickyTextFinder, findsOneWidget);
+    final stickyBtnFinder = find.ancestor(
+      of: stickyTextFinder,
+      matching: find.byType(FilledButton),
+    );
+    expect(stickyBtnFinder, findsOneWidget);
+
+    final stickyTopLeft = tester.getTopLeft(stickyBtnFinder);
+    final stickyBottomRight = tester.getBottomRight(stickyBtnFinder);
+    expect(stickyTopLeft.dy, greaterThanOrEqualTo(0.0));
+    expect(stickyBottomRight.dy, lessThanOrEqualTo(844.0),
+        reason: '直向 390x844 下，正式底部固定操作按鈕必須完整在首屏可見範圍內');
+
+    await tester.tap(stickyBtnFinder);
+    await tester.pumpAndSettle();
+    expect(stickyActionTapped, isTrue);
 
     // 2. 橫向短視窗 844x390：驗證橫向空間下導覽列、內容與固定操作依然可達，無任何溢出
     tester.view.physicalSize = const Size(844 * 2.0, 390 * 2.0);
     await tester.pumpAndSettle();
 
-    expect(find.text('動作按鈕'), findsOneWidget);
-    expect(find.text('分頁導覽'), findsOneWidget);
-    final stickyActionDy = tester.getTopLeft(find.text('動作按鈕')).dy;
-    expect(stickyActionDy, lessThan(390.0), reason: '橫向短螢幕下底部固定操作列必須在 390 像素視窗內可達');
+    expect(find.byType(ActivityDetailNavigation), findsOneWidget);
+    expect(find.text('正式活動資訊內容區塊'), findsOneWidget);
+    expect(stickyBtnFinder, findsOneWidget);
+
+    final landscapeBottomRight = tester.getBottomRight(stickyBtnFinder);
+    expect(landscapeBottomRight.dy, lessThanOrEqualTo(390.0),
+        reason: '橫向 844x390 下，正式底部固定操作列必須在 390 像素視窗內可達且無溢出');
     expect(tester.takeException(), isNull);
   });
 
