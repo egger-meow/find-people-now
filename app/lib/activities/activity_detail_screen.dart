@@ -574,20 +574,45 @@ class _ActivityDetailNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     if (isCupertino) {
       return ConstrainedBox(
         key: const Key('activity-detail-navigation'),
-        constraints: const BoxConstraints(minHeight: 44),
+        constraints: const BoxConstraints(minHeight: 46),
         child: CupertinoSlidingSegmentedControl<int>(
           groupValue: index,
           children: const {
             0: Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Text('地點與集合'),
+              padding: EdgeInsets.symmetric(
+                vertical: AppSpacing.sm,
+                horizontal: AppSpacing.xs,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.place_rounded, size: 16),
+                  SizedBox(width: 4),
+                  Text('地點與集合'),
+                ],
+              ),
             ),
             1: Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Text('成員與聯絡'),
+              padding: EdgeInsets.symmetric(
+                vertical: AppSpacing.sm,
+                horizontal: AppSpacing.xs,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.groups_rounded, size: 18),
+                  SizedBox(width: 4),
+                  Text('成員與聯絡'),
+                ],
+              ),
             ),
           },
           onValueChanged: (value) {
@@ -601,12 +626,31 @@ class _ActivityDetailNavigation extends StatelessWidget {
       key: const Key('activity-detail-navigation'),
       width: double.infinity,
       child: SegmentedButton<int>(
-        style: const ButtonStyle(
-          minimumSize: WidgetStatePropertyAll(Size.fromHeight(44)),
+        style: ButtonStyle(
+          minimumSize: const WidgetStatePropertyAll(Size.fromHeight(46)),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+          ),
+          side: WidgetStateProperty.resolveWith((states) {
+            return BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.45),
+              width: 1,
+            );
+          }),
         ),
         segments: const [
-          ButtonSegment(value: 0, label: Text('地點與集合')),
-          ButtonSegment(value: 1, label: Text('成員與聯絡')),
+          ButtonSegment(
+            value: 0,
+            icon: Icon(Icons.place_rounded, size: 16),
+            label: Text('地點與集合'),
+          ),
+          ButtonSegment(
+            value: 1,
+            icon: Icon(Icons.groups_rounded, size: 18),
+            label: Text('成員與聯絡'),
+          ),
         ],
         selected: {index},
         showSelectedIcon: false,
@@ -2516,7 +2560,7 @@ class MembersTab extends ConsumerWidget {
                     padding: const EdgeInsets.all(AppSpacing.md),
                     child: AppSection(
                       title: '活動成員',
-                      description: '每個人的想說的話都顯示在卡片上；點選卡片可查看更多資料。',
+                      description: '點擊卡片認識夥伴、交換聯絡方式 ✨ 也可以設定自己的風格標籤喔！',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2525,16 +2569,53 @@ class MembersTab extends ConsumerWidget {
                           else
                             for (final group in groups.values) ...[
                               if (group.length > 1) ...[
-                                Text(
-                                  '一起加入',
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 3.5,
+                                  ),
+                                  margin: const EdgeInsets.only(
+                                    bottom: AppSpacing.xs,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                        .withValues(alpha: 0.35),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.diversity_3_rounded,
+                                        size: 13,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
                                       ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '同組出發夥伴',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: AppSpacing.xs),
                               ],
                               for (final member in group) ...[
                                 _MemberCard(
@@ -2759,209 +2840,515 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
     final showArrival =
         widget.activityStatus == ACTIVITY_STATUS.MATCHED ||
         widget.activityStatus == ACTIVITY_STATUS.ONGOING;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
-    return AppCard(
-      onTap: isSelf
-          ? () => showAppSheet<void>(
-              context,
-              builder: (context) => _ProfileCardSheet(member: member),
-            )
-          : () => setState(() => _expanded = !_expanded),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 見面提示（「想說的話」）對本人與其他成員都可見。
-          if (member.meetingHint != null && member.meetingHint!.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 8, bottom: 2),
-              child: _MeetingHintBubble(text: member.meetingHint!),
-            ),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // v1.33 個人檔案卡：頭像本身有自己獨立的 tap target，跟外層
-              // AppCard 展開聯絡方式的 onTap 分開——同一顆卡片上
-              // _RematchButton/_ArrivalButton 也是各自獨立的按鈕、不會誤觸卡片
-              // 的展開/收合，這裡採用同樣的巢狀手勢寫法。只有非本人才能點開
-              // （自己的檔案卡意義不大，且原本 isSelf 時整張卡的 onTap 就是
-              // null）。
-              InkWell(
-                borderRadius: BorderRadius.circular(24),
-                onTap: () => showAppSheet<void>(
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isSelf
+              ? scheme.primary.withValues(alpha: 0.35)
+              : scheme.outlineVariant.withValues(alpha: 0.45),
+          width: isSelf ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: isSelf
+              ? () => showAppSheet<void>(
                   context,
                   builder: (context) => _ProfileCardSheet(member: member),
-                ),
-                child: CircleAvatar(
-                  radius: 22,
-                  backgroundImage: member.avatarUrl.isEmpty
-                      ? null
-                      : NetworkImage(member.avatarUrl),
-                  child: member.avatarUrl.isEmpty
-                      ? const Icon(Icons.person_rounded)
-                      : null,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
+                )
+              : () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (member.meetingHint != null &&
+                    member.meetingHint!.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 4),
+                    child: _MeetingHintBubble(text: member.meetingHint!),
+                  ),
+                ],
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      isSelf ? '${member.displayName}（你）' : member.displayName,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    if (isSelf)
-                      Text(
-                        '你的想說的話：${member.meetingHint?.isNotEmpty == true ? member.meetingHint : '尚未填寫'}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                    InkWell(
+                      borderRadius: BorderRadius.circular(28),
+                      onTap: () => showAppSheet<void>(
+                        context,
+                        builder: (context) => _ProfileCardSheet(member: member),
                       ),
-                    Text(
-                      '${schoolLabel(member.school)} · ${member.department ?? '未填科系'} · ${_degreeLabel(member.degreeLevel)}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    Text(
-                      isCancelled
-                          ? '已取消參加 · 可信度 ${_tierLabel(member.reliabilityTier)}'
-                          : '可信度 ${_tierLabel(member.reliabilityTier)}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    // v1.34/v1.35/v1.42 — 該成員發起/加入配對當下指定的程度／讀書目標，
-                    // 兩者互斥（分屬不同活動類型），非 null 才顯示。
-                    if (member.sportLevel != null)
-                      Text(
-                        SportLevelConfig.format(
-                          member.levelSystem,
-                          member.sportLevel,
-                          rating: member.sportLevelRating,
-                        ),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    if (member.studyTarget != null &&
-                        member.studyTarget!.isNotEmpty)
-                      Text(
-                        '讀書目標：${member.studyTarget}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    if (showArrival && !isCancelled) ...[
-                      const SizedBox(height: 2),
-                      Row(
+                      child: Stack(
+                        clipBehavior: Clip.none,
                         children: [
-                          Icon(
-                            member.arrivedAt != null
-                                ? Icons.check_circle_rounded
-                                : Icons.schedule_rounded,
-                            size: 14,
-                            color: member.arrivedAt != null
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+                          Container(
+                            padding: const EdgeInsets.all(2.5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: isSelf
+                                    ? [scheme.primary, scheme.tertiary]
+                                    : member.arrivedAt != null
+                                        ? [
+                                            scheme.primary,
+                                            scheme.primaryContainer
+                                          ]
+                                        : [
+                                            scheme.outlineVariant
+                                                .withValues(alpha: 0.6),
+                                            scheme.surfaceContainerHighest,
+                                          ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                            ),
+                            child: CircleAvatar(
+                              radius: 22,
+                              backgroundColor: scheme.surfaceContainerHighest,
+                              backgroundImage: member.avatarUrl.isEmpty
+                                  ? null
+                                  : NetworkImage(member.avatarUrl),
+                              child: member.avatarUrl.isEmpty
+                                  ? Icon(
+                                      Icons.person_rounded,
+                                      color: scheme.onSurfaceVariant,
+                                      size: 22,
+                                    )
+                                  : null,
+                            ),
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            member.arrivedAt != null
-                                ? '已於 ${_hm(member.arrivedAt!.toLocal())} 抵達'
-                                : '尚未抵達',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: member.arrivedAt != null
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
+                          if (member.arrivedAt != null)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(1.5),
+                                decoration: BoxDecoration(
+                                  color: scheme.surface,
+                                  shape: BoxShape.circle,
                                 ),
-                          ),
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: scheme.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check,
+                                    size: 9,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
-                    ],
-                    if (member.vibeTags.isNotEmpty ||
-                        (isSelf && !isCancelled)) ...[
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (final tag in member.vibeTags)
-                            Chip(
-                              label: Text(
-                                tag,
-                                style: const TextStyle(fontSize: 11),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        isSelf
+                                            ? '${member.displayName}（你）'
+                                            : member.displayName,
+                                        style:
+                                            theme.textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isSelf) ...[
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 1.5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: scheme.primaryContainer,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          '本人',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            color: scheme.onPrimaryContainer,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
-                              visualDensity: const VisualDensity(
-                                horizontal: -2,
-                                vertical: -1,
+                              if (!isSelf &&
+                                  widget.activityStatus ==
+                                      ACTIVITY_STATUS.COMPLETED &&
+                                  !isCancelled) ...[
+                                _RematchButton(
+                                  activityId: widget.activityId,
+                                  toUserId: member.userId,
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                              ],
+                              if (!isSelf)
+                                Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.5),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    _expanded
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    size: 16,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (isSelf) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              '你的想說的話：${member.meetingHint?.isNotEmpty == true ? member.meetingHint : '尚未填寫'}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              padding: EdgeInsets.zero,
                             ),
-                          if (isSelf && !isCancelled)
-                            ActionChip(
-                              avatar: const Icon(Icons.add_rounded, size: 14),
-                              label: Text(
-                                member.vibeTags.isEmpty ? '設定參與風格' : '編輯',
-                                style: const TextStyle(fontSize: 11),
+                          ],
+                          const SizedBox(height: 5),
+                          Wrap(
+                            spacing: 5,
+                            runSpacing: 4,
+                            children: [
+                              _CuteBadge(
+                                icon: Icons.school_rounded,
+                                label:
+                                    '${schoolLabel(member.school)} · ${member.department ?? '未填科系'} · ${_degreeLabel(member.degreeLevel)}',
                               ),
-                              visualDensity: const VisualDensity(
-                                horizontal: -2,
-                                vertical: -1,
+                              _ReliabilityBadge(
+                                tier: member.reliabilityTier,
+                                isCancelled: isCancelled,
                               ),
-                              onPressed: _vibeBusy ? null : _editVibeTags,
+                              if (member.sportLevel != null)
+                                _CuteBadge(
+                                  icon: Icons.fitness_center_rounded,
+                                  label: SportLevelConfig.format(
+                                    member.levelSystem,
+                                    member.sportLevel,
+                                    rating: member.sportLevelRating,
+                                  ),
+                                ),
+                              if (member.studyTarget != null &&
+                                  member.studyTarget!.isNotEmpty)
+                                _CuteBadge(
+                                  icon: Icons.menu_book_rounded,
+                                  label: '讀書目標：${member.studyTarget}',
+                                ),
+                              if (showArrival && !isCancelled)
+                                _CuteArrivalBadge(
+                                  arrivedAt: member.arrivedAt,
+                                ),
+                            ],
+                          ),
+                          if (member.vibeTags.isNotEmpty ||
+                              (isSelf && !isCancelled)) ...[
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                for (final tag in member.vibeTags)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.secondaryContainer
+                                          .withValues(alpha: 0.35),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: scheme.secondary
+                                            .withValues(alpha: 0.2),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '#$tag',
+                                      style:
+                                          theme.textTheme.labelSmall?.copyWith(
+                                        color: scheme.onSecondaryContainer,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                if (isSelf && !isCancelled)
+                                  ActionChip(
+                                    avatar: Icon(
+                                      member.vibeTags.isEmpty
+                                          ? Icons.auto_awesome_rounded
+                                          : Icons.edit_rounded,
+                                      size: 13,
+                                      color: scheme.primary,
+                                    ),
+                                    label: Text(
+                                      member.vibeTags.isEmpty
+                                          ? '設定參與風格'
+                                          : '編輯風格',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: scheme.primary,
+                                      ),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      side: BorderSide(
+                                        color: scheme.primary
+                                            .withValues(alpha: 0.35),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    visualDensity: const VisualDensity(
+                                      horizontal: -2,
+                                      vertical: -2,
+                                    ),
+                                    onPressed: _vibeBusy ? null : _editVibeTags,
+                                  ),
+                              ],
                             ),
+                          ],
+                          if (isSelf &&
+                              showArrival &&
+                              !isCancelled &&
+                              member.arrivedAt == null) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _ArrivalButton(activityId: widget.activityId),
+                            ),
+                          ],
                         ],
                       ),
-                    ],
+                    ),
                   ],
                 ),
-              ),
-              if (!isSelf &&
-                  widget.activityStatus == ACTIVITY_STATUS.COMPLETED &&
-                  !isCancelled) ...[
-                _RematchButton(
-                  activityId: widget.activityId,
-                  toUserId: member.userId,
-                ),
-                const SizedBox(width: AppSpacing.xs),
+                if (_expanded && !isSelf) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  const Divider(height: 1),
+                  const SizedBox(height: AppSpacing.md),
+                  AppSection(
+                    title: '聯絡方式',
+                    child: ActivityMemberContactSection(
+                        contacts: member.contacts),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  ActivityMemberSafetyActions(
+                    blocking: _blocking,
+                    openingReport: _openingReport,
+                    onBlock: _confirmBlock,
+                    onReport: _openReportSheet,
+                  ),
+                ],
               ],
-              if (isSelf &&
-                  showArrival &&
-                  !isCancelled &&
-                  member.arrivedAt == null)
-                _ArrivalButton(activityId: widget.activityId),
-              if (!isSelf)
-                Icon(
-                  _expanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-                ),
-            ],
+            ),
           ),
-          if (_expanded && !isSelf) ...[
-            const SizedBox(height: AppSpacing.sm),
-            const Divider(height: 1),
-            const SizedBox(height: AppSpacing.md),
-            AppSection(
-              title: '聯絡方式',
-              child: ActivityMemberContactSection(contacts: member.contacts),
+        ),
+      ),
+    );
+  }
+}
+
+class _CuteBadge extends StatelessWidget {
+  const _CuteBadge({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: scheme.primary),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontSize: 11,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: AppSpacing.md),
-            ActivityMemberSafetyActions(
-              blocking: _blocking,
-              openingReport: _openingReport,
-              onBlock: _confirmBlock,
-              onReport: _openReportSheet,
-            ),
-          ],
+          ),
         ],
       ),
     );
   }
 }
 
-/// 見面提示漫畫講話框——貼在成員頭像正上方，不用展開卡片就看得到，取代原本
-/// 埋在展開區塊裡的一行小字。純展示用（沒有互動），用 Stack 疊一個旋轉 45°
-/// 的小方塊當講話框尾巴，跟主體同色，指向下方的頭像。
+class _ReliabilityBadge extends StatelessWidget {
+  const _ReliabilityBadge({required this.tier, this.isCancelled = false});
+  final ReliabilityTier tier;
+  final bool isCancelled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    if (isCancelled) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          '已取消參加 · 可信度 ${_tierLabel(tier)}',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: scheme.onErrorContainer,
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+          ),
+        ),
+      );
+    }
+
+    final (icon, tierText, bg, fg) = switch (tier) {
+      ReliabilityTier.newUser => (
+        '🌱',
+        '新朋友 ${_tierLabel(tier)}',
+        scheme.secondaryContainer.withValues(alpha: 0.5),
+        scheme.onSecondaryContainer,
+      ),
+      ReliabilityTier.normal => (
+        '🌟',
+        '優質夥伴 ${_tierLabel(tier)}',
+        scheme.tertiaryContainer.withValues(alpha: 0.5),
+        scheme.onTertiaryContainer,
+      ),
+      ReliabilityTier.trusted => (
+        '🛡️',
+        '值得信賴 ${_tierLabel(tier)}',
+        scheme.primaryContainer.withValues(alpha: 0.5),
+        scheme.onPrimaryContainer,
+      ),
+      ReliabilityTier.unknown => (
+        '✨',
+        '可信度 ${_tierLabel(tier)}',
+        scheme.surfaceContainerHighest,
+        scheme.onSurfaceVariant,
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '$icon $tierText',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: fg,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+}
+
+class _CuteArrivalBadge extends StatelessWidget {
+  const _CuteArrivalBadge({required this.arrivedAt});
+  final DateTime? arrivedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isArrived = arrivedAt != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: isArrived
+            ? scheme.primaryContainer.withValues(alpha: 0.6)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isArrived ? Icons.check_circle_rounded : Icons.schedule_rounded,
+            size: 13,
+            color: isArrived ? scheme.primary : scheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isArrived
+                ? '已於 ${_hm(arrivedAt!.toLocal())} 抵達'
+                : '尚未抵達',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: isArrived ? scheme.primary : scheme.onSurfaceVariant,
+              fontWeight: isArrived ? FontWeight.w600 : FontWeight.normal,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 見面提示漫畫講話框——貼在成員頭像正上方，不用展開卡片就看得到。
 class _MeetingHintBubble extends StatelessWidget {
   const _MeetingHintBubble({required this.text});
 
@@ -2972,40 +3359,104 @@ class _MeetingHintBubble extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  scheme.primaryContainer.withValues(alpha: 0.9),
+                  scheme.primaryContainer.withValues(alpha: 0.7),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: Text(
-                text,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onPrimaryContainer,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
+                bottomRight: Radius.circular(14),
+                bottomLeft: Radius.circular(4),
+              ),
+              border: Border.all(
+                color: scheme.primary.withValues(alpha: 0.35),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
-              ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.chat_bubble_rounded,
+                  size: 12,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    text,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
             ),
           ),
-          Positioned(
-            left: 14,
-            bottom: -5,
-            child: Transform.rotate(
-              angle: 0.78539816339744830961, // 45°
-              child: Container(
-                width: 10,
-                height: 10,
-                color: scheme.primaryContainer,
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: CustomPaint(
+              size: const Size(10, 5),
+              painter: _BubblePointerPainter(
+                color: scheme.primaryContainer.withValues(alpha: 0.85),
+                borderColor: scheme.primary.withValues(alpha: 0.35),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+class _BubblePointerPainter extends CustomPainter {
+  _BubblePointerPainter({required this.color, required this.borderColor});
+
+  final Color color;
+  final Color borderColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0);
+
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BubblePointerPainter oldDelegate) {
+    return oldDelegate.color != color || oldDelegate.borderColor != borderColor;
   }
 }
 
@@ -3168,7 +3619,12 @@ class _RematchButtonState extends ConsumerState<_RematchButton> {
     final voted = votesAsync.value?.contains(widget.toUserId) ?? false;
     return OutlinedButton(
       onPressed: voted || _busy ? null : _vote,
-      style: OutlinedButton.styleFrom(minimumSize: const Size(64, 44)),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(64, 40),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
       child: Text(voted ? '已再約' : '👍 再約'),
     );
   }
@@ -3232,7 +3688,10 @@ class _ArrivalButtonState extends ConsumerState<_ArrivalButton> {
     return FilledButton.icon(
       onPressed: _busy ? null : _confirmAndMarkArrived,
       style: FilledButton.styleFrom(
-        minimumSize: const Size(112, 44),
+        minimumSize: const Size(112, 42),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(21),
+        ),
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
           vertical: AppSpacing.xs,
