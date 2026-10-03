@@ -128,46 +128,54 @@ class CampusDemandsSection extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (availableCampuses.length > 1)
-                  InkWell(
-                    onTap: () => _showCampusPicker(context),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.xs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest.withValues(
-                          alpha: 0.6,
-                        ),
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.location_on_outlined,
-                            size: 14,
-                            color: scheme.primary,
+                  Semantics(
+                    button: true,
+                    label: '切換校區，目前為$campus',
+                    child: InkWell(
+                      onTap: () => _showCampusPicker(context),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        child: Container(
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm + 2,
+                            vertical: 8,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            campus,
-                            style: textTheme.labelSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSurface,
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest.withValues(
+                              alpha: 0.6,
+                            ),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                            border: Border.all(
+                              color: scheme.outlineVariant.withValues(alpha: 0.5),
                             ),
                           ),
-                          const SizedBox(width: 2),
-                          Icon(
-                            Icons.arrow_drop_down_rounded,
-                            size: 16,
-                            color: scheme.onSurfaceVariant,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 14,
+                                color: scheme.primary,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                campus,
+                                style: textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: scheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              Icon(
+                                Icons.arrow_drop_down_rounded,
+                                size: 16,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   )

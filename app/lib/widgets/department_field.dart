@@ -30,6 +30,14 @@ class DepartmentField extends StatelessWidget {
       enableFilter: true,
       requestFocusOnTap: true,
       label: const Text('科系（選填，可輸入搜尋或直接手動輸入）'),
+      trailingIcon: const Tooltip(
+        message: '展開科系清單',
+        child: Icon(Icons.arrow_drop_down),
+      ),
+      selectedTrailingIcon: const Tooltip(
+        message: '收起科系清單',
+        child: Icon(Icons.arrow_drop_up),
+      ),
       dropdownMenuEntries: [
         for (final department in options) DropdownMenuEntry(value: department, label: department),
       ],

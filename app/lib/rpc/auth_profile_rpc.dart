@@ -67,6 +67,25 @@ enum ReliabilityTier {
   }
 }
 
+/// 統一的可信度標籤與中文定義（F29 審查修復：三處介面措辭統一，消除未經驗證的誇大詞彙）
+extension ReliabilityTierExtension on ReliabilityTier {
+  /// 簡短中文標籤
+  String get label => switch (this) {
+    ReliabilityTier.trusted => '高信賴度',
+    ReliabilityTier.normal => '良好紀錄',
+    ReliabilityTier.newUser => '新朋友',
+    ReliabilityTier.unknown => '一般紀錄',
+  };
+
+  /// 包含英文代碼之展示標籤
+  String get displayLabel => switch (this) {
+    ReliabilityTier.trusted => '高信賴度 (Trusted)',
+    ReliabilityTier.normal => '良好紀錄 (Normal)',
+    ReliabilityTier.newUser => '新朋友 (New)',
+    ReliabilityTier.unknown => '一般紀錄',
+  };
+}
+
 class MyReliability {
   final ReliabilityTier tier;
   final bool isNewUser;

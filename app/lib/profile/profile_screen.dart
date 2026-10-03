@@ -33,12 +33,7 @@ String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
   DEGREE_LEVEL.PHD => '博士班',
 };
 
-String _tierLabel(ReliabilityTier tier) => switch (tier) {
-  ReliabilityTier.trusted => 'Trusted',
-  ReliabilityTier.normal => 'Normal',
-  ReliabilityTier.newUser => 'New',
-  ReliabilityTier.unknown => '—',
-};
+String _tierLabel(ReliabilityTier tier) => tier.displayLabel;
 
 Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
   final confirmed = await showAppConfirmDialog(

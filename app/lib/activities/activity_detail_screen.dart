@@ -2953,76 +2953,80 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(28),
-                      onTap: () => showAppSheet<void>(
-                        context,
-                        builder: (context) => _ProfileCardSheet(member: member),
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(2.5),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: isSelf
-                                    ? [scheme.primary, scheme.tertiary]
-                                    : member.arrivedAt != null
-                                        ? [
-                                            scheme.primary,
-                                            scheme.primaryContainer
-                                          ]
-                                        : [
-                                            scheme.outlineVariant
-                                                .withValues(alpha: 0.6),
-                                            scheme.surfaceContainerHighest,
-                                          ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+                    Semantics(
+                      button: true,
+                      label: '查看 ${isSelf ? '自己' : member.displayName} 的個人資料',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(28),
+                        onTap: () => showAppSheet<void>(
+                          context,
+                          builder: (context) => _ProfileCardSheet(member: member),
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(2.5),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: isSelf
+                                      ? [scheme.primary, scheme.tertiary]
+                                      : member.arrivedAt != null
+                                          ? [
+                                              scheme.primary,
+                                              scheme.primaryContainer
+                                            ]
+                                          : [
+                                              scheme.outlineVariant
+                                                  .withValues(alpha: 0.6),
+                                              scheme.surfaceContainerHighest,
+                                            ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                              ),
+                              child: CircleAvatar(
+                                radius: 22,
+                                backgroundColor: scheme.surfaceContainerHighest,
+                                backgroundImage: member.avatarUrl.isEmpty
+                                    ? null
+                                    : NetworkImage(member.avatarUrl),
+                                child: member.avatarUrl.isEmpty
+                                    ? Icon(
+                                        Icons.person_rounded,
+                                        color: scheme.onSurfaceVariant,
+                                        size: 22,
+                                      )
+                                    : null,
                               ),
                             ),
-                            child: CircleAvatar(
-                              radius: 22,
-                              backgroundColor: scheme.surfaceContainerHighest,
-                              backgroundImage: member.avatarUrl.isEmpty
-                                  ? null
-                                  : NetworkImage(member.avatarUrl),
-                              child: member.avatarUrl.isEmpty
-                                  ? Icon(
-                                      Icons.person_rounded,
-                                      color: scheme.onSurfaceVariant,
-                                      size: 22,
-                                    )
-                                  : null,
-                            ),
-                          ),
-                          if (member.arrivedAt != null)
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(1.5),
-                                decoration: BoxDecoration(
-                                  color: scheme.surface,
-                                  shape: BoxShape.circle,
-                                ),
+                            if (member.arrivedAt != null)
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
                                 child: Container(
-                                  padding: const EdgeInsets.all(2),
+                                  padding: const EdgeInsets.all(1.5),
                                   decoration: BoxDecoration(
-                                    color: scheme.primary,
+                                    color: scheme.surface,
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(
-                                    Icons.check,
-                                    size: 9,
-                                    color: Colors.white,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: scheme.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      size: 9,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
@@ -3101,14 +3105,15 @@ class _MemberCardState extends ConsumerState<_MemberCard> {
                                 ),
                             ],
                           ),
-                          if (isSelf) ...[
+                          // F28：若頂部氣泡已顯示見面提示，此處不重複顯示自身想說的話；僅在未填寫時提示
+                          if (isSelf && (member.meetingHint == null || member.meetingHint!.isEmpty)) ...[
                             const SizedBox(height: 3),
                             Text(
-                              '你的想說的話：${member.meetingHint?.isNotEmpty == true ? member.meetingHint : '尚未填寫'}',
+                              '給夥伴的見面提示：尚未填寫（點頭像可補充）',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.primary,
+                                color: scheme.onSurfaceVariant,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
@@ -3330,25 +3335,25 @@ class _ReliabilityBadge extends StatelessWidget {
     final (icon, tierText, bg, fg) = switch (tier) {
       ReliabilityTier.newUser => (
         '🌱',
-        '新朋友 ${_tierLabel(tier)}',
+        tier.displayLabel,
         scheme.secondaryContainer.withValues(alpha: 0.5),
         scheme.onSecondaryContainer,
       ),
       ReliabilityTier.normal => (
-        '🌟',
-        '優質夥伴 ${_tierLabel(tier)}',
+        '🤝',
+        tier.displayLabel,
         scheme.tertiaryContainer.withValues(alpha: 0.5),
         scheme.onTertiaryContainer,
       ),
       ReliabilityTier.trusted => (
         '🛡️',
-        '值得信賴 ${_tierLabel(tier)}',
+        tier.displayLabel,
         scheme.primaryContainer.withValues(alpha: 0.5),
         scheme.onPrimaryContainer,
       ),
       ReliabilityTier.unknown => (
         '✨',
-        '可信度 ${_tierLabel(tier)}',
+        tier.displayLabel,
         scheme.surfaceContainerHighest,
         scheme.onSurfaceVariant,
       ),

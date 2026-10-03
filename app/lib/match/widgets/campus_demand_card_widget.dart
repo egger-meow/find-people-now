@@ -57,121 +57,129 @@ class CampusDemandCardWidget extends StatelessWidget {
             demand.sportLevelRating,
           );
 
+    final conciseBottomSignal = (summaryHeadline != null &&
+            summaryHeadline!.contains('人'))
+        ? (demand.formedPersonCount > 0
+            ? '成團依條件撮合 · ${demand.formedSignalText}'
+            : '成團依條件撮合，非保證立即成行')
+        : demand.honestSignalText;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: AppCard(
-        onTap: onTap != null
-            ? () {
-                AppHaptics.tap();
-                onTap!();
-              }
-            : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 頂部列：活動圖示 + 名稱（滿版展示，避免 320 寬度直排，F07 審查修復）
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.xs + 2),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Semantics(
+        label: '${demand.activityTypeName}揪團需求，${demand.campus}，點擊查看條件',
+        button: true,
+        child: AppCard(
+          onTap: onTap != null
+              ? () {
+                  AppHaptics.tap();
+                  onTap!();
+                }
+              : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 頂部列：活動圖示 + 名稱（滿版展示，避免 320 寬度直排，F07 審查修復）
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.xs + 2),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(
+                      activityTypeIcon(demand.activityTypeName),
+                      size: 20,
+                      color: scheme.primary,
+                    ),
                   ),
-                  child: Icon(
-                    activityTypeIcon(demand.activityTypeName),
-                    size: 20,
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      summaryHeadline ?? demand.activityTypeName,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+
+              // 條件 Chips：時段（移至晶片列靈活換行）、校區、程度、人數範圍
+              Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  _CriterionChip(
+                    icon: Icons.access_time_rounded,
+                    label: demand.timeSlotLabel(relativeTo: relativeNow),
+                  ),
+                  _CriterionChip(
+                    icon: Icons.location_on_outlined,
+                    label: demand.campus,
+                  ),
+                  _CriterionChip(
+                    icon: Icons.tune_rounded,
+                    label: levelLabel,
+                  ),
+                  _CriterionChip(
+                    icon: Icons.group_outlined,
+                    label: demand.headcountRangeLabel,
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+
+              // 底部列：客觀誠實訊號 + 查看詳情按鈕（F09：去重人數陳述；F36：排除重複語意按鈕）
+              Row(
+                children: [
+                  Icon(
+                    Icons.people_outline_rounded,
+                    size: 18,
                     color: scheme.primary,
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    summaryHeadline ?? demand.activityTypeName,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      conciseBottomSignal,
+                      style: textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-
-            // 條件 Chips：時段（移至晶片列靈活換行）、校區、程度、人數範圍
-            Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
-              children: [
-                _CriterionChip(
-                  icon: Icons.access_time_rounded,
-                  label: demand.timeSlotLabel(relativeTo: relativeNow),
-                ),
-                _CriterionChip(
-                  icon: Icons.location_on_outlined,
-                  label: demand.campus,
-                ),
-                _CriterionChip(
-                  icon: Icons.tune_rounded,
-                  label: levelLabel,
-                ),
-                _CriterionChip(
-                  icon: Icons.group_outlined,
-                  label: demand.headcountRangeLabel,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-
-            // 底部列：客觀誠實訊號 + 查看詳情按鈕（明確回答「多少人在等」與「我如何參與」）
-            Row(
-              children: [
-                Icon(
-                  Icons.people_outline_rounded,
-                  size: 18,
-                  color: scheme.primary,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    demand.honestSignalText,
-                    style: textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: scheme.onSurfaceVariant,
+                  ExcludeSemantics(
+                    child: TextButton(
+                      onPressed: onTap != null
+                          ? () {
+                              AppHaptics.tap();
+                              onTap!();
+                            }
+                          : null,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: AppSpacing.xs,
+                        ),
+                        minimumSize: const Size(64, 44),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('看看條件'),
+                          SizedBox(width: 2),
+                          Icon(Icons.chevron_right_rounded, size: 16),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                TextButton(
-                  onPressed: onTap != null
-                      ? () {
-                          AppHaptics.tap();
-                          onTap!();
-                        }
-                      : null,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: AppSpacing.xs,
-                    ),
-                    minimumSize: const Size(64, 44),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Semantics(
-                    label: '看看${demand.activityTypeName}條件',
-                    button: true,
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('看看條件'),
-                        SizedBox(width: 2),
-                        Icon(Icons.chevron_right_rounded, size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -195,21 +203,22 @@ class _CriterionChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
-        vertical: 3,
+        vertical: 4.5,
       ),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: scheme.onSurfaceVariant),
+          Icon(icon, size: 14, color: scheme.onSurfaceVariant),
           const SizedBox(width: 4),
           Text(
             label,
             style: textTheme.bodySmall?.copyWith(
-              fontSize: 11,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
               color: scheme.onSurfaceVariant,
             ),
           ),
@@ -245,105 +254,107 @@ class AggregatedDemandCardWidget extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: AppCard(
-        onTap: () {
-          AppHaptics.tap();
-          onTap();
-        },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.xs + 2),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Semantics(
+        label: '${group.activityTypeName}多組揪團需求，共${group.demands.length}組條件，點擊展開挑選',
+        button: true,
+        child: AppCard(
+          onTap: () {
+            AppHaptics.tap();
+            onTap();
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.xs + 2),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(
+                      activityTypeIcon(group.activityTypeName),
+                      size: 20,
+                      color: scheme.primary,
+                    ),
                   ),
-                  child: Icon(
-                    activityTypeIcon(group.activityTypeName),
-                    size: 20,
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      headline,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  _CriterionChip(
+                    icon: Icons.layers_outlined,
+                    label: '${group.demands.length} 組條件',
+                  ),
+                  _CriterionChip(
+                    icon: Icons.location_on_outlined,
+                    label: group.campus,
+                  ),
+                  const _CriterionChip(
+                    icon: Icons.tune_rounded,
+                    label: '包含多種時段與程度',
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Icon(
+                    Icons.people_outline_rounded,
+                    size: 18,
                     color: scheme.primary,
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    headline,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      '共 ${group.demands.length} 組需求等待相容 · 點擊展開挑選',
+                      style: textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
-              children: [
-                _CriterionChip(
-                  icon: Icons.layers_outlined,
-                  label: '${group.demands.length} 組條件',
-                ),
-                _CriterionChip(
-                  icon: Icons.location_on_outlined,
-                  label: group.campus,
-                ),
-                const _CriterionChip(
-                  icon: Icons.tune_rounded,
-                  label: '包含多種時段與程度',
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                Icon(
-                  Icons.people_outline_rounded,
-                  size: 18,
-                  color: scheme.primary,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    '共 ${group.demands.length} 組需求等待相容 · 點擊展開挑選',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: scheme.onSurfaceVariant,
+                  ExcludeSemantics(
+                    child: TextButton(
+                      onPressed: () {
+                        AppHaptics.tap();
+                        onTap();
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: AppSpacing.xs,
+                        ),
+                        minimumSize: const Size(64, 44),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('看看條件'),
+                          SizedBox(width: 2),
+                          Icon(Icons.chevron_right_rounded, size: 16),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    AppHaptics.tap();
-                    onTap();
-                  },
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: AppSpacing.xs,
-                    ),
-                    minimumSize: const Size(64, 44),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Semantics(
-                    label: '看看${group.activityTypeName}所有條件',
-                    button: true,
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('看看條件'),
-                        SizedBox(width: 2),
-                        Icon(Icons.chevron_right_rounded, size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

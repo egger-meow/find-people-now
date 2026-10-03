@@ -33,8 +33,8 @@ class _OnboardingGateState extends ConsumerState<OnboardingGate> {
 
     final mediaQuery = MediaQuery.of(context);
     final screenHeight = mediaQuery.size.height;
-    // 約束卡片最高為畫面高度的 48%，確保中心與底部完全暴露且可直接點選
-    final cardMaxHeight = (screenHeight * 0.48).clamp(180.0, 320.0);
+    // 約束卡片最高為畫面高度的 36%（至多 240），確保中心與首頁主內容完全暴露（F12）
+    final cardMaxHeight = (screenHeight * 0.36).clamp(160.0, 240.0);
 
     return Stack(
       children: [

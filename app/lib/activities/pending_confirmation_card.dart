@@ -55,12 +55,7 @@ String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
   DEGREE_LEVEL.PHD => '博士班',
 };
 
-String _tierLabel(ReliabilityTier tier) => switch (tier) {
-  ReliabilityTier.trusted => 'Trusted',
-  ReliabilityTier.normal => 'Normal',
-  ReliabilityTier.newUser => 'New',
-  ReliabilityTier.unknown => '—',
-};
+String _tierLabel(ReliabilityTier tier) => tier.displayLabel;
 
 /// UI_PLAN.md §4 / §6.1 — `PENDING_CONFIRMATION` 卡片：SPEC §12.1.3「安全
 /// 資訊卡」+「確認參加」/「這次先不要」動作。安全資訊卡的資料源
@@ -441,7 +436,7 @@ class _PendingConfirmationStatusViewState
         const SizedBox(height: AppSpacing.md),
         AppSection(
           title: '你的決定',
-          description: '確認與拒絕是兩個獨立動作；送出期間會暫停按鈕，避免重複回應。',
+          description: '雙方皆確認後活動即刻成團；若逾時或選擇先不要，需求將安全結束且不影響信譽。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
