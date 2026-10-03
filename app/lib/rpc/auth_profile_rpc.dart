@@ -122,7 +122,7 @@ enum AchievementBadge {
     'PUNCTUAL',
     '⚡',
     '準時好車友',
-    '至少 3 筆成團活動準時報到，且無缺席紀錄',
+    '累計至少 3 次活動出席紀錄，且無缺席紀錄',
   ),
   greatCompany(
     'GREAT_COMPANY',

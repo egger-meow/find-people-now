@@ -15,6 +15,7 @@ import 'package:find_people_now/generated/app_user.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/match/match_providers.dart';
 import 'package:find_people_now/profile/profile_screen.dart';
+import 'package:find_people_now/rpc/activity_rpc.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
 import 'package:find_people_now/widgets/app_button.dart';
@@ -149,7 +150,7 @@ void main() {
       // GREAT_COMPANY: v_mutual_count >= 1
       // ENTHUSIASTIC_ORGANIZER: v_organized >= 3
       expect(AchievementBadge.firstActivity.criteria, '完成至少 1 筆成團活動出席報到');
-      expect(AchievementBadge.punctual.criteria, '至少 3 筆成團活動準時報到，且無缺席紀錄');
+      expect(AchievementBadge.punctual.criteria, '累計至少 3 次活動出席紀錄，且無缺席紀錄');
       expect(AchievementBadge.greatCompany.criteria, '活動結束後，至少一次雙方互相投票願意再約');
       expect(AchievementBadge.enthusiasticOrganizer.criteria, '至少 3 筆自己發起且成功成團配對的需求');
     });
@@ -184,7 +185,7 @@ void main() {
 
       // Bottom sheet should display criteria and status
       expect(find.text('解鎖條件'), findsOneWidget);
-      expect(find.text('至少 3 筆成團活動準時報到，且無缺席紀錄'), findsOneWidget);
+      expect(find.text('累計至少 3 次活動出席紀錄，且無缺席紀錄'), findsOneWidget);
       expect(find.widgetWithText(AppButton, '關閉'), findsOneWidget);
       expect(find.byTooltip('關閉'), findsOneWidget);
 
@@ -355,7 +356,7 @@ void main() {
       expect(find.descendant(of: find.byType(AppCard), matching: find.byType(AppCard)), findsNothing);
     });
 
-    testWidgets('F37: ActivityDetailScreen maintains flat card hierarchy with zero nested cards', (tester) async {
+    testWidgets('F37: ActivityDetailScreen maintains flat card hierarchy with zero nested cards across both location and member tabs', (tester) async {
       final now = DateTime(2026, 10, 4, 12, 0);
       final testActivity = Activity(
         id: 'act-card-hierarchy-test',
@@ -385,6 +386,40 @@ void main() {
         proposedBy: 'user-me',
         createdAt: now,
       );
+      final testMemberMe = MemberRosterEntry(
+        userId: 'user-me',
+        sourceRequestId: 'req-1',
+        status: ACTIVITY_MEMBER_STATUS.JOINED,
+        displayName: '小明',
+        avatarUrl: '',
+        contacts: ActivityContactDetails(contactLine: 'ming_line'),
+        school: SCHOOL.NYCU,
+        department: '資工系',
+        degreeLevel: DEGREE_LEVEL.UNDERGRAD,
+        bio: '喜歡打羽球',
+        reliabilityTier: ReliabilityTier.trusted,
+        meetingHint: '藍色球拍袋',
+        arrivedAt: now.add(const Duration(minutes: 5)),
+        vibeTags: const ['好相處'],
+        studyTarget: '',
+      );
+      final testMemberFriend = MemberRosterEntry(
+        userId: 'user-friend',
+        sourceRequestId: 'req-2',
+        status: ACTIVITY_MEMBER_STATUS.JOINED,
+        displayName: '小晴',
+        avatarUrl: '',
+        contacts: ActivityContactDetails(contactLine: 'sunny_line'),
+        school: SCHOOL.NYCU,
+        department: '外文系',
+        degreeLevel: DEGREE_LEVEL.UNDERGRAD,
+        bio: '新手友善',
+        reliabilityTier: ReliabilityTier.normal,
+        meetingHint: '穿白色球衣',
+        arrivedAt: null,
+        vibeTags: const ['熱血'],
+        studyTarget: '',
+      );
 
       await tester.pumpWidget(
         ProviderScope(
@@ -398,7 +433,7 @@ void main() {
             approvedLocationsProvider((testActivity.school, testActivity.campus)).overrideWith((ref) async => []),
             activityMeetingPointUpdatesStreamProvider(testActivity.id).overrideWith((ref) => Stream.value([])),
             activityMeetingPointStreamProvider(testActivity.id).overrideWith((ref) => Stream.value(null)),
-            activityMemberRosterProvider(testActivity.id).overrideWith((ref) async => []),
+            activityMemberRosterProvider(testActivity.id).overrideWith((ref) async => [testMemberMe, testMemberFriend]),
             activityArrivalStreamProvider(testActivity.id).overrideWith((ref) => const AsyncData({})),
             activityVibeTagsStreamProvider(testActivity.id).overrideWith((ref) => const AsyncData({})),
             activityMeetingHintStreamProvider(testActivity.id).overrideWith((ref) => const AsyncData({})),
@@ -413,7 +448,29 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 驗證活動頁所有 AppCard 均為平級，不存在「卡片包卡片」的巢狀層級
+      // 1. 地點分頁驗證：所有 AppCard 均為平級，不存在「卡片包卡片」的巢狀層級
+      expect(find.text('地點與集合'), findsOneWidget);
+      expect(find.text('交大綜合一館羽球場'), findsOneWidget);
+      expect(find.descendant(of: find.byType(AppCard), matching: find.byType(AppCard)), findsNothing);
+
+      // 2. 切換至成員分頁驗證
+      await tester.tap(find.text('成員與聯絡'));
+      await tester.pumpAndSettle();
+
+      // 驗證成員資料正確呈現
+      expect(find.text('小明（你）'), findsOneWidget);
+      expect(find.text('小晴'), findsOneWidget);
+      expect(find.byType(ActivityMemberCard), findsNWidgets(2));
+
+      // 驗證成員分頁下所有 AppCard 亦為平級，不存在巢狀卡片
+      expect(find.descendant(of: find.byType(AppCard), matching: find.byType(AppCard)), findsNothing);
+
+      // 3. 展開成員卡片，驗證展開狀態下依然保持零卡片巢狀
+      await tester.ensureVisible(find.text('小晴'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('小晴'));
+      await tester.pumpAndSettle();
+      expect(find.text('穿白色球衣'), findsOneWidget);
       expect(find.descendant(of: find.byType(AppCard), matching: find.byType(AppCard)), findsNothing);
     });
 
