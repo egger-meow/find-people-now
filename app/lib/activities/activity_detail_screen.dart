@@ -90,23 +90,23 @@ String _stickyActionLabel(
   required bool locationLoading,
   required bool locationError,
   int sectionIndex = 0,
-}) => switch (status) {
-  ACTIVITY_STATUS.MATCHED ||
-  ACTIVITY_STATUS.ONGOING when locationLoading => '正在載入地點資訊',
-  ACTIVITY_STATUS.MATCHED ||
-  ACTIVITY_STATUS.ONGOING when locationError => '重新載入地點資訊',
-  ACTIVITY_STATUS.MATCHED when sectionIndex == 1 =>
-    hasLocationOptions ? '返回地點頁參與投票' : '返回地點頁提出候選',
-  ACTIVITY_STATUS.MATCHED when sectionIndex == 0 =>
-    hasLocationOptions ? '查看成員與聯絡' : '提出地點',
-  ACTIVITY_STATUS.ONGOING when sectionIndex == 1 =>
-    hasLocationOptions ? '查看成員與聯絡' : '返回地點頁提出候選',
-  ACTIVITY_STATUS.ONGOING when sectionIndex == 0 =>
-    hasLocationOptions ? '查看成員與聯絡' : '提出地點',
-  ACTIVITY_STATUS.COMPLETED => '查看成員與再約',
-  ACTIVITY_STATUS.CANCELLED => '查看活動紀錄',
-  _ => '查看成員與聯絡',
-};
+}) {
+  if (status == ACTIVITY_STATUS.MATCHED || status == ACTIVITY_STATUS.ONGOING) {
+    if (locationLoading) return '正在載入地點資訊';
+    if (locationError) return '重新載入地點資訊';
+    if (sectionIndex == 1) {
+      return hasLocationOptions ? '返回地點頁參與投票' : '返回地點頁提出候選';
+    }
+    return hasLocationOptions ? '查看成員與聯絡' : '提出地點';
+  }
+  if (status == ACTIVITY_STATUS.COMPLETED) {
+    return sectionIndex == 1 ? '返回活動紀錄' : '查看成員與再約';
+  }
+  if (status == ACTIVITY_STATUS.CANCELLED) {
+    return '查看活動紀錄';
+  }
+  return '查看成員與聯絡';
+}
 
 String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
   DEGREE_LEVEL.UNDERGRAD => '大學部',
@@ -417,6 +417,23 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                             (activity.status == ACTIVITY_STATUS.MATCHED ||
                                 activity.status == ACTIVITY_STATUS.ONGOING) &&
                             locationError;
+                        if (locationNeedsReload) {
+                          setState(() => _sectionIndex = 0);
+                          ref.invalidate(
+                            activityLocationOptionsStreamProvider(activity.id),
+                          );
+                          ref.invalidate(
+                            activityLocationVotesStreamProvider(activity.id),
+                          );
+                          ref.invalidate(
+                            approvedLocationsProvider((
+                              activity.school,
+                              activity.campus,
+                            )),
+                          );
+                          return;
+                        }
+
                         if (_sectionIndex == 1) {
                           setState(() => _sectionIndex = 0);
                           ref.invalidate(
@@ -432,7 +449,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                             )),
                           );
                         } else {
-                          if (!hasLocationOptions && !locationNeedsReload) {
+                          if (!hasLocationOptions) {
                             _votingKey.currentState?.triggerProposeSheet();
                           } else {
                             setState(() => _sectionIndex = 1);
@@ -941,10 +958,8 @@ class ActivityDetailStickyAction extends StatelessWidget {
         (effectiveLocationError
             ? Icons.refresh_rounded
             : sectionIndex == 1
-            ? (status == ACTIVITY_STATUS.MATCHED || !hasLocationOptions
-                ? Icons.place_rounded
-                : Icons.groups_rounded)
-            : (status == ACTIVITY_STATUS.MATCHED
+            ? Icons.place_rounded
+            : ((status == ACTIVITY_STATUS.MATCHED || status == ACTIVITY_STATUS.ONGOING) && !hasLocationOptions
                 ? Icons.how_to_vote_outlined
                 : Icons.groups_rounded));
 
