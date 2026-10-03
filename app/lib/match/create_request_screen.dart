@@ -1325,7 +1325,9 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
     final typesAsync = ref.watch(activityTypesProvider);
     final userAsync = ref.watch(myAppUserProvider);
     final reliabilityAsync = ref.watch(myReliabilityProvider);
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
 
     return typesAsync.when(
       loading: () => const LoadingIndicator(),
@@ -1475,6 +1477,29 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                       types: types,
                     ),
                     const SizedBox(height: AppSpacing.md),
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        top: AppSpacing.sm,
+                        bottom: AppSpacing.xs,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.add_circle_outline_rounded,
+                            size: 20,
+                            color: scheme.primary,
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            '發起新配對',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     KeyedSubtree(
                       key: _formTopKey,
                       child: _FormCardSection(
@@ -2098,80 +2123,69 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                   ],
                 ),
               ),
-              AppStickyActionArea(
-                child: Builder(
-                  builder: (context) {
-                    final missing = _missingRequiredChoice(window);
-                    final actionHint = hasActiveState
-                        ? (activeRequest != null
-                              ? '你已有進行中的配對，請先前往等待室或取消後再發起新配對'
-                              : '你目前有進行中的活動，請先前往活動或結束後再發起新配對')
-                        : (isCooldown ? '配對冷卻中，暫時無法送出' : missing);
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (actionHint != null) ...[
-                          Text(
-                            actionHint,
-                            textAlign: TextAlign.center,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: hasActiveState
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+              if (!hasActiveState)
+                AppStickyActionArea(
+                  child: Builder(
+                    builder: (context) {
+                      final inFormContext = _selectedType != null;
+                      final missing = _missingRequiredChoice(window);
+                      final actionHint = isCooldown
+                          ? '配對冷卻中，暫時無法送出'
+                          : (inFormContext ? missing : null);
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (actionHint != null) ...[
+                            Text(
+                              actionHint,
+                              textAlign: TextAlign.center,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                        ],
-                        if (_error != null) ...[
-                          Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
+                          if (_error != null) ...[
+                            Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
                             ),
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
+                          AppButton(
+                            label: isCooldown
+                                ? '配對冷卻中，暫時無法送出'
+                                : (!inFormContext
+                                      ? '發起新配對'
+                                      : (_inviteFriendsBeforeMatching
+                                            ? '下一步：邀請朋友'
+                                            : '送出，開始找人')),
+                            loading: isActiveLoading || _submitting,
+                            onPressed:
+                                isActiveLoading || _submitting || _confirming
+                                ? null
+                                : isCooldown
+                                ? null
+                                : !inFormContext
+                                ? () => _scrollToSection(_formTopKey)
+                                : missing != null
+                                ? () {
+                                    setState(() => _error = '請完成所有選擇：$missing');
+                                    _scrollToFirstMissingField(missing);
+                                  }
+                                : _confirmAndSubmit,
                           ),
-                          const SizedBox(height: AppSpacing.xs),
                         ],
-                        AppButton(
-                          label: hasActiveState
-                              ? (activeRequest != null ? '前往等待室' : '查看活動')
-                              : (isCooldown
-                                    ? '配對冷卻中，暫時無法送出'
-                                    : (_inviteFriendsBeforeMatching
-                                          ? '下一步：邀請朋友'
-                                          : '送出，開始找人')),
-                          loading: isActiveLoading || _submitting,
-                          onPressed:
-                              isActiveLoading || _submitting || _confirming
-                              ? null
-                              : hasActiveState
-                              ? (activeRequest != null
-                                    ? () => context.push(
-                                        activeRequest.status ==
-                                                REQUEST_STATUS.DRAFT
-                                            ? '/invite-friends/${activeRequest.id}'
-                                            : '/waiting-room/${activeRequest.id}',
-                                      )
-                                    : () => context.push(
-                                        '/activity/${activeActivity!.id}',
-                                      ))
-                              : isCooldown
-                              ? null
-                              : missing != null
-                              ? () {
-                                  setState(() => _error = '請完成所有選擇：$missing');
-                                  _scrollToFirstMissingField(missing);
-                                }
-                              : _confirmAndSubmit,
-                        ),
-                      ],
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
             ],
           );
         },

@@ -376,19 +376,17 @@ void main() {
     );
     await _settle(tester);
 
-    expect(find.textContaining('活動'), findsWidgets);
-    expect(find.text('請先選擇活動'), findsOneWidget);
     expect(find.byType(AppStickyActionArea), findsOneWidget);
     expect(
-      tester.getSize(find.widgetWithText(FilledButton, '送出，開始找人')).height,
+      tester.getSize(find.widgetWithText(FilledButton, '發起新配對')).height,
       greaterThanOrEqualTo(44),
     );
     expect(
-      tester.getBottomRight(find.widgetWithText(FilledButton, '送出，開始找人')).dy,
+      tester.getBottomRight(find.widgetWithText(FilledButton, '發起新配對')).dy,
       lessThanOrEqualTo(600 - 160),
     );
 
-    for (final label in ['時間', '校區', '人數', '降級配對', '送出前確認']) {
+    for (final label in ['活動', '時間', '校區', '人數', '降級配對', '送出前確認']) {
       await _scrollTo(
         tester,
         find.byWidgetPredicate(
@@ -397,7 +395,6 @@ void main() {
       );
       expect(find.text(label), findsWidgets);
     }
-    expect(find.textContaining('送出'), findsWidgets);
   });
 
   testWidgets('200% 字級完整顯示單一長校區名稱且不使用 ellipsis', (tester) async {

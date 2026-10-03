@@ -13,7 +13,8 @@ import '../generated/supadart_header.dart' show DEGREE_LEVEL;
 import '../match/match_providers.dart'
     show myAppUserProvider, myBadgesProvider, myReliabilityProvider;
 import '../rpc/api_exception.dart';
-import '../rpc/auth_profile_rpc.dart' show AchievementBadge, ReliabilityTier;
+import '../rpc/auth_profile_rpc.dart'
+    show AchievementBadge, ReliabilityTier, ReliabilityTierExtension;
 import '../theme/app_theme.dart';
 import '../theme/theme_providers.dart';
 import '../widgets/adaptive_refresh.dart';
@@ -438,7 +439,13 @@ class _ThemeModeSection extends ConsumerWidget {
         SegmentedButton<ThemeMode>(
           segments: [
             for (final m in ThemeMode.values)
-              ButtonSegment(value: m, label: Text(_themeModeLabel(m))),
+              ButtonSegment(
+                value: m,
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(_themeModeLabel(m), maxLines: 1, softWrap: false),
+                ),
+              ),
           ],
           selected: {mode},
           onSelectionChanged: (selected) =>

@@ -21,6 +21,7 @@ import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/campus_demand_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
 import 'package:find_people_now/widgets/app_button.dart';
+import 'package:find_people_now/widgets/app_sticky_action_area.dart';
 
 final _testUser = AppUser(
   id: 'user-home-1',
@@ -227,12 +228,12 @@ void main() {
     expect(find.text('羽球'), findsWidgets);
     expect(find.text('8–10 級'), findsOneWidget);
 
-    // 底部送出按鈕正常提示請先選擇活動
-    expect(find.text('請先選擇活動'), findsOneWidget);
-    expect(find.text('送出，開始找人'), findsOneWidget);
+    // 尚未進入建立表單時，不提前顯示「請先選擇活動」負面警示，提供明確的「發起新配對」入口
+    expect(find.text('請先選擇活動'), findsNothing);
+    expect(find.text('發起新配對'), findsWidgets);
   });
 
-  testWidgets('場景 2：有進行中配對時，置頂顯示等待室狀態卡，需求卡與送出按鈕防呆停用', (tester) async {
+  testWidgets('場景 2：有進行中配對時，置頂顯示等待室狀態卡，底部不重複堆疊等待室入口', (tester) async {
     final gateway = _TestSubmissionGateway();
     final activeRequest = MatchRequest(
       id: 'active-req-456',
@@ -255,15 +256,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 置頂狀態卡顯示
+    // 置頂狀態卡顯示，且為單一主要入口（無重複底部按鈕）
     expect(find.byType(PinnedActiveStatusCard), findsOneWidget);
     expect(find.text('你正在配對中'), findsOneWidget);
-
-    // 底部按鈕與提示導向等待室，按鈕可點擊
-    expect(find.text('你已有進行中的配對，請先前往等待室或取消後再發起新配對'), findsOneWidget);
-    expect(find.text('前往等待室'), findsWidgets);
+    expect(find.byType(AppStickyActionArea), findsNothing);
+    expect(find.widgetWithText(FilledButton, '前往等待室'), findsOneWidget);
     final waitingBtn = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '前往等待室').last,
+      find.widgetWithText(FilledButton, '前往等待室'),
     );
     expect(waitingBtn.onPressed, isNotNull);
 
@@ -284,7 +283,7 @@ void main() {
     expect(participateButton.onPressed, isNull);
   });
 
-  testWidgets('場景 3：有進行中活動時，置頂顯示活動狀態卡，送出按鈕防呆鎖定', (tester) async {
+  testWidgets('場景 3：有進行中活動時，置頂顯示活動狀態卡為單一主要入口', (tester) async {
     final gateway = _TestSubmissionGateway();
     final activeActivity = Activity(
       id: 'active-act-789',
@@ -303,16 +302,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 置頂狀態卡顯示活動中
+    // 置頂狀態卡顯示活動中，且為唯一主要入口（底部不重複堆疊）
     expect(find.byType(PinnedActiveStatusCard), findsOneWidget);
     expect(find.text('你目前有進行中的活動'), findsOneWidget);
     expect(find.text('前往活動房間'), findsOneWidget);
-
-    // 底部按鈕提示並提供「查看活動」入口，按鈕可點擊
-    expect(find.text('你目前有進行中的活動，請先前往活動或結束後再發起新配對'), findsOneWidget);
-    expect(find.text('查看活動'), findsOneWidget);
+    expect(find.byType(AppStickyActionArea), findsNothing);
     final activityBtn = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '查看活動'),
+      find.widgetWithText(FilledButton, '前往活動房間'),
     );
     expect(activityBtn.onPressed, isNotNull);
   });

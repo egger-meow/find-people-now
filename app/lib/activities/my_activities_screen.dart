@@ -183,11 +183,17 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
                   children: const {
                     0: Padding(
                       padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                      child: Text('進行中'),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('進行中', maxLines: 1, softWrap: false),
+                      ),
                     ),
                     1: Padding(
                       padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                      child: Text('已結束'),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('已結束', maxLines: 1, softWrap: false),
+                      ),
                     ),
                   },
                   onValueChanged: (value) {

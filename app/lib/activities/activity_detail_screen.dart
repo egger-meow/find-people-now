@@ -97,21 +97,15 @@ String _stickyActionLabel(
   ACTIVITY_STATUS.ONGOING when locationError => '重新載入地點資訊',
   ACTIVITY_STATUS.MATCHED when sectionIndex == 1 =>
     hasLocationOptions ? '返回地點頁參與投票' : '返回地點頁提出候選',
-  ACTIVITY_STATUS.MATCHED => hasLocationOptions ? '前往地點投票' : '前往提出候選地點',
+  ACTIVITY_STATUS.MATCHED when sectionIndex == 0 =>
+    hasLocationOptions ? '查看成員與聯絡' : '提出地點',
   ACTIVITY_STATUS.ONGOING when sectionIndex == 1 =>
     hasLocationOptions ? '查看成員與聯絡' : '返回地點頁提出候選',
-  ACTIVITY_STATUS.ONGOING => hasLocationOptions ? '查看報到與成員' : '前往提出候選地點',
+  ACTIVITY_STATUS.ONGOING when sectionIndex == 0 =>
+    hasLocationOptions ? '查看成員與聯絡' : '提出地點',
   ACTIVITY_STATUS.COMPLETED => '查看成員與再約',
   ACTIVITY_STATUS.CANCELLED => '查看活動紀錄',
-};
-
-int _stickyActionSection(
-  ACTIVITY_STATUS status, {
-  required bool hasLocationOptions,
-}) => switch (status) {
-  ACTIVITY_STATUS.MATCHED || ACTIVITY_STATUS.CANCELLED => 0,
-  ACTIVITY_STATUS.ONGOING => hasLocationOptions ? 1 : 0,
-  ACTIVITY_STATUS.COMPLETED => 1,
+  _ => '查看成員與聯絡',
 };
 
 String _degreeLabel(DEGREE_LEVEL level) => switch (level) {
@@ -187,6 +181,7 @@ class ActivityDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
+  final _votingKey = GlobalKey<_LocationVotingState>();
   int _sectionIndex = 0;
   bool _leaving = false;
 
@@ -382,7 +377,7 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                       startTime: activity.startTime,
                     )
                   : null,
-              navigation: _ActivityDetailNavigation(
+              navigation: ActivityDetailNavigation(
                 index: _sectionIndex,
                 onChanged: (value) => setState(() => _sectionIndex = value),
               ),
@@ -390,6 +385,8 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                 index: _sectionIndex,
                 children: [
                   _LocationTab(
+                    key: const Key('location-tab'),
+                    votingKey: _votingKey,
                     activity: activity,
                     leaving: _leaving,
                     onLeave:
@@ -421,45 +418,24 @@ class _ActivityDetailScreenState extends ConsumerState<ActivityDetailScreen> {
                                 activity.status == ACTIVITY_STATUS.ONGOING) &&
                             locationError;
                         if (_sectionIndex == 1) {
-                          if (activity.status == ACTIVITY_STATUS.MATCHED ||
-                              !hasLocationOptions ||
-                              locationNeedsReload) {
-                            setState(() => _sectionIndex = 0);
-                            ref.invalidate(
-                              activityLocationOptionsStreamProvider(activity.id),
-                            );
-                            ref.invalidate(
-                              activityLocationVotesStreamProvider(activity.id),
-                            );
-                            ref.invalidate(
-                              approvedLocationsProvider((
-                                activity.school,
-                                activity.campus,
-                              )),
-                            );
-                          }
-                        } else {
-                          final target = _stickyActionSection(
-                            activity.status,
-                            hasLocationOptions: locationNeedsReload
-                                ? false
-                                : hasLocationOptions,
+                          setState(() => _sectionIndex = 0);
+                          ref.invalidate(
+                            activityLocationOptionsStreamProvider(activity.id),
                           );
-                          setState(() => _sectionIndex = target);
-                          if (target == 0) {
-                            ref.invalidate(
-                              activityLocationOptionsStreamProvider(activity.id),
-                            );
-                            ref.invalidate(
-                              activityLocationVotesStreamProvider(activity.id),
-                            );
-                            ref.invalidate(
-                              approvedLocationsProvider((
-                                activity.school,
-                                activity.campus,
-                              )),
-                            );
+                          ref.invalidate(
+                            activityLocationVotesStreamProvider(activity.id),
+                          );
+                          ref.invalidate(
+                            approvedLocationsProvider((
+                              activity.school,
+                              activity.campus,
+                            )),
+                          );
+                        } else {
+                          if (!hasLocationOptions && !locationNeedsReload) {
+                            _votingKey.currentState?.triggerProposeSheet();
                           } else {
+                            setState(() => _sectionIndex = 1);
                             ref.invalidate(
                               activityMemberRosterProvider(activity.id),
                             );
@@ -590,8 +566,9 @@ class _ActivityDetailNavigationSliverDelegate
 }
 
 
-class _ActivityDetailNavigation extends StatelessWidget {
-  const _ActivityDetailNavigation({
+class ActivityDetailNavigation extends StatelessWidget {
+  const ActivityDetailNavigation({
+    super.key,
     required this.index,
     required this.onChanged,
   });
@@ -610,35 +587,55 @@ class _ActivityDetailNavigation extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 46),
         child: CupertinoSlidingSegmentedControl<int>(
           groupValue: index,
-          children: const {
+          children: {
             0: Padding(
-              padding: EdgeInsets.symmetric(
+              padding: const EdgeInsets.symmetric(
                 vertical: AppSpacing.sm,
                 horizontal: AppSpacing.xs,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.place_rounded, size: 16),
-                  SizedBox(width: 4),
-                  Text('地點與集合'),
-                ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.place_rounded, size: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      '地點與集合',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             1: Padding(
-              padding: EdgeInsets.symmetric(
+              padding: const EdgeInsets.symmetric(
                 vertical: AppSpacing.sm,
                 horizontal: AppSpacing.xs,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.groups_rounded, size: 18),
-                  SizedBox(width: 4),
-                  Text('成員與聯絡'),
-                ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.groups_rounded, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      '成員與聯絡',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           },
@@ -671,12 +668,18 @@ class _ActivityDetailNavigation extends StatelessWidget {
           ButtonSegment(
             value: 0,
             icon: Icon(Icons.place_rounded, size: 16),
-            label: Text('地點與集合'),
+            label: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('地點與集合', maxLines: 1, softWrap: false),
+            ),
           ),
           ButtonSegment(
             value: 1,
             icon: Icon(Icons.groups_rounded, size: 18),
-            label: Text('成員與聯絡'),
+            label: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('成員與聯絡', maxLines: 1, softWrap: false),
+            ),
           ),
         ],
         selected: {index},
@@ -1543,14 +1546,17 @@ class _RematchSheetState extends ConsumerState<_RematchSheet> {
 
 class _LocationTab extends ConsumerWidget {
   const _LocationTab({
+    super.key,
     required this.activity,
     required this.onLeave,
     required this.leaving,
+    this.votingKey,
   });
 
   final Activity activity;
   final VoidCallback? onLeave;
   final bool leaving;
+  final GlobalKey<_LocationVotingState>? votingKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1571,7 +1577,7 @@ class _LocationTab extends ConsumerWidget {
                 child: AppSection(
                   title: '地點投票',
                   description: '查看即時票數、投票，或提出新的候選地點。',
-                  child: _LocationVoting(activity: activity),
+                  child: _LocationVoting(key: votingKey, activity: activity),
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
@@ -1693,7 +1699,7 @@ class _ActivityOfficialLocationProposalActionState
 }
 
 class _LocationVoting extends ConsumerStatefulWidget {
-  const _LocationVoting({required this.activity});
+  const _LocationVoting({super.key, required this.activity});
 
   final Activity activity;
 
@@ -1704,6 +1710,26 @@ class _LocationVoting extends ConsumerStatefulWidget {
 class _LocationVotingState extends ConsumerState<_LocationVoting> {
   bool _busy = false;
   String? _error;
+
+  void triggerProposeSheet() {
+    final locationsAsync = ref.read(
+      approvedLocationsProvider((
+        widget.activity.school,
+        widget.activity.campus,
+      )),
+    );
+    final optionsAsync = ref.read(
+      activityLocationOptionsStreamProvider(widget.activity.id),
+    );
+    final options = optionsAsync.value ?? <ActivityLocationOption>[];
+    _openProposeSheet(
+      locationsAsync.value ?? [],
+      options
+          .where((o) => o.locationId != null)
+          .map((o) => o.locationId!)
+          .toSet(),
+    );
+  }
 
   Future<void> _vote(String optionId) async {
     if (_busy) return;
@@ -2090,19 +2116,47 @@ class _LocationVotingState extends ConsumerState<_LocationVoting> {
           ),
           const SizedBox(height: AppSpacing.xs),
         ],
-        OutlinedButton.icon(
-          onPressed: _busy
-              ? null
-              : () => _openProposeSheet(
-                  locationsAsync.value ?? [],
-                  options
-                      .where((o) => o.locationId != null)
-                      .map((o) => o.locationId!)
-                      .toSet(),
+        if (options.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
-          icon: const Icon(Icons.add_location_alt_outlined),
-          label: const Text('提出地點'),
-        ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '目前尚未有候選地點，請點擊下方「提出地點」為活動提名集合地。',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          TextButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _openProposeSheet(
+                    locationsAsync.value ?? [],
+                    options
+                        .where((o) => o.locationId != null)
+                        .map((o) => o.locationId!)
+                        .toSet(),
+                  ),
+            icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+            label: const Text('提出其他候選地點'),
+          ),
         const SizedBox(height: AppSpacing.xs),
         ActivityOfficialLocationProposalAction(
           onPropose: (name) async {

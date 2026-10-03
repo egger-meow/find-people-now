@@ -206,13 +206,27 @@ class CampusDemandsSection extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: AppSpacing.xs),
                   child: ChoiceChip(
-                    label: Text(filter.label),
+                    showCheckmark: false,
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 32),
+                      child: Text(
+                        filter.label,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: textTheme.labelMedium?.copyWith(
+                          fontWeight: activeFilter == filter
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
                     labelPadding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
+                      horizontal: AppSpacing.sm,
                     ),
                     selected: activeFilter == filter,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
+                      horizontal: AppSpacing.xs,
                       vertical: AppSpacing.xs,
                     ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
