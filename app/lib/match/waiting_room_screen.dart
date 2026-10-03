@@ -33,10 +33,9 @@ import 'match_providers.dart';
 /// `request_member`（成員人數變化）與 `match_request`（狀態變化）兩條 Realtime
 /// stream（見 lib/match/match_providers.dart）。
 ///
-/// 成員頭像列刻意匿名（見 match_providers.dart 的 [requestMembersStreamProvider]
-/// 註解）——目前 RLS 只讓 `app_user` 查自己的資料（own_profile_select），配對
-/// 成立前顯示其他成員的真實大頭貼/姓名沒有資料來源，也違背「盲配不挑人」的
-/// 既有設計精神（UI_PLAN §8.2 FAQ Q5）。
+/// 同房間同夥成員（透過邀請碼/連結加入同一個 Request 的既有好友）在此顯示真實頭貼與暱稱
+/// （透過 get_request_member_profiles RPC，API §3.10），讓揪團者清楚確認好友是否到齊。
+/// 盲配設計精神（UI_PLAN §8.2）僅適用於配對過程中其他不同 Request 的陌生對象，同房間內的夥伴並非陌生人。
 class WaitingRoomScreen extends ConsumerStatefulWidget {
   const WaitingRoomScreen({super.key, required this.requestId});
 
@@ -224,7 +223,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         const SizedBox(height: AppSpacing.lg),
                         _RequestInfoCard(request: request),
                         const SizedBox(height: AppSpacing.lg),
-                        _RoomMembersSection(
+                        RoomMembersSection(
+                          requestId: request.id,
                           members: members,
                           currentUserId: userId,
                         ),
@@ -377,18 +377,25 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
   }
 }
 
-/// 房間成員區塊：呈現總人數並以少量中性匿名頭像 +N 呈現，避免畫滿大量佔位頭像。
-class _RoomMembersSection extends StatelessWidget {
-  const _RoomMembersSection({
+/// 房間成員區塊：呈現總人數並以同房間夥伴之真實頭像與暱稱呈現（超過 5 人以 +N 緊湊呈現）。
+/// 透過 [requestMemberProfilesProvider] 取得真實資訊（API §3.10），
+/// 當資料尚未載入或在測試環境時，優雅回退至預設標籤，確保向下相容與穩定性。
+class RoomMembersSection extends ConsumerWidget {
+  const RoomMembersSection({
+    super.key,
+    required this.requestId,
     required this.members,
     required this.currentUserId,
+    this.showTitle = true,
   });
 
+  final String requestId;
   final List<RequestMember> members;
   final String? currentUserId;
+  final bool showTitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final hasSelf = members.any((m) => m.userId == currentUserId);
@@ -400,33 +407,59 @@ class _RoomMembersSection extends StatelessWidget {
     final visibleMembers = members.take(maxVisible).toList();
     final extraCount = members.length - visibleMembers.length;
 
-    return AppSection(
-      title: '房間成員 · $countLabel',
-      child: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (final member in visibleMembers)
-            _AnonymousAvatar(
-              key: ValueKey(member.id),
-              isSelf: member.userId == currentUserId,
-              isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
-            ),
-          if (extraCount > 0)
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: scheme.surfaceContainerHighest,
-              child: Text(
-                '+$extraCount',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: scheme.onSurfaceVariant,
+    final profilesAsync = ref.watch(requestMemberProfilesProvider(requestId));
+    final profiles = profilesAsync.value ?? const [];
+    final profileByUserId = {for (final p in profiles) p.userId: p};
+
+    final content = Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final member in visibleMembers)
+          RoomMemberAvatar(
+            key: ValueKey(member.id),
+            profile: profileByUserId[member.userId],
+            member: member,
+            isSelf: member.userId == currentUserId,
+            isOwner: member.role == REQUEST_MEMBER_ROLE.OWNER,
+          ),
+        if (extraCount > 0)
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: scheme.surfaceContainerHighest,
+                child: Text(
+                  '+$extraCount',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-            ),
-        ],
-      ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: 58,
+                child: Text(
+                  '更多',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+
+    if (!showTitle) return content;
+
+    return AppSection(
+      title: '房間成員 · $countLabel',
+      child: content,
     );
   }
 }
@@ -770,31 +803,128 @@ class _MatchingPulseState extends State<MatchingPulse>
   }
 }
 
-class _AnonymousAvatar extends StatelessWidget {
-  const _AnonymousAvatar({
+/// 同房間夥伴頭像與暱稱標籤
+class RoomMemberAvatar extends StatelessWidget {
+  const RoomMemberAvatar({
     super.key,
+    this.profile,
+    this.member,
     required this.isSelf,
     required this.isOwner,
   });
 
+  final RequestMemberProfile? profile;
+  final RequestMember? member;
   final bool isSelf;
   final bool isOwner;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final displayName = profile?.displayName ??
+        (isSelf ? '你' : (isOwner ? '發起人' : '成員'));
+    final avatarUrl = profile?.avatarUrl;
+    final hasValidAvatar = avatarUrl != null &&
+        avatarUrl.isNotEmpty &&
+        avatarUrl.startsWith('http');
+    final tooltipMessage = isSelf
+        ? (profile != null ? '$displayName (你)' : '你')
+        : (isOwner ? '$displayName (發起人)' : displayName);
+
     return Tooltip(
-      message: isSelf ? '你' : (isOwner ? '發起人' : '成員'),
-      child: CircleAvatar(
-        backgroundColor: isSelf
-            ? scheme.primaryContainer
-            : scheme.secondaryContainer,
-        child: Icon(
-          isOwner ? Icons.star_rounded : Icons.person_rounded,
-          color: isSelf
-              ? scheme.onPrimaryContainer
-              : scheme.onSecondaryContainer,
-        ),
+      message: tooltipMessage,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isOwner
+                        ? Colors.amber.shade600
+                        : (isSelf ? scheme.primary : Colors.transparent),
+                    width: 2,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: isSelf
+                      ? scheme.primaryContainer
+                      : (isOwner ? Colors.amber.shade50 : scheme.secondaryContainer),
+                  backgroundImage:
+                      hasValidAvatar ? NetworkImage(avatarUrl) : null,
+                  child: !hasValidAvatar
+                      ? (profile != null &&
+                              displayName.isNotEmpty &&
+                              displayName != '成員' &&
+                              displayName != '發起人')
+                          ? Text(
+                              displayName.characters.first.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: isSelf
+                                    ? scheme.onPrimaryContainer
+                                    : (isOwner
+                                        ? Colors.amber.shade900
+                                        : scheme.onSecondaryContainer),
+                              ),
+                            )
+                          : Icon(
+                              isOwner
+                                  ? Icons.star_rounded
+                                  : Icons.person_rounded,
+                              color: isSelf
+                                  ? scheme.onPrimaryContainer
+                                  : (isOwner
+                                      ? Colors.amber.shade800
+                                      : scheme.onSecondaryContainer),
+                            )
+                      : null,
+                ),
+              ),
+              if (isOwner)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade600,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: theme.scaffoldBackgroundColor,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.star_rounded,
+                      size: 10,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: 58,
+            child: Text(
+              isSelf && profile != null ? '$displayName (你)' : displayName,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: isSelf ? FontWeight.bold : FontWeight.w500,
+                color: isSelf ? scheme.primary : scheme.onSurface,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }

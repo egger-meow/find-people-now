@@ -15,7 +15,8 @@ import '../generated/supadart_header.dart'
 import '../rpc/activity_type_rpc.dart';
 import '../rpc/auth_profile_rpc.dart';
 import '../rpc/campus_demand_rpc.dart';
-import '../rpc/match_request_rpc.dart' show decodeMatchRequest;
+import '../rpc/match_request_rpc.dart'
+    show RequestMemberProfile, decodeMatchRequest, getRequestMemberProfiles;
 
 /// Whether the signed-in user has an `app_user` row yet (`complete_profile`
 /// already ran once). Drives the go_router redirect to `/complete-profile`.
@@ -352,6 +353,30 @@ final requestMembersStreamProvider =
             return byId.values.toList();
           });
     });
+
+/// docs/API.md §3.10 — 房間同夥成員真實個人檔案（真實頭貼與暱稱）。
+///
+/// 監聽 [requestMembersStreamProvider]，當 Realtime 偵測到同房間成員加入或退出時
+/// 自動重新觸發 RPC 取得最新成員檔案。
+///
+/// 僅限同房間 JOINED 成員呼叫（API §3.10）。在非成員環境或 mock 測試環境拋出異常時優雅回退為空列表。
+final requestMemberProfilesProvider =
+    FutureProvider.family<List<RequestMemberProfile>, String>((
+  ref,
+  requestId,
+) async {
+  final members = ref.watch(requestMembersStreamProvider(requestId)).value;
+  if (members == null || members.isEmpty) {
+    return const [];
+  }
+  final client = ref.watch(supabaseClientProvider);
+  try {
+    return await getRequestMemberProfiles(client, requestId);
+  } catch (_) {
+    return const [];
+  }
+});
+
 
 /// 等待室需要顯示該 Request 對應的活動類型名稱（反饋：房間資訊太少）。
 /// `activity_type` 表的 RLS 已經有公開 SELECT（status='APPROVED'），直接用

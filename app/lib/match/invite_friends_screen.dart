@@ -11,7 +11,8 @@ import '../rpc/match_request_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import 'match_providers.dart';
-import 'waiting_room_screen.dart' show WaitingRoomActionSections;
+import 'waiting_room_screen.dart'
+    show RoomMembersSection, WaitingRoomActionSections;
 
 /// A draft cannot be matched. The owner submits it only after invited friends
 /// have joined, so the invitation step happens before the waiting room.
@@ -197,7 +198,16 @@ class _InviteFriendsScreenState extends ConsumerState<InviteFriendsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.sm),
+              if (members.value != null && members.value!.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                RoomMembersSection(
+                  requestId: widget.requestId,
+                  members: members.value!,
+                  currentUserId: userId,
+                  showTitle: false,
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
               WaitingRoomActionSections(
                 inviteToken: value.revokedAt == null
                     ? (_token ?? value.inviteToken)

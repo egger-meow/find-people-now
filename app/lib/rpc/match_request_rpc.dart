@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../generated/match_request.dart';
+import '../generated/supadart_header.dart'
+    show REQUEST_MEMBER_ROLE, REQUEST_MEMBER_STATUS;
 import 'rpc_client.dart';
 
 /// Works around a supadart codegen gap (v1.34): `RPC_COVERAGE.md`'s
@@ -160,3 +162,54 @@ Future<bool> revokeInviteLink(SupabaseClient client, String requestId) {
     decode: (data) => data as bool,
   );
 }
+
+/// 同房間同夥成員個人檔案（真實頭貼與暱稱）
+class RequestMemberProfile {
+  final String userId;
+  final String displayName;
+  final String? avatarUrl;
+  final REQUEST_MEMBER_ROLE role;
+  final REQUEST_MEMBER_STATUS status;
+  final DateTime createdAt;
+
+  const RequestMemberProfile({
+    required this.userId,
+    required this.displayName,
+    this.avatarUrl,
+    required this.role,
+    required this.status,
+    required this.createdAt,
+  });
+
+  factory RequestMemberProfile.fromJson(Map<String, dynamic> json) {
+    return RequestMemberProfile(
+      userId: json['user_id'] as String,
+      displayName: (json['display_name'] as String?)?.trim().isNotEmpty == true
+          ? json['display_name'] as String
+          : '夥伴',
+      avatarUrl: json['avatar_url'] as String?,
+      role: REQUEST_MEMBER_ROLE.values.byName(json['role'] as String),
+      status: REQUEST_MEMBER_STATUS.values.byName(json['status'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+}
+
+/// docs/API.md §3.10 — `rpc: get_request_member_profiles(request_id)`.
+/// 回傳同一個 Request 房間內已加入（JOINED）之所有同夥成員的公開資訊（真實姓名與頭貼）。
+Future<List<RequestMemberProfile>> getRequestMemberProfiles(
+  SupabaseClient client,
+  String requestId,
+) {
+  return callRpc<List<RequestMemberProfile>>(
+    client,
+    'get_request_member_profiles',
+    params: {'p_request_id': requestId},
+    decode: (data) {
+      if (data == null) return const [];
+      final list = (data as List).cast<Map<String, dynamic>>();
+      return list.map(RequestMemberProfile.fromJson).toList();
+    },
+  );
+}
+
