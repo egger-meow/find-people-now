@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:find_people_now/activities/activity_detail_providers.dart';
 import 'package:find_people_now/activities/activity_detail_screen.dart';
 import 'package:find_people_now/activities/my_activities_providers.dart';
 import 'package:find_people_now/activities/my_activities_screen.dart';
 import 'package:find_people_now/auth/auth_providers.dart';
 import 'package:find_people_now/auth/otp_login_screen.dart';
+import 'package:find_people_now/generated/activity.dart';
+import 'package:find_people_now/generated/activity_location_option.dart';
+import 'package:find_people_now/generated/activity_type.dart';
 import 'package:find_people_now/generated/app_user.dart';
 import 'package:find_people_now/generated/supadart_header.dart';
 import 'package:find_people_now/match/match_providers.dart';
 import 'package:find_people_now/profile/profile_screen.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
+import 'package:find_people_now/widgets/app_button.dart';
+import 'package:find_people_now/widgets/app_card.dart';
 
 SupabaseClient _createDummyClient() {
   return SupabaseClient(
@@ -136,7 +142,19 @@ void main() {
       }
     });
 
-    testWidgets('F33: Tapping a badge opens bottom sheet with icon, status, and criteria', (tester) async {
+    test('F33: AchievementBadge criteria strictly reflect SQL RPC database rules', () {
+      // 依據 supabase/migrations/20260801160300_account_deleted_guard_new_rpcs.sql:270:
+      // FIRST_ACTIVITY: v_attended >= 1
+      // PUNCTUAL: v_attended >= 3 and v_no_show = 0
+      // GREAT_COMPANY: v_mutual_count >= 1
+      // ENTHUSIASTIC_ORGANIZER: v_organized >= 3
+      expect(AchievementBadge.firstActivity.criteria, '完成至少 1 筆成團活動出席報到');
+      expect(AchievementBadge.punctual.criteria, '至少 3 筆成團活動準時報到，且無缺席紀錄');
+      expect(AchievementBadge.greatCompany.criteria, '活動結束後，至少一次雙方互相投票願意再約');
+      expect(AchievementBadge.enthusiasticOrganizer.criteria, '至少 3 筆自己發起且成功成團配對的需求');
+    });
+
+    testWidgets('F33: Tapping a badge opens bottom sheet with icon, status, and criteria, and can be dismissed via explicit close button', (tester) async {
       final user = _createTestUser();
       await tester.pumpWidget(
         ProviderScope(
@@ -166,8 +184,81 @@ void main() {
 
       // Bottom sheet should display criteria and status
       expect(find.text('解鎖條件'), findsOneWidget);
-      expect(find.text(AchievementBadge.punctual.criteria), findsOneWidget);
-      expect(find.text('活動開始前後準時抵達並完成報到'), findsOneWidget);
+      expect(find.text('至少 3 筆成團活動準時報到，且無缺席紀錄'), findsOneWidget);
+      expect(find.widgetWithText(AppButton, '關閉'), findsOneWidget);
+      expect(find.byTooltip('關閉'), findsOneWidget);
+
+      // Tap '關閉' to dismiss sheet
+      await tester.tap(find.widgetWithText(AppButton, '關閉'));
+      await tester.pumpAndSettle();
+      expect(find.text('解鎖條件'), findsNothing);
+    });
+
+    testWidgets('F33: 驗證 200% (2.0) 字級與短螢幕 (844x390 橫向) 下徽章底層面板可捲動無溢出', (tester) async {
+      tester.view.physicalSize = const Size(844 * 2.0, 390 * 2.0);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final user = _createTestUser();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseClientProvider.overrideWithValue(_createDummyClient()),
+            myAppUserProvider.overrideWith((ref) => Future.value(user)),
+            myReliabilityProvider.overrideWith(
+              (ref) => Future.value(
+                MyReliability(tier: ReliabilityTier.trusted, isNewUser: false),
+              ),
+            ),
+            myBadgesProvider.overrideWith(
+              (ref) => Future.value({AchievementBadge.firstActivity}),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(2.0),
+              ),
+              child: child!,
+            ),
+            home: const ProfileScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 確保徽章進入畫面後點擊開啟面板
+      await tester.ensureVisible(find.text('準時好車友'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('準時好車友'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('解鎖條件'), findsOneWidget);
+      // 確保底層面板具備 SingleChildScrollView 捲動保護
+      final scrollFinder = find.ancestor(
+        of: find.text('解鎖條件'),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(scrollFinder, findsOneWidget);
+
+      // 確保在 200% 字級與短螢幕下無任何 RenderFlex 溢出
+      expect(tester.takeException(), isNull);
+
+      // 捲動至關閉按鈕並點擊，確認可正常收合
+      final sheetScrollable = find.descendant(
+        of: scrollFinder,
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.widgetWithText(AppButton, '關閉'),
+        50.0,
+        scrollable: sheetScrollable,
+      );
+      await tester.tap(find.widgetWithText(AppButton, '關閉'));
+      await tester.pumpAndSettle();
+      expect(find.text('解鎖條件'), findsNothing);
     });
 
     testWidgets('F33: SegmentedButton in ThemeModeSection has showSelectedIcon disabled to prevent wrapping', (tester) async {
@@ -200,7 +291,7 @@ void main() {
       expect(segmented.showSelectedIcon, isFalse);
     });
 
-    testWidgets('F37: Surface hierarchy unites reliability/badges and legal/logout without fragmented cards', (tester) async {
+    testWidgets('F37: Surface hierarchy unites reliability/badges and legal/logout in common ancestor cards without nesting', (tester) async {
       tester.view.physicalSize = const Size(800, 2000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -237,9 +328,93 @@ void main() {
       expect(find.text('說明與回饋'), findsOneWidget);
       expect(find.text('法律與帳號'), findsOneWidget);
 
-      // '登出' is a ListTile inside the legal & account card, not in a lonely separate card
-      expect(find.widgetWithText(ListTile, '登出'), findsOneWidget);
-      expect(find.widgetWithText(ListTile, '服務條款'), findsOneWidget);
+      // 驗證共用卡片祖先：法律條款與登出在同一個 AppCard 容器內，非孤立零散卡片
+      final logoutTile = find.widgetWithText(ListTile, '登出');
+      final termsTile = find.widgetWithText(ListTile, '服務條款');
+      final privacyTile = find.widgetWithText(ListTile, '隱私權政策');
+      final legalCard = find.ancestor(of: logoutTile, matching: find.byType(AppCard));
+      expect(legalCard, findsOneWidget);
+      expect(find.descendant(of: legalCard, matching: termsTile), findsOneWidget);
+      expect(find.descendant(of: legalCard, matching: privacyTile), findsOneWidget);
+
+      // 驗證共用卡片祖先：可信度等級與成就徽章在同一個 AppCard 容器內
+      final reliabilityTierText = find.textContaining('可信度等級');
+      final badgesHeader = find.text('成就徽章');
+      final trustCard = find.ancestor(of: reliabilityTierText, matching: find.byType(AppCard));
+      expect(trustCard, findsOneWidget);
+      expect(find.descendant(of: trustCard, matching: badgesHeader), findsOneWidget);
+
+      // 驗證設定區塊：外觀設定與更多資料在同一個 AppCard 容器內
+      final themeHeader = find.text('外觀');
+      final moreInfoHeader = find.text('更多資料');
+      final settingsCard = find.ancestor(of: themeHeader, matching: find.byType(AppCard));
+      expect(settingsCard, findsOneWidget);
+      expect(find.descendant(of: settingsCard, matching: moreInfoHeader), findsOneWidget);
+
+      // 驗證卡片無巢狀（零「卡片包卡片」）：沒有任何 AppCard 的祖先也是 AppCard
+      expect(find.descendant(of: find.byType(AppCard), matching: find.byType(AppCard)), findsNothing);
+    });
+
+    testWidgets('F37: ActivityDetailScreen maintains flat card hierarchy with zero nested cards', (tester) async {
+      final now = DateTime(2026, 10, 4, 12, 0);
+      final testActivity = Activity(
+        id: 'act-card-hierarchy-test',
+        activityTypeId: 'badminton',
+        startTime: now.add(const Duration(hours: 2)),
+        estimatedEndTime: now.add(const Duration(hours: 4)),
+        status: ACTIVITY_STATUS.MATCHED,
+        contactVisibleUntil: now.add(const Duration(days: 1)),
+        createdAt: now,
+        school: SCHOOL.NYCU,
+        campus: '光復',
+      );
+      final testType = ActivityType(
+        id: 'badminton',
+        name: '羽球',
+        status: ACTIVITY_TYPE_STATUS.APPROVED,
+        createdAt: now,
+        skillLevelEnabled: false,
+        sortOrder: 1,
+        levelSystem: LEVEL_SYSTEM.NONE,
+        aliases: const [],
+      );
+      final testOption = ActivityLocationOption(
+        id: 'loc-1',
+        activityId: testActivity.id,
+        customName: '交大綜合一館羽球場',
+        proposedBy: 'user-me',
+        createdAt: now,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            supabaseClientProvider.overrideWithValue(_createDummyClient()),
+            currentUserIdProvider.overrideWithValue('user-me'),
+            activityStreamProvider(testActivity.id).overrideWith((ref) => Stream.value(testActivity)),
+            activityTypeByIdProvider('badminton').overrideWith((ref) async => testType),
+            activityLocationOptionsStreamProvider(testActivity.id).overrideWith((ref) => Stream.value([testOption])),
+            activityLocationVotesStreamProvider(testActivity.id).overrideWith((ref) => Stream.value([])),
+            approvedLocationsProvider((testActivity.school, testActivity.campus)).overrideWith((ref) async => []),
+            activityMeetingPointUpdatesStreamProvider(testActivity.id).overrideWith((ref) => Stream.value([])),
+            activityMeetingPointStreamProvider(testActivity.id).overrideWith((ref) => Stream.value(null)),
+            activityMemberRosterProvider(testActivity.id).overrideWith((ref) async => []),
+            activityArrivalStreamProvider(testActivity.id).overrideWith((ref) => const AsyncData({})),
+            activityVibeTagsStreamProvider(testActivity.id).overrideWith((ref) => const AsyncData({})),
+            activityMeetingHintStreamProvider(testActivity.id).overrideWith((ref) => const AsyncData({})),
+            ownCompletionReportProvider(testActivity.id).overrideWith((ref) async => null),
+            ownRematchVotesProvider(testActivity.id).overrideWith((ref) async => {}),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: ActivityDetailScreen(activityId: testActivity.id),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 驗證活動頁所有 AppCard 均為平級，不存在「卡片包卡片」的巢狀層級
+      expect(find.descendant(of: find.byType(AppCard), matching: find.byType(AppCard)), findsNothing);
     });
 
     testWidgets('F35: 驗證 200% (2.0) 字級下 OtpLoginScreen 校園徽章與表單自適應換列無溢出', (tester) async {

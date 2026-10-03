@@ -116,25 +116,25 @@ enum AchievementBadge {
     'FIRST_ACTIVITY',
     '🌱',
     '初次參團',
-    '完成第 1 次成團活動',
+    '完成至少 1 筆成團活動出席報到',
   ),
   punctual(
     'PUNCTUAL',
     '⚡',
     '準時好車友',
-    '活動開始前後準時抵達並完成報到',
+    '至少 3 筆成團活動準時報到，且無缺席紀錄',
   ),
   greatCompany(
     'GREAT_COMPANY',
     '☕',
     '相談甚歡',
-    '活動結束後獲得夥伴正面評價',
+    '活動結束後，至少一次雙方互相投票願意再約',
   ),
   enthusiasticOrganizer(
     'ENTHUSIASTIC_ORGANIZER',
     '🏀',
     '熱血揪團長',
-    '成功發起並舉辦成團活動',
+    '至少 3 筆自己發起且成功成團配對的需求',
   );
 
   final String code;

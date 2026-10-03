@@ -18,6 +18,7 @@ import '../rpc/auth_profile_rpc.dart'
 import '../theme/app_theme.dart';
 import '../theme/theme_providers.dart';
 import '../widgets/adaptive_refresh.dart';
+import '../widgets/app_button.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_sheet.dart';
@@ -86,15 +87,25 @@ class _BadgesSection extends ConsumerWidget {
   ) {
     showAppSheet<void>(
       context,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.md,
+      builder: (sheetContext) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.xs,
+          AppSpacing.lg,
+          AppSpacing.xl,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                tooltip: '關閉',
+                onPressed: () => Navigator.of(sheetContext).pop(),
+              ),
+            ),
             Center(
               child: Text(
                 badge.icon,
@@ -150,6 +161,10 @@ class _BadgesSection extends ConsumerWidget {
                   ),
             ),
             const SizedBox(height: AppSpacing.xl),
+            AppButton(
+              label: '關閉',
+              onPressed: () => Navigator.of(sheetContext).pop(),
+            ),
           ],
         ),
       ),
