@@ -20,6 +20,7 @@ import '../theme/theme_providers.dart';
 import '../widgets/adaptive_refresh.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/app_sheet.dart';
 import '../widgets/loading_indicator.dart';
 
 String _themeModeLabel(ThemeMode mode) => switch (mode) {
@@ -72,11 +73,88 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-/// Achievement Badges（v1.29）——獎勵性質，補充（不取代）上方的可信度等級
-/// 卡片。已達成的徽章亮色顯示；未達成的用低透明度顯示（可以看到「還差什麼」，
-/// 但不喧賓奪主）。載入失敗/中安靜收合，不影響頁面其餘部分。
+/// Achievement Badges（v1.29 / F33 精修）——獎勵性質，補充上方的可信度等級。
+/// 移除 0.35 opacity 避免文字對比不足；透過明確「已達成 / 未達成」狀態標籤標示，
+/// 點擊可開啟底層面板查看獲得條件，兼顧資訊易讀與美觀。
 class _BadgesSection extends ConsumerWidget {
   const _BadgesSection();
+
+  void _showBadgeDetails(
+    BuildContext context,
+    AchievementBadge badge,
+    bool isEarned,
+  ) {
+    showAppSheet<void>(
+      context,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Text(
+                badge.icon,
+                style: const TextStyle(fontSize: 56),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              badge.label,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: isEarned
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  isEarned ? '已達成' : '未達成',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: isEarned
+                            ? Theme.of(context).colorScheme.onPrimaryContainer
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            const Divider(height: 1),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              '解鎖條件',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              badge.criteria,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -84,27 +162,107 @@ class _BadgesSection extends ConsumerWidget {
     return badgesAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (error, stack) => const SizedBox.shrink(),
-      data: (earned) => AppCard(
-        child: Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.xs,
-          children: [
-            for (final badge in AchievementBadge.values)
-              Opacity(
-                opacity: earned.contains(badge) ? 1.0 : 0.35,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(badge.icon, style: const TextStyle(fontSize: 22)),
-                    Text(
-                      badge.label,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ],
-                ),
+      data: (earned) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '成就徽章',
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-          ],
-        ),
+              Text(
+                '點擊查看條件',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              for (final badge in AchievementBadge.values) ...[
+                Expanded(
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      onTap: () => _showBadgeDetails(
+                        context,
+                        badge,
+                        earned.contains(badge),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.xs,
+                          horizontal: 2,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              badge.icon,
+                              style: const TextStyle(fontSize: 26),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              badge.label,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: earned.contains(badge)
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest,
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.pill),
+                              ),
+                              child: Text(
+                                earned.contains(badge) ? '已達成' : '未達成',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      fontSize: 10,
+                                      color: earned.contains(badge)
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .onPrimaryContainer
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -123,7 +281,7 @@ class ProfileScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('帳戶'),
+        title: const Text('個人'),
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline_rounded),
@@ -149,28 +307,49 @@ class ProfileScreen extends ConsumerWidget {
                   sliver: SliverList.list(
                     children: [
                       _ProfileHeaderCard(user: user),
-                      const SizedBox(height: AppSpacing.sm),
-                      reliabilityAsync.when(
-                        loading: () => const SizedBox.shrink(),
-                        error: (error, stack) => const SizedBox.shrink(),
-                        data: (reliability) => AppCard(
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.verified_rounded,
-                                color: Theme.of(context).colorScheme.primary,
+                      const SizedBox(height: AppSpacing.lg),
+                      const _SectionLabel('信譽與成就'),
+                      AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            reliabilityAsync.when(
+                              loading: () => const SizedBox.shrink(),
+                              error: (error, stack) => const SizedBox.shrink(),
+                              data: (reliability) => Column(
+                                children: [
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.all(AppSpacing.md),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.verified_rounded,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                        ),
+                                        const SizedBox(width: AppSpacing.sm),
+                                        Text(
+                                          '可信度等級：${_tierLabel(reliability.tier)}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleSmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Divider(height: 1),
+                                ],
                               ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Text(
-                                '可信度等級：${_tierLabel(reliability.tier)}',
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                            ],
-                          ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.all(AppSpacing.md),
+                              child: _BadgesSection(),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const _BadgesSection(),
                       const SizedBox(height: AppSpacing.lg),
                       const _SectionLabel('設定'),
                       AppCard(
@@ -268,19 +447,13 @@ class ProfileScreen extends ConsumerWidget {
                                   LegalDocument.accountDeletion,
                                 ),
                               ),
+                              const Divider(height: 1),
+                              ListTile(
+                                leading: const Icon(Icons.logout_rounded),
+                                title: const Text('登出'),
+                                onTap: () => _confirmSignOut(context, ref),
+                              ),
                             ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      AppCard(
-                        padding: EdgeInsets.zero,
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: ListTile(
-                            leading: const Icon(Icons.logout_rounded),
-                            title: const Text('登出'),
-                            onTap: () => _confirmSignOut(context, ref),
                           ),
                         ),
                       ),
@@ -437,6 +610,7 @@ class _ThemeModeSection extends ConsumerWidget {
         Text('外觀', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: AppSpacing.sm),
         SegmentedButton<ThemeMode>(
+          showSelectedIcon: false,
           segments: [
             for (final m in ThemeMode.values)
               ButtonSegment(

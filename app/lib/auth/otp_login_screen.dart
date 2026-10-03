@@ -257,7 +257,7 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    '找到現在也想一起的人。',
+                    '羽球、讀書、桌遊，找到現在也想一起的同學。',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,

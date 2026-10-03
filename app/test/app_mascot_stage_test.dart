@@ -97,7 +97,7 @@ void main() {
 
       expect(find.byType(AppMascotStage), findsOneWidget);
       expect(find.text('敢不敢揪'), findsOneWidget);
-      expect(find.text('找到現在也想一起的人。'), findsOneWidget);
+      expect(find.text('羽球、讀書、桌遊，找到現在也想一起的同學。'), findsOneWidget);
       expect(find.text('陽明交大 / 清華 校園即刻揪團'), findsOneWidget);
       expect(find.text('學校信箱'), findsOneWidget);
       expect(find.text('傳送驗證碼'), findsOneWidget);

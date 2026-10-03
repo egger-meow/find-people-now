@@ -112,15 +112,36 @@ Future<MyReliability> getMyReliability(SupabaseClient client) {
 /// never a new persisted score. [AchievementBadge.icon]/[label] are a
 /// Dart-side presentation choice — the RPC only returns stable string codes.
 enum AchievementBadge {
-  firstActivity('FIRST_ACTIVITY', '🌱', '初次參團'),
-  punctual('PUNCTUAL', '⚡', '準時好車友'),
-  greatCompany('GREAT_COMPANY', '☕', '相談甚歡'),
-  enthusiasticOrganizer('ENTHUSIASTIC_ORGANIZER', '🏀', '熱血揪團長');
+  firstActivity(
+    'FIRST_ACTIVITY',
+    '🌱',
+    '初次參團',
+    '完成第 1 次成團活動',
+  ),
+  punctual(
+    'PUNCTUAL',
+    '⚡',
+    '準時好車友',
+    '活動開始前後準時抵達並完成報到',
+  ),
+  greatCompany(
+    'GREAT_COMPANY',
+    '☕',
+    '相談甚歡',
+    '活動結束後獲得夥伴正面評價',
+  ),
+  enthusiasticOrganizer(
+    'ENTHUSIASTIC_ORGANIZER',
+    '🏀',
+    '熱血揪團長',
+    '成功發起並舉辦成團活動',
+  );
 
   final String code;
   final String icon;
   final String label;
-  const AchievementBadge(this.code, this.icon, this.label);
+  final String criteria;
+  const AchievementBadge(this.code, this.icon, this.label, this.criteria);
 }
 
 Future<Set<AchievementBadge>> getMyBadges(SupabaseClient client) {

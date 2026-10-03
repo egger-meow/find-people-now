@@ -987,26 +987,23 @@ class ActivityManagementSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppGlassSurface(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: AppSection(
-        title: '活動管理',
-        description: '退出活動前會再次說明是否屬於 Early Cancel 或 Late Cancel，以及對配對冷卻與信譽的影響。',
-        child: OutlinedButton.icon(
-          key: const Key('activity-detail-leave'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
-            minimumSize: const Size.fromHeight(52),
-          ),
-          onPressed: leaving ? null : onLeave,
-          icon: leaving
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.exit_to_app_rounded),
-          label: Text(leaving ? '正在退出活動' : '退出這個活動'),
+    return AppSection(
+      title: '活動管理',
+      description: '退出活動前會再次說明是否屬於 Early Cancel 或 Late Cancel，以及對配對冷卻與信譽的影響。',
+      child: OutlinedButton.icon(
+        key: const Key('activity-detail-leave'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+          minimumSize: const Size.fromHeight(52),
         ),
+        onPressed: leaving ? null : onLeave,
+        icon: leaving
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.exit_to_app_rounded),
+        label: Text(leaving ? '正在退出活動' : '退出這個活動'),
       ),
     );
   }
@@ -1587,36 +1584,27 @@ class _LocationTab extends ConsumerWidget {
           padding: const EdgeInsets.all(AppSpacing.lg),
           sliver: SliverList.list(
             children: [
-              AppGlassSurface(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: AppSection(
-                  title: '地點投票',
-                  description: '查看即時票數、投票，或提出新的候選地點。',
-                  child: _LocationVoting(key: votingKey, activity: activity),
+              AppSection(
+                title: '地點投票',
+                description: '查看即時票數、投票，或提出新的候選地點。',
+                child: _LocationVoting(key: votingKey, activity: activity),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppSection(
+                title: '集合地點',
+                description: '以最新一筆更新為準；活動成員都會即時看到。',
+                child: _MeetingPointSection(
+                  activityId: activity.id,
+                  editable: canEdit,
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              AppGlassSurface(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: AppSection(
-                  title: '集合地點',
-                  description: '以最新一筆更新為準；活動成員都會即時看到。',
-                  child: _MeetingPointSection(
-                    activityId: activity.id,
-                    editable: canEdit,
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppGlassSurface(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: AppSection(
-                  title: '給同伴的話',
-                  description: '可以說明穿著、帶了什麼或有沒有場地；同組成員都看得到，只有你能修改。',
-                  child: _MeetingHintSection(
-                    activityId: activity.id,
-                    editable: canEdit,
-                  ),
+              AppSection(
+                title: '給同伴的話',
+                description: '可以說明穿著、帶了什麼或有沒有場地；同組成員都看得到，只有你能修改。',
+                child: _MeetingHintSection(
+                  activityId: activity.id,
+                  editable: canEdit,
                 ),
               ),
               if (onLeave != null) ...[
@@ -2654,83 +2642,78 @@ class MembersTab extends ConsumerWidget {
                     const SizedBox(height: AppSpacing.md),
                   ],
                   if (showArrival && joinedCount > 0) ...[
-                    AppGlassSurface(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: AppSection(
-                        title: '報到狀態',
-                        description: isMyMemberJoined
-                            ? (hasMyArrived
-                                  ? '你已完成報到，請在集合點與夥伴會合。'
-                                  : '抵達集合地點後，請點擊「我到了」完成報到。')
-                            : '抵達集合地點後，完成報到即可讓夥伴知道你已到達。',
-                        child: AppCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                    AppSection(
+                      title: '報到狀態',
+                      description: isMyMemberJoined
+                          ? (hasMyArrived
+                                ? '你已完成報到，請在集合點與夥伴會合。'
+                                : '抵達集合地點後，請點擊「我到了」完成報到。')
+                          : '抵達集合地點後，完成報到即可讓夥伴知道你已到達。',
+                      child: AppCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.flag_circle_rounded,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                Expanded(
+                                  child: Text(
+                                    '已抵達 $arrivedCount / $joinedCount',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                ),
+                                if (isMyMemberJoined && !hasMyArrived)
+                                  _ArrivalButton(activityId: activityId),
+                              ],
+                            ),
+                            if (isMyMemberJoined && hasMyArrived) ...[
+                              const SizedBox(height: AppSpacing.sm),
+                              const Divider(height: 1),
+                              const SizedBox(height: AppSpacing.sm),
                               Row(
                                 children: [
                                   Icon(
-                                    Icons.flag_circle_rounded,
+                                    Icons.check_circle_rounded,
+                                    size: 16,
                                     color: Theme.of(
                                       context,
                                     ).colorScheme.primary,
                                   ),
-                                  const SizedBox(width: AppSpacing.sm),
+                                  const SizedBox(width: AppSpacing.xs),
                                   Expanded(
                                     child: Text(
-                                      '已抵達 $arrivedCount / $joinedCount',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleSmall,
+                                      '你已於 ${_hm(myMember.arrivedAt!.toLocal())} 完成報到',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ),
-                                  if (isMyMemberJoined && !hasMyArrived)
-                                    _ArrivalButton(activityId: activityId),
                                 ],
                               ),
-                              if (isMyMemberJoined && hasMyArrived) ...[
-                                const SizedBox(height: AppSpacing.sm),
-                                const Divider(height: 1),
-                                const SizedBox(height: AppSpacing.sm),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle_rounded,
-                                      size: 16,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    Expanded(
-                                      child: Text(
-                                        '你已於 ${_hm(myMember.arrivedAt!.toLocal())} 完成報到',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
                             ],
-                          ),
+                          ],
                         ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
                   ],
-                  AppGlassSurface(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: AppSection(
-                      title: '活動成員',
-                      description: '點擊卡片認識夥伴、交換聯絡方式 ✨ 也可以設定自己的風格標籤喔！',
+                  AppSection(
+                    title: '活動成員',
+                    description: '點擊卡片認識夥伴、交換聯絡方式 ✨ 也可以設定自己的風格標籤喔！',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2801,8 +2784,7 @@ class MembersTab extends ConsumerWidget {
                         ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
               ),
             ),
           ],
