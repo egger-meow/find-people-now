@@ -10,7 +10,8 @@ import '../errors/user_error_message.dart';
 import '../generated/supadart_header.dart'
     show DEGREE_LEVEL, PENDING_CONFIRMATION_STATUS;
 import '../rpc/api_exception.dart';
-import '../rpc/auth_profile_rpc.dart' show ReliabilityTier;
+import '../rpc/auth_profile_rpc.dart'
+    show ReliabilityTier, ReliabilityTierExtension;
 import '../rpc/confirmation_rpc.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';

@@ -248,11 +248,42 @@ class _NotificationTile extends ConsumerWidget {
     context.go('/my-activities');
   }
 
+  String _formatNotificationTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final local = dateTime.toLocal();
+    final difference = now.difference(local);
+
+    if (difference.inMinutes < 1) {
+      return '剛剛';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} 分鐘前';
+    } else if (difference.inHours < 24 && local.day == now.day) {
+      final hour = local.hour.toString().padLeft(2, '0');
+      final minute = local.minute.toString().padLeft(2, '0');
+      return '今天 $hour:$minute';
+    } else {
+      final month = local.month.toString().padLeft(2, '0');
+      final day = local.day.toString().padLeft(2, '0');
+      final hour = local.hour.toString().padLeft(2, '0');
+      final minute = local.minute.toString().padLeft(2, '0');
+      return '$month/$day $hour:$minute';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final (title, body) = _copyFor(notification);
     final unread = notification.readAt == null;
     final scheme = Theme.of(context).colorScheme;
+
+    final campus = notification.payload['campus']?.toString();
+    final typeName = (notification.payload['activity_type_name'] ??
+            notification.payload['activity_name'])
+        ?.toString();
+    final tagText = [
+      if (typeName != null && typeName.isNotEmpty) typeName,
+      if (campus != null && campus.isNotEmpty) campus,
+    ].join(' · ');
 
     return AppCard(
       onTap: () => _open(context, ref),
@@ -275,14 +306,47 @@ class _NotificationTile extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      _formatNotificationTime(notification.createdAt),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(body, style: Theme.of(context).textTheme.bodySmall),
+                if (tagText.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      tagText,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

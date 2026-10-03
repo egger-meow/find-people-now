@@ -93,18 +93,15 @@ class MyApp extends ConsumerWidget {
         // 完全不支援縮放（`textScaler: TextScaler.noScaling`）是錯的：那等於
         // 對視力需求的使用者說「不關我的事」，HIG/WCAG 都明確反對。這裡取
         // 中間做法——**尊重使用者的放大意圖，但夾在版面撐得住的範圍內**。
-        // 上限 1.3 是實測值：再往上，底部 Tab Bar 的四個中文標籤就會開始
-        // 互相擠壓。下限 0.9 則是擋掉「縮到太小反而看不清楚」。
-        //
-        // 這是一個已知的取捨，不是最終答案：真正的解是把固定高度改成
-        // intrinsic 高度，讓版面自己長高。那是比這次 UI 強化更大的改動範圍，
-        // 先用夾擠確保不會壞掉。
+        // 上限經 P1/P2 針對主要表單、清單與按鈕實裝動態折行與滾動保護後，
+        // 由原先 1.3 漸進擴展至 1.6，兼顧大字型無障礙需求與版面穩定度。
+        // 下限 0.9 則是擋掉「縮到太小反而看不清楚」。
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
             textScaler: mq.textScaler.clamp(
               minScaleFactor: 0.9,
-              maxScaleFactor: 1.3,
+              maxScaleFactor: 1.6,
             ),
           ),
           child: child!,

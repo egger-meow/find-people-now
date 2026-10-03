@@ -398,6 +398,9 @@ class _ActivityListEntry extends StatelessWidget {
       switch (request.status) {
         case REQUEST_STATUS.DRAFT:
         case REQUEST_STATUS.REQUESTING:
+          final todoLabel = request.status == REQUEST_STATUS.DRAFT
+              ? '等待邀請好友加入'
+              : '系統非同步撮合中';
           return _ActivityRow(
             icon: activityTypeIcon(typeName),
             typeName: typeName,
@@ -407,6 +410,7 @@ class _ActivityListEntry extends StatelessWidget {
             ),
             campusLabel: '${schoolLabel(request.school)} ${request.campus}',
             statusLabel: _requestStatusLabel(request.status),
+            todoLabel: todoLabel,
             tone: _CardTone.active,
             onTap: () => context.push(
               request.status == REQUEST_STATUS.DRAFT
@@ -442,6 +446,17 @@ class _ActivityListEntry extends StatelessWidget {
       ACTIVITY_STATUS.COMPLETED => _CardTone.done,
       ACTIVITY_STATUS.CANCELLED => _CardTone.muted,
     };
+    final String? todoLabel;
+    if (activity.status == ACTIVITY_STATUS.MATCHED) {
+      todoLabel = activity.activityLocationId == null
+          ? '待提出/投票地點'
+          : '等待活動開始';
+    } else if (activity.status == ACTIVITY_STATUS.ONGOING) {
+      todoLabel = '進行中 · 需完成報到';
+    } else {
+      todoLabel = null;
+    }
+
     if (activity.status == ACTIVITY_STATUS.ONGOING) {
       return _CurrentActivitySummary(
         icon: activityTypeIcon(typeName),
@@ -449,6 +464,7 @@ class _ActivityListEntry extends StatelessWidget {
         timeLabel: _formatPoint(activity.startTime),
         campusLabel: '${schoolLabel(activity.school)} ${activity.campus}',
         statusLabel: _activityStatusLabel(activity.status),
+        todoLabel: todoLabel,
         onTap: () => context.push('/activity/${activity.id}'),
       );
     }
@@ -458,6 +474,7 @@ class _ActivityListEntry extends StatelessWidget {
       timeLabel: _formatPoint(activity.startTime),
       campusLabel: '${schoolLabel(activity.school)} ${activity.campus}',
       statusLabel: _activityStatusLabel(activity.status),
+      todoLabel: todoLabel,
       tone: tone,
       onTap: () => context.push('/activity/${activity.id}'),
     );
@@ -474,6 +491,7 @@ class _CurrentActivitySummary extends StatelessWidget {
     required this.timeLabel,
     required this.campusLabel,
     required this.statusLabel,
+    this.todoLabel,
     required this.onTap,
   });
 
@@ -482,6 +500,7 @@ class _CurrentActivitySummary extends StatelessWidget {
   final String timeLabel;
   final String campusLabel;
   final String statusLabel;
+  final String? todoLabel;
   final VoidCallback onTap;
 
   @override
@@ -497,7 +516,9 @@ class _CurrentActivitySummary extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.md),
           child: AppStatusSummary(
             title: typeName,
-            message: '$campusLabel・$statusLabel',
+            message: todoLabel != null
+                ? '$campusLabel・$statusLabel\n待辦：$todoLabel'
+                : '$campusLabel・$statusLabel',
             leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
             deadline: timeLabel,
           ),
@@ -515,6 +536,7 @@ class _ActivityRow extends StatelessWidget {
     required this.campusLabel,
     required this.statusLabel,
     required this.tone,
+    this.todoLabel,
     this.onTap,
   });
 
@@ -524,6 +546,7 @@ class _ActivityRow extends StatelessWidget {
   final String campusLabel;
   final String statusLabel;
   final _CardTone tone;
+  final String? todoLabel;
   final VoidCallback? onTap;
 
   @override
@@ -653,6 +676,32 @@ class _ActivityRow extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (todoLabel != null && todoLabel!.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.arrow_circle_right_outlined,
+                                size: 13,
+                                color: scheme.primary,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '待辦：$todoLabel',
+                                  maxLines: highTextScale ? null : 1,
+                                  overflow: highTextScale
+                                      ? TextOverflow.visible
+                                      : TextOverflow.ellipsis,
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
