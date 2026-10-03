@@ -27,7 +27,8 @@ void main() {
       const ProviderScope(child: MaterialApp(home: OtpLoginScreen())),
     );
     expect(find.text('傳送驗證碼'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, '《服務條款》'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, '《隱私權政策》'), findsOneWidget);
+    // F02: 法律文字採連續行內排版（Text.rich），消弭 Wrap 斷行碎裂與孤立標點，同時完整保留兩份條款連結
+    expect(find.textContaining('《服務條款》'), findsOneWidget);
+    expect(find.textContaining('《隱私權政策》'), findsOneWidget);
   });
 }

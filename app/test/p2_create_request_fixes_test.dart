@@ -159,22 +159,21 @@ void main() {
     expect(find.text('14:00–18:00'), findsOneWidget);
   });
 
-  testWidgets('F17: Downgrade section uses clear user copy and explanation', (tester) async {
+  testWidgets('F17: Downgrade section uses clear user copy and eliminates internal jargon', (tester) async {
     final gateway = _TestGateway();
     await tester.pumpWidget(_buildApp(gateway: gateway));
     await tester.pumpAndSettle();
 
-    await scrollTo(tester, find.text('降級配對'));
-    // Section title matches '降級配對' for test compatibility
-    expect(find.text('降級配對'), findsWidgets);
-    // Description uses user-facing copy
+    await scrollTo(tester, find.text('人數不足時'));
+    expect(find.text('人數不足時'), findsWidgets);
+    expect(find.text('降級配對'), findsNothing);
     expect(
-      find.text('人數不足時彈性成團：若未達最多人數，接受以最少人數成團。'),
+      find.text('若截止時未達最多人數，仍可依最少人數彈性成立活動。'),
       findsOneWidget,
     );
   });
 
-  testWidgets('F19: Headcount RangeSlider provides accessible semantics and fine-tuning button', (tester) async {
+  testWidgets('F19: Headcount RangeSlider provides accessible semantics and non-drag fine-tuning flow', (tester) async {
     final gateway = _TestGateway();
     await tester.pumpWidget(_buildApp(gateway: gateway));
     await tester.pumpAndSettle();
@@ -189,8 +188,41 @@ void main() {
 
     // Headcount RangeSlider is present
     expect(find.byType(RangeSlider), findsOneWidget);
-    // Fine-tune headcount button exists with descriptive label
+
+    // 1. 驗證讀屏語意節點：包含清楚的最少/最多人數與操作指引
+    final semanticsFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && (w.properties.label?.contains('人數規模滑桿') == true),
+    );
+    expect(semanticsFinder, findsOneWidget);
+    final semanticsWidget = tester.widget<Semantics>(semanticsFinder);
+    expect(semanticsWidget.properties.label, contains('最少'));
+    expect(semanticsWidget.properties.label, contains('最多'));
+    expect(semanticsWidget.properties.value, contains('人'));
+
+    // 2. 驗證替代調整途徑（非拖曳微調面板）：點擊打開、加減數值、完成後即時更新
     expect(find.text('微調人數（可逐人加減）'), findsOneWidget);
+    await tester.tap(find.text('微調人數（可逐人加減）'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('微調人數'), findsOneWidget);
+    expect(find.text('最少人數'), findsOneWidget);
+    expect(find.text('最多人數'), findsOneWidget);
+
+    // 點擊「增加最少人數」
+    final increaseMinBtn = find.byTooltip('增加最少人數');
+    expect(increaseMinBtn, findsOneWidget);
+    await tester.tap(increaseMinBtn);
+    await tester.pumpAndSettle();
+
+    // 點擊完成關閉 Sheet
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    // 驗證首頁滑桿值已由 (2.0, 5.0) 依羽球步長（2人）更新為 (4.0, 5.0)
+    final slider = tester.widget<RangeSlider>(find.byType(RangeSlider));
+    expect(slider.values.start, 4.0);
+    expect(slider.values.end, 5.0);
+    expect(find.textContaining('4 人'), findsWidgets);
   });
 
   testWidgets('F20: Confirmation dialog displays helpful outcome note', (tester) async {

@@ -350,8 +350,8 @@ Future<void> _selectCompleteRequest(
   await _settle(tester);
 
   if (allowDowngrade) {
-    await _scrollTo(tester, find.text('人數不夠時，接受少一點人也算成局？'));
-    await tester.tap(find.text('人數不夠時，接受少一點人也算成局？'));
+    await _scrollTo(tester, find.text('人數不足時，接受以最少人數成團？'));
+    await tester.tap(find.text('人數不足時，接受以最少人數成團？'));
     await _settle(tester);
   }
 }
@@ -386,7 +386,7 @@ void main() {
       lessThanOrEqualTo(600 - 160),
     );
 
-    for (final label in ['活動', '時間', '校區', '人數', '降級配對', '送出前確認']) {
+    for (final label in ['活動', '時間', '校區', '人數', '人數不足時', '送出前確認']) {
       await _scrollTo(
         tester,
         find.byWidgetPredicate(
@@ -486,14 +486,14 @@ void main() {
     expect(find.text('光復'), findsWidgets);
     expect(find.text('最少 3 人，最多 5 人'), findsOneWidget);
     expect(find.text('8–10 級'), findsWidgets);
-    expect(find.text('接受'), findsOneWidget);
+    expect(find.text('接受以最少 3 人成團'), findsOneWidget);
 
     await tester.tap(find.text('送出，開始找人'));
     await _settle(tester);
     expect(find.text('確認配對條件'), findsOneWidget);
     expect(find.text('確認送出'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
-    for (final value in ['羽球', '光復', '最少 3 人，最多 5 人', '8–10 級', '接受']) {
+    for (final value in ['羽球', '光復', '最少 3 人，最多 5 人', '8–10 級', '接受以最少 3 人成團']) {
       expect(find.text(value), findsWidgets);
     }
     expect(find.text(_fixedWindowLabel), findsWidgets);
@@ -502,7 +502,7 @@ void main() {
     await _settle(tester);
     expect(find.text('最少 3 人，最多 5 人'), findsOneWidget);
     expect(find.text('8–10 級'), findsWidgets);
-    expect(find.text('接受'), findsOneWidget);
+    expect(find.text('接受以最少 3 人成團'), findsOneWidget);
     expect(find.text(_fixedWindowLabel), findsOneWidget);
   });
 
@@ -617,11 +617,12 @@ void main() {
     await _settle(tester);
 
     expect(find.text('確認配對條件'), findsOneWidget);
-    for (final value in ['讀書', '光復', '最少 3 人，最多 5 人', '微積分（一）', '不接受']) {
+    for (final value in ['讀書', '光復', '最少 3 人，最多 5 人', '微積分（一）', '需滿最多 5 人才成團']) {
       expect(find.text(value), findsWidgets);
     }
     expect(find.text('讀書條件'), findsWidgets);
-    expect(find.text('降級配對'), findsWidgets);
+    expect(find.text('人數不足時'), findsWidgets);
+    expect(find.text('降級配對'), findsNothing);
     expect(find.text(_fixedWindowLabel), findsWidgets);
 
     await tester.tap(find.text('取消'));

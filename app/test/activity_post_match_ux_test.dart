@@ -260,8 +260,9 @@ void main() {
         250,
         scrollable: find.byType(Scrollable).last,
       );
-      expect(find.text('你的想說的話：我會穿紅外套'), findsOneWidget);
+      // F28: 個人提示只保留一份（氣泡中顯示），去除卡片內重複的「你的想說的話」標籤
       expect(find.text('我會穿紅外套'), findsOneWidget);
+      expect(find.text('你的想說的話：我會穿紅外套'), findsNothing);
     });
 
     testWidgets('shows check-in button in top arrival section when not yet arrived', (tester) async {

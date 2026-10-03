@@ -1160,8 +1160,10 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
           value: studyTarget.isEmpty ? '不限' : studyTarget,
         ),
       AppSelectionSummaryItem(
-        label: '降級配對',
-        value: allowDowngrade ? '接受' : '不接受',
+        label: '人數不足時',
+        value: allowDowngrade
+            ? '接受以最少 $minParticipants 人成團'
+            : '需滿最多 $maxParticipants 人才成團',
       ),
     ];
     return items;
@@ -1239,7 +1241,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '• 人數不足時（降級）：${snapshot.allowDowngrade ? '接受以最少 ${snapshot.minParticipants} 人彈性成團' : '需達到最多 ${snapshot.maxParticipants} 人才成團'}',
+                        '• 人數不足時：${snapshot.allowDowngrade ? '接受以最少 ${snapshot.minParticipants} 人彈性成團' : '需達到最多 ${snapshot.maxParticipants} 人才成團'}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 2),
@@ -2079,15 +2081,15 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
                     const SizedBox(height: AppSpacing.md),
                     _FormCardSection(
                       stepNumber: 5,
-                      title: '降級配對',
-                      description: '人數不足時彈性成團：若未達最多人數，接受以最少人數成團。',
+                      title: '人數不足時',
+                      description: '若截止時未達最多人數，仍可依最少人數彈性成立活動。',
                       child: Material(
                         type: MaterialType.transparency,
                         child: SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           value: _allowDowngrade,
                           onChanged: (v) => setState(() => _allowDowngrade = v),
-                          title: const Text('人數不夠時，接受少一點人也算成局？'),
+                          title: const Text('人數不足時，接受以最少人數成團？'),
                         ),
                       ),
                     ),
@@ -2194,7 +2196,7 @@ class _CreateRequestFormState extends ConsumerState<_CreateRequestForm> {
   }
 }
 
-/// Bento 風格步驟決策卡——為「活動、時間、校區、人數、降級配對」建立清晰界線與層級。
+/// Bento 風格步驟決策卡——為「活動、時間、校區、人數、人數不足時」建立清晰界線與層級。
 class _FormCardSection extends StatelessWidget {
   const _FormCardSection({
     required this.stepNumber,

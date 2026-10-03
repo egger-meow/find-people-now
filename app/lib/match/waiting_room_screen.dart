@@ -180,7 +180,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                               padding: EdgeInsets.only(bottom: AppSpacing.xs),
                               child: AppMascotStage(
                                 assetPath: 'assets/mascot/matching.png',
-                                height: 88,
+                                height: 52,
                                 style: AppMascotStageStyle.waiting,
                                 semanticLabel: '街街貓正在幫你找夥伴',
                               ),
@@ -229,17 +229,15 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _RequestInfoCard(request: request),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         RoomMembersSection(
                           requestId: request.id,
                           members: members,
                           currentUserId: userId,
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        _WaitingTrustCard(latestStart: request.latestStart),
-                        const SizedBox(height: AppSpacing.md),
                         if (_error != null) ...[
                           Text(
                             _error!,
@@ -280,6 +278,8 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                               ? _cancelRequest(request.id)
                               : _leaveRequest(request.id),
                         ),
+                        const SizedBox(height: AppSpacing.sm),
+                        _WaitingTrustCard(latestStart: request.latestStart),
                       ],
                     ),
                   ),

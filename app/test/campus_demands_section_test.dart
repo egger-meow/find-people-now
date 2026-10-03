@@ -156,10 +156,10 @@ void main() {
 
     await tester.pump();
 
-    expect(find.text('羽球'), findsOneWidget);
-    expect(find.textContaining('2 人在找球友'), findsOneWidget);
+    expect(find.textContaining('羽球'), findsWidgets);
+    expect(find.textContaining('人在揪羽球'), findsOneWidget);
 
-    await tester.tap(find.text('羽球'));
+    await tester.tap(find.textContaining('人在揪羽球'));
     expect(selected, mockDemand);
   });
 }

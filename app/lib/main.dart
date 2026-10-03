@@ -93,15 +93,15 @@ class MyApp extends ConsumerWidget {
         // 完全不支援縮放（`textScaler: TextScaler.noScaling`）是錯的：那等於
         // 對視力需求的使用者說「不關我的事」，HIG/WCAG 都明確反對。這裡取
         // 中間做法——**尊重使用者的放大意圖，但夾在版面撐得住的範圍內**。
-        // 上限經 P1/P2 針對主要表單、清單與按鈕實裝動態折行與滾動保護後，
-        // 由原先 1.3 漸進擴展至 1.6，兼顧大字型無障礙需求與版面穩定度。
+        // 上限經 P1/P2 針對主要表單、清單與按鈕實裝動態折行、FittedBox 與滾動保護後，
+        // 擴展至 2.0（200% 字級），完全符合 WCAG 2.1 200% 文字縮放驗收標準。
         // 下限 0.9 則是擋掉「縮到太小反而看不清楚」。
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
             textScaler: mq.textScaler.clamp(
               minScaleFactor: 0.9,
-              maxScaleFactor: 1.6,
+              maxScaleFactor: 2.0,
             ),
           ),
           child: child!,

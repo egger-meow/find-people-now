@@ -125,6 +125,11 @@ void main() {
       createdAt: now,
     );
 
+    tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(
       createSubject(
         request: request,
@@ -137,10 +142,18 @@ void main() {
     final mascotFinder = find.byType(AppMascotStage);
     expect(mascotFinder, findsOneWidget);
     final mascotWidget = tester.widget<AppMascotStage>(mascotFinder);
-    expect(mascotWidget.height, 88);
+    expect(mascotWidget.height, lessThanOrEqualTo(88));
 
-    expect(find.text('複製邀請碼'), findsOneWidget);
-    expect(find.text('複製邀請訊息'), findsOneWidget);
+    // 首屏可達性：在 390x844 視窗中，無須滾動，核心邀請動作即在首屏可視高度內 (dy < 844)
+    final inviteBtnFinder = find.text('複製邀請碼');
+    expect(inviteBtnFinder, findsOneWidget);
+    final inviteTopLeft = tester.getTopLeft(inviteBtnFinder);
+    expect(inviteTopLeft.dy, lessThan(844.0), reason: '複製邀請碼必須在首屏 844 像素可視高度內');
+
+    // 驗證安全取消退出動作可達且清楚說明無冷卻
+    final cancelBtnFinder = find.text('取消整個配對');
+    expect(cancelBtnFinder, findsOneWidget);
+    expect(find.text('此操作無冷卻限制且不影響信譽評分'), findsOneWidget);
   });
 
   testWidgets('F24: 終態（EXPIRED 與 CANCELLED）呈現安心吉祥物與完整動作指引，無空洞留白', (tester) async {

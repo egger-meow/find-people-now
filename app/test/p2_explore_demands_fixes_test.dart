@@ -5,6 +5,7 @@ import 'package:find_people_now/match/widgets/campus_demand_card_widget.dart';
 import 'package:find_people_now/rpc/auth_profile_rpc.dart';
 import 'package:find_people_now/rpc/campus_demand_rpc.dart';
 import 'package:find_people_now/theme/app_theme.dart';
+import 'package:find_people_now/widgets/app_sheet.dart';
 import 'package:find_people_now/widgets/department_field.dart';
 
 CampusDemandCard _makeCard({
@@ -94,6 +95,69 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byTooltip('展開科系清單'), findsWidgets);
+    });
+
+    testWidgets('F36: 驗證無名操作賦予清晰語意名稱且 Sheet 關閉時焦點正確返回觸發節點', (tester) async {
+      final triggerFocusNode = FocusNode();
+      addTearDown(triggerFocusNode.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return Center(
+                  child: Semantics(
+                    button: true,
+                    label: '查看 小晴 的個人資料',
+                    child: ElevatedButton(
+                      focusNode: triggerFocusNode,
+                      onPressed: () {
+                        showAppSheet<void>(
+                          context,
+                          builder: (sheetContext) => Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('小晴個人資料'),
+                              ElevatedButton(
+                                onPressed: () => Navigator.of(sheetContext).pop(),
+                                child: const Text('關閉'),
+                              ),
+                            ],
+                          ),
+                        ).then((_) {
+                          triggerFocusNode.requestFocus();
+                        });
+                      },
+                      child: const Text('頭像按鈕'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. 驗證無名操作賦予清楚之讀屏語意標籤
+      expect(find.bySemanticsLabel('查看 小晴 的個人資料'), findsOneWidget);
+
+      // 2. 聚焦並開啟 Sheet
+      triggerFocusNode.requestFocus();
+      await tester.pump();
+      expect(triggerFocusNode.hasFocus, isTrue);
+
+      await tester.tap(find.text('頭像按鈕'));
+      await tester.pumpAndSettle();
+      expect(find.text('小晴個人資料'), findsOneWidget);
+
+      // 3. 關閉 Sheet 並驗證焦點成功回到觸發節點
+      await tester.tap(find.text('關閉'));
+      await tester.pumpAndSettle();
+      expect(find.text('小晴個人資料'), findsNothing);
+      expect(triggerFocusNode.hasFocus, isTrue, reason: 'Sheet 關閉後焦點必須返回觸發元素');
     });
 
     test('F29: Reliability tier displays truthful label without exaggerated quality claims', () {
