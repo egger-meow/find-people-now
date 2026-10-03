@@ -6,6 +6,7 @@ class AppTextField extends StatelessWidget {
     required this.controller,
     this.label,
     this.hint,
+    this.helperText,
     this.keyboardType,
     this.autofocus = false,
     this.enabled = true,
@@ -20,6 +21,7 @@ class AppTextField extends StatelessWidget {
   final TextEditingController controller;
   final String? label;
   final String? hint;
+  final String? helperText;
   final TextInputType? keyboardType;
   final bool autofocus;
   final bool enabled;
@@ -48,6 +50,7 @@ class AppTextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        helperText: helperText,
         errorText: errorText,
         prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
       ),

@@ -56,9 +56,29 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   // （見 build() 內 campusAsync 的判斷），_campusOptions 供 _submit() 驗證用。
   String? _defaultCampus;
   List<String> _campusOptions = const [];
+  String _selectedContactType = 'ig';
+
+  @override
+  void initState() {
+    super.initState();
+    _displayNameController.addListener(_onFieldChanged);
+    _bioController.addListener(_onFieldChanged);
+    _contactIgController.addListener(_onFieldChanged);
+    _contactLineController.addListener(_onFieldChanged);
+    _contactDiscordController.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
+    _displayNameController.removeListener(_onFieldChanged);
+    _bioController.removeListener(_onFieldChanged);
+    _contactIgController.removeListener(_onFieldChanged);
+    _contactLineController.removeListener(_onFieldChanged);
+    _contactDiscordController.removeListener(_onFieldChanged);
     _displayNameController.dispose();
     _departmentController.dispose();
     _bioController.dispose();
@@ -66,6 +86,34 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     _contactLineController.dispose();
     _contactDiscordController.dispose();
     super.dispose();
+  }
+
+  Widget _buildContactChip(String type, String label, bool isFilled) {
+    final isSelected = _selectedContactType == type;
+    final theme = Theme.of(context);
+    return ChoiceChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (isFilled) ...[
+            const SizedBox(width: 4),
+            Icon(
+              Icons.check_circle_rounded,
+              size: 14,
+              color: isSelected ? theme.colorScheme.onPrimary : AppColors.forestGreen,
+            ),
+          ],
+        ],
+      ),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (selected) {
+          AppHaptics.selection();
+          setState(() => _selectedContactType = type);
+        }
+      },
+    );
   }
 
   Future<void> _uploadAvatar() async {
@@ -210,6 +258,22 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             Center(
               child: Column(
                 children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('大頭貼', style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(width: 4),
+                      Text(
+                        '(必填)',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   Stack(
                     alignment: Alignment.center,
                     children: [
@@ -226,21 +290,17 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                         const CircularProgressIndicator(strokeWidth: 2.4),
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.xs),
                   TextButton(
                     onPressed: _uploadingAvatar ? null : _uploadAvatar,
                     child: Text(_avatarUrl.isEmpty ? '上傳照片' : '更換照片'),
                   ),
-                  // v1.33 — 頭像從選填改硬性門檻，移除原本可以完全跳過上傳、
-                  // 靠 Dicebear 自動產生卡通頭像過關的「隨機頭像」按鈕（見
-                  // SPEC.md v1.33）；改用引導文案鼓勵上傳真人露臉照片，方便
-                  // 配對成立後彼此認出對方。
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg,
                     ),
                     child: Text(
-                      '建議使用清楚露臉的個人照，配對成功後大家才容易認出你',
+                      '請上傳清楚露臉的個人照，配對成功後隊友才能認出你',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -253,7 +313,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: AppSpacing.md),
             Text('基本資料', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: AppSpacing.sm),
-            AppTextField(controller: _displayNameController, label: '顯示名稱'),
+            AppTextField(
+              controller: _displayNameController,
+              label: '顯示名稱 (必填)',
+              hint: '你在揪團活動中顯示的暱稱',
+            ),
             const SizedBox(height: AppSpacing.md),
             DegreeLevelField(
               selectedDegreeLevel: _degreeLevel,
@@ -296,12 +360,25 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: AppSpacing.md),
-                      Text(
-                        '平常所在校區',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Row(
+                        children: [
+                          Text(
+                            '平常所在校區',
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '(必填)',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Wrap(
@@ -338,28 +415,249 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: AppSpacing.md),
             AppTextField(
               controller: _bioController,
-              label: '自我介紹',
+              label: '自我介紹 (必填)',
               hint: '一句話介紹自己；興趣、有什麼經驗或技能可以跟別人分享…',
+              maxLines: 3,
             ),
             const SizedBox(height: AppSpacing.lg),
-            Text('聯絡方式（至少填一項）', style: Theme.of(context).textTheme.titleSmall),
+            Row(
+              children: [
+                Text('聯絡方式', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 4),
+                Text(
+                  '(必填，至少填寫一項)',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '成團後僅同團隊友可見，方便建立群組與活動聯絡',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
             const SizedBox(height: AppSpacing.sm),
-            AppTextField(controller: _contactIgController, label: 'Instagram'),
-            const SizedBox(height: AppSpacing.md),
-            AppTextField(controller: _contactLineController, label: 'LINE'),
-            const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              controller: _contactDiscordController,
-              label: 'Discord',
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.xs,
+              children: [
+                _buildContactChip(
+                  'ig',
+                  'Instagram',
+                  _contactIgController.text.trim().isNotEmpty,
+                ),
+                _buildContactChip(
+                  'line',
+                  'LINE',
+                  _contactLineController.text.trim().isNotEmpty,
+                ),
+                _buildContactChip(
+                  'discord',
+                  'Discord',
+                  _contactDiscordController.text.trim().isNotEmpty,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (_selectedContactType == 'ig')
+              AppTextField(
+                controller: _contactIgController,
+                label: 'Instagram 帳號',
+                hint: '例如：@your_handle 或 username',
+                prefixIcon: Icons.camera_alt_outlined,
+              )
+            else if (_selectedContactType == 'line')
+              AppTextField(
+                controller: _contactLineController,
+                label: 'LINE ID',
+                hint: '輸入 LINE ID',
+                prefixIcon: Icons.chat_bubble_outline,
+              )
+            else if (_selectedContactType == 'discord')
+              AppTextField(
+                controller: _contactDiscordController,
+                label: 'Discord 使用者名稱',
+                hint: '例如：username 或 username#0000',
+                prefixIcon: Icons.alternate_email,
+              ),
+            Builder(
+              builder: (context) {
+                final filledContacts = <String>[];
+                if (_contactIgController.text.trim().isNotEmpty) {
+                  filledContacts.add('Instagram');
+                }
+                if (_contactLineController.text.trim().isNotEmpty) {
+                  filledContacts.add('LINE');
+                }
+                if (_contactDiscordController.text.trim().isNotEmpty) {
+                  filledContacts.add('Discord');
+                }
+
+                if (filledContacts.isNotEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          size: 14,
+                          color: AppColors.forestGreen,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '已填寫：${filledContacts.join('、')}（可切換分頁填寫更多）',
+                            style: const TextStyle(
+                              color: AppColors.forestGreen,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            // F04：完成操作區與尚缺項目即時提示
+            Builder(
+              builder: (context) {
+                final missing = <String>[];
+                if (_displayNameController.text.trim().isEmpty) {
+                  missing.add('顯示名稱');
+                }
+                if (_avatarUrl.isEmpty) {
+                  missing.add('大頭貼');
+                }
+                if (_bioController.text.trim().isEmpty) {
+                  missing.add('自我介紹');
+                }
+                final hasContact = _contactIgController.text.trim().isNotEmpty ||
+                    _contactLineController.text.trim().isNotEmpty ||
+                    _contactDiscordController.text.trim().isNotEmpty;
+                if (!hasContact) {
+                  missing.add('聯絡方式');
+                }
+                if (_campusOptions.length > 1 && _defaultCampus == null) {
+                  missing.add('平常校區');
+                }
+
+                if (missing.isEmpty) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.forestGreen.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(
+                        color: AppColors.forestGreen.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          size: 16,
+                          color: AppColors.forestGreen,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '必填資料已齊全，隨時可完成註冊',
+                            style: TextStyle(
+                              color: AppColors.forestGreen,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '完成註冊尚缺：${missing.join('、')}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             if (_error != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              Container(
+                margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
-            const SizedBox(height: AppSpacing.lg),
             AppButton(label: '完成註冊', loading: _loading, onPressed: _submit),
           ],
         ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -49,9 +50,22 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
   String? _error;
   Timer? _cooldownTimer;
   int _cooldownSeconds = 0;
+  late final TapGestureRecognizer _termsRecognizer;
+  late final TapGestureRecognizer _privacyRecognizer;
+
+  @override
+  void initState() {
+    super.initState();
+    _termsRecognizer = TapGestureRecognizer()
+      ..onTap = () => LegalLinks.open(context, LegalDocument.terms);
+    _privacyRecognizer = TapGestureRecognizer()
+      ..onTap = () => LegalLinks.open(context, LegalDocument.privacy);
+  }
 
   @override
   void dispose() {
+    _termsRecognizer.dispose();
+    _privacyRecognizer.dispose();
     _emailController.dispose();
     _codeController.dispose();
     _cooldownTimer?.cancel();
@@ -261,6 +275,7 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                           controller: _emailController,
                           label: '學校信箱',
                           hint: 'example@nycu.edu.tw',
+                          helperText: '接受 @nycu.edu.tw 或 @nthu.edu.tw 學校信箱',
                           keyboardType: TextInputType.emailAddress,
                           enabled: !_otpSent,
                           onSubmitted: (_) => _otpSent ? null : _sendOtp(),
@@ -323,32 +338,46 @@ class _OtpLoginScreenState extends ConsumerState<OtpLoginScreen> {
                     ),
                   ),
 
-                  // 5. 隱私與條款法務連結
+                  // 5. 隱私與條款法務連結（F02：採連續行內文字排版，消弭斷行碎裂與孤立標點）
                   const SizedBox(height: AppSpacing.md),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        '繼續即表示你同意',
-                        style: Theme.of(context).textTheme.bodySmall,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                    ),
+                    child: Text.rich(
+                      TextSpan(
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                              height: 1.5,
+                            ),
+                        children: [
+                          const TextSpan(text: '繼續即表示你同意'),
+                          TextSpan(
+                            text: '《服務條款》',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                            recognizer: _termsRecognizer,
+                          ),
+                          const TextSpan(text: '，並確認已閱讀'),
+                          TextSpan(
+                            text: '《隱私權政策》',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                            recognizer: _privacyRecognizer,
+                          ),
+                          const TextSpan(text: '。'),
+                        ],
                       ),
-                      TextButton(
-                        onPressed: () =>
-                            LegalLinks.open(context, LegalDocument.terms),
-                        child: const Text('《服務條款》'),
-                      ),
-                      Text(
-                        '，並確認已閱讀',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      TextButton(
-                        onPressed: () =>
-                            LegalLinks.open(context, LegalDocument.privacy),
-                        child: const Text('《隱私權政策》'),
-                      ),
-                      Text('。', style: Theme.of(context).textTheme.bodySmall),
-                    ],
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 ],
               ),
