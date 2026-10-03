@@ -471,16 +471,17 @@ class ActivityDetailBodyLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final theme = Theme.of(context);
+    final bgColor = theme.scaffoldBackgroundColor;
+
     return Column(
       children: [
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final header = Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
+          child: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                SliverToBoxAdapter(
+                  child: Padding(
                     padding: const EdgeInsets.fromLTRB(
                       AppSpacing.lg,
                       AppSpacing.sm,
@@ -492,67 +493,28 @@ class ActivityDetailBodyLayout extends StatelessWidget {
                       child: summary,
                     ),
                   ),
-                  if (completionBanner != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg,
+                ),
+                if (completionBanner != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        left: AppSpacing.lg,
+                        right: AppSpacing.lg,
+                        bottom: AppSpacing.md,
                       ),
                       child: completionBanner!,
                     ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                    ),
-                    child: navigation,
                   ),
-                ],
-              );
-
-              if (!keyboardVisible) {
-                return Column(
-                  children: [
-                    header,
-                    Expanded(child: content),
-                  ],
-                );
-              }
-
-              const minimumInteractiveHeight = 44.0;
-              // Reserve a scrollable viewport for the selected tab before
-              // choosing the header quota. On a short landscape viewport the
-              // old 25% quota could collapse the header/navigation below the
-              // 44pt accessibility target after the sticky keyboard inset.
-              final maximumHeaderHeight =
-                  (constraints.maxHeight - minimumInteractiveHeight).clamp(
-                    0.0,
-                    constraints.maxHeight,
-                  );
-              final minimumHeaderHeight = maximumHeaderHeight.clamp(
-                0.0,
-                minimumInteractiveHeight,
-              );
-              final preferredHeaderHeight = constraints.maxHeight * 0.25;
-              final headerHeight = preferredHeaderHeight.clamp(
-                minimumHeaderHeight,
-                maximumHeaderHeight,
-              );
-
-              return Column(
-                children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: minimumHeaderHeight,
-                      maxHeight: headerHeight,
-                    ),
-                    child: SingleChildScrollView(
-                      key: const Key('activity-detail-header-scroll'),
-                      child: header,
-                    ),
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _ActivityDetailNavigationSliverDelegate(
+                    navigation: navigation,
+                    backgroundColor: bgColor,
                   ),
-                  Expanded(child: content),
-                ],
-              );
+                ),
+              ];
             },
+            body: content,
           ),
         ),
         stickyAction,
@@ -560,6 +522,46 @@ class ActivityDetailBodyLayout extends StatelessWidget {
     );
   }
 }
+
+class _ActivityDetailNavigationSliverDelegate
+    extends SliverPersistentHeaderDelegate {
+  _ActivityDetailNavigationSliverDelegate({
+    required this.navigation,
+    required this.backgroundColor,
+  });
+
+  final Widget navigation;
+  final Color backgroundColor;
+
+  @override
+  double get minExtent => 60.0;
+  @override
+  double get maxExtent => 60.0;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: backgroundColor,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xs,
+      ),
+      alignment: Alignment.center,
+      child: navigation,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_ActivityDetailNavigationSliverDelegate oldDelegate) {
+    return oldDelegate.navigation != navigation ||
+        oldDelegate.backgroundColor != backgroundColor;
+  }
+}
+
 
 class _ActivityDetailNavigation extends StatelessWidget {
   const _ActivityDetailNavigation({

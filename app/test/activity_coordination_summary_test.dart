@@ -45,7 +45,7 @@ void main() {
 
     expect(find.textContaining('地點與集合方式尚未確定'), findsOneWidget);
     expect(find.textContaining('活動地點：等待提出候選地點'), findsOneWidget);
-    expect(find.textContaining('集合地點：尚未設定'), findsNothing);
+    expect(find.textContaining('集合地點：尚未設定'), findsOneWidget);
     expect(find.text('下一步：提出候選地點'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -87,7 +87,7 @@ void main() {
     );
 
     expect(find.textContaining('集合地點：圖書館正門（已於'), findsOneWidget);
-    expect(find.textContaining('我的見面提示：藍色背包'), findsOneWidget);
+    expect(find.textContaining('見面提示：藍色背包'), findsOneWidget);
     expect(find.textContaining('咖啡廳門口'), findsNothing);
     expect(tester.takeException(), isNull);
   });

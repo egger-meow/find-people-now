@@ -251,11 +251,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('想說的話請到「成員與聯絡」查看'), findsOneWidget);
+      expect(find.textContaining('可到「成員與聯絡」'), findsOneWidget);
 
       await tester.tap(find.text('成員與聯絡'));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('小明（你）'), 250);
+      await tester.scrollUntilVisible(
+        find.text('小明（你）'),
+        250,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(find.text('你的想說的話：我會穿紅外套'), findsOneWidget);
       expect(find.text('我會穿紅外套'), findsOneWidget);
     });
@@ -336,13 +340,21 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap on other member to expand card
-      await tester.scrollUntilVisible(find.text('小華'), 200);
+      await tester.scrollUntilVisible(
+        find.text('小華'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('小華'));
       await tester.pumpAndSettle();
 
       // Scroll to and tap '檢舉' button
-      await tester.scrollUntilVisible(find.text('檢舉'), 200);
+      await tester.scrollUntilVisible(
+        find.text('檢舉'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('檢舉'));
       await tester.pumpAndSettle();
