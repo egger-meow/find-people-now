@@ -230,13 +230,15 @@ class _InviteFriendsScreenState extends ConsumerState<InviteFriendsScreen> {
                 onShare: () async {
                   final token = _token ?? value.inviteToken;
                   if (token == null) return;
+                  final shareText =
+                      '來跟我一起參加活動！\n打開「敢不敢揪」App ➔ 首頁右上角點擊「輸入邀請碼」圖示 ➔ 貼上「$token」即可加入同一個房間！';
                   await Clipboard.setData(
-                    ClipboardData(text: '來跟我一起參加活動！邀請碼：$token'),
+                    ClipboardData(text: shareText),
                   );
                   if (context.mounted) {
                     ScaffoldMessenger.of(
                       context,
-                    ).showSnackBar(const SnackBar(content: Text('邀請訊息已複製')));
+                    ).showSnackBar(const SnackBar(content: Text('邀請訊息已複製，可直接貼給朋友')));
                   }
                 },
                 onRevoke: isOwner ? _revokeToken : null,

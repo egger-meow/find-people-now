@@ -177,10 +177,10 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                         if (request.status == REQUEST_STATUS.REQUESTING) ...[
                           const Center(
                             child: Padding(
-                              padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                              padding: EdgeInsets.only(bottom: AppSpacing.xs),
                               child: AppMascotStage(
                                 assetPath: 'assets/mascot/matching.png',
-                                height: 126,
+                                height: 88,
                                 style: AppMascotStageStyle.waiting,
                                 semanticLabel: '街街貓正在幫你找夥伴',
                               ),
@@ -198,7 +198,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                             children: [
                               Row(
                                 children: [
-                                  const Expanded(child: Text('剩餘時間')),
+                                  const Expanded(child: Text('距配對截止時間')),
                                   CountdownText(
                                     deadline: request.latestStart,
                                     style:
@@ -217,20 +217,29 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                '非預估等待時間。配對為系統非同步撮合，若截止未滿額將自動安全結束，不影響信譽評分。您可安心離開畫面，配對成功時將發送通知。',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontSize: 11.5,
+                                  height: 1.35,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         _RequestInfoCard(request: request),
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         RoomMembersSection(
                           requestId: request.id,
                           members: members,
                           currentUserId: userId,
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         _WaitingTrustCard(latestStart: request.latestStart),
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
                         if (_error != null) ...[
                           Text(
                             _error!,
@@ -258,7 +267,7 @@ class _WaitingRoomScreenState extends ConsumerState<WaitingRoomScreen> {
                           onShare: () async {
                             if (effectiveInviteToken == null) return;
                             final shareText =
-                                '來跟我一起參加配對！我的邀請碼是：$effectiveInviteToken';
+                                '來跟我一起參加配對！\n打開「敢不敢揪」App ➔ 首頁右上角點擊「輸入邀請碼」圖示 ➔ 貼上「$effectiveInviteToken」即可加入同一個房間！';
                             await Clipboard.setData(
                               ClipboardData(text: shareText),
                             );
@@ -697,7 +706,7 @@ class WaitingRoomActionSections extends StatelessWidget {
           ),
         ],
         if (showManageAction) ...[
-          const SizedBox(height: AppSpacing.xl),
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
@@ -1114,11 +1123,11 @@ class _TransitionedState extends StatelessWidget {
             children: [
               const AppMascotStage(
                 assetPath: 'assets/mascot/matched.png',
-                height: 136,
+                height: 120,
                 style: AppMascotStageStyle.celebration,
                 semanticLabel: '街街貓慶祝配對成功',
               ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
               AppStatusSummary(
                 title: content.title,
                 message: content.message,
@@ -1140,23 +1149,42 @@ class _TransitionedState extends StatelessWidget {
       );
     }
 
+    final isExpired = status == REQUEST_STATUS.EXPIRED;
+    final isCancelled = status == REQUEST_STATUS.CANCELLED;
+
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.lg),
-        child: AppStatusSummary(
-          title: content.title,
-          message: content.message,
-          leading: Icon(
-            content.icon,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          action: SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              label: content.actionLabel,
-              onPressed: () => context.go(content.destination),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isExpired || isCancelled)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                child: AppMascotStage(
+                  assetPath: 'assets/mascot/explore_empty.png',
+                  height: 96,
+                  style: AppMascotStageStyle.card,
+                  semanticLabel:
+                      isExpired ? '街街貓提醒這次沒有成團' : '街街貓已為你取消配對',
+                ),
+              ),
+            AppStatusSummary(
+              title: content.title,
+              message: content.message,
+              leading: Icon(
+                content.icon,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              action: SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  label: content.actionLabel,
+                  onPressed: () => context.go(content.destination),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
